@@ -165,7 +165,12 @@ public final class JSON {
         }
         try (JSONGenerator generator = JSONGenerator.of(features)) {
             generator.writeAny(obj);
-            return generator.toString();
+            String json = generator.toString();
+            long featureMask = WriteFeature.of(features);
+            if ((featureMask & WriteFeature.PrettyFormat.mask) != 0) {
+                return ObjectMapper.prettyFormat(json);
+            }
+            return json;
         }
     }
 

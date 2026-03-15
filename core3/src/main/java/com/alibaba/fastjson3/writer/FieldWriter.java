@@ -307,6 +307,30 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 || (features & WriteFeature.WriteNulls.mask) != 0) {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
             generator.writeNull();
+            return;
+        }
+
+        // Type-specific null defaults — check typeTag first, then fieldClass for collections
+        if (typeTag == TYPE_STRING
+                && (features & WriteFeature.WriteNullStringAsEmpty.mask) != 0) {
+            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            generator.writeString("");
+        } else if ((typeTag == TYPE_LIST_STRING || typeTag == TYPE_LIST_OBJECT
+                || java.util.Collection.class.isAssignableFrom(fieldClass))
+                && (features & WriteFeature.WriteNullListAsEmpty.mask) != 0) {
+            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            generator.startArray();
+            generator.endArray();
+        } else if ((typeTag == TYPE_INT || typeTag == TYPE_LONG
+                || typeTag == TYPE_DOUBLE || typeTag == TYPE_FLOAT
+                || Number.class.isAssignableFrom(fieldClass))
+                && (features & WriteFeature.WriteNullNumberAsZero.mask) != 0) {
+            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            generator.writeInt32(0);
+        } else if ((typeTag == TYPE_BOOL || fieldClass == Boolean.class)
+                && (features & WriteFeature.WriteNullBooleanAsFalse.mask) != 0) {
+            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            generator.writeBool(false);
         }
     }
 
@@ -469,6 +493,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             }
             return;
         }
+        generator.pushReference(value);
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
 
         Class<?> valueClass = value.getClass();
@@ -487,6 +512,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         } else {
             generator.writeAny(value);
         }
+        generator.popReference(value);
     }
 
     @SuppressWarnings("unchecked")
@@ -522,6 +548,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && list.isEmpty()) {
             return;
         }
+        generator.pushReference(list);
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         generator.startArray();
 
@@ -543,6 +570,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             }
         }
         generator.endArray();
+        generator.popReference(list);
     }
 
     private void writeGeneric(JSONGenerator generator, Object bean, long features) {

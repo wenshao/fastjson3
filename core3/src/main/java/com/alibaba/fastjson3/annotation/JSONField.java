@@ -65,11 +65,6 @@ public @interface JSONField {
     boolean required() default false;
 
     /**
-     * Unwrap nested object properties to parent level.
-     */
-    boolean unwrapped() default false;
-
-    /**
      * Property inclusion strategy for this field (overrides class-level).
      */
     Inclusion inclusion() default Inclusion.DEFAULT;
