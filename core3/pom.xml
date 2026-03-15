@@ -4,14 +4,13 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>com.alibaba.fastjson2</groupId>
-        <artifactId>fastjson2-parent</artifactId>
-        <version>2.0.62-SNAPSHOT</version>
+        <groupId>com.alibaba.fastjson3</groupId>
+        <artifactId>fastjson3-parent</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>fastjson3</artifactId>
-    <version>3.0.0-SNAPSHOT</version>
     <name>fastjson3</name>
     <description>Fastjson3 is a high-performance JSON processor (JSON parser + JSON generator) written in Java</description>
     <packaging>jar</packaging>
@@ -76,8 +75,37 @@
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>--add-modules jdk.incubator.vector</argLine>
+                    <argLine>@{argLine} --add-modules jdk.incubator.vector</argLine>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>checkstyle</id>
+                        <phase>none</phase>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

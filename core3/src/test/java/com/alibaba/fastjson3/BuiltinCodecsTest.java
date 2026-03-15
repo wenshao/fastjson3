@@ -201,7 +201,10 @@ class BuiltinCodecsTest {
     void pathRoundTrip() {
         Path p = Path.of("/tmp/test.json");
         String json = JSON.toJSONString(p);
-        assertEquals("\"/tmp/test.json\"", json);
+        // Round-trip: serialize then deserialize, compare Path objects
+        // (avoids Windows path separator differences where \ gets escaped to \\)
+        Path parsed = JSON.parseObject(json, Path.class);
+        assertEquals(p, parsed);
     }
 
     @Test

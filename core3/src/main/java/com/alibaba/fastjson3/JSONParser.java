@@ -538,20 +538,30 @@ public abstract sealed class JSONParser implements Closeable
                 skipStringContent();
             }
             case 't' -> {
-                if (offset + 4 > end()) {
-                    throw new JSONException("unexpected end in 'true'");
+                if (offset + 4 > end()
+                        || ch(offset + 1) != 'r'
+                        || ch(offset + 2) != 'u'
+                        || ch(offset + 3) != 'e') {
+                    throw new JSONException("invalid value at offset " + offset);
                 }
                 offset += 4;
             }
             case 'f' -> {
-                if (offset + 5 > end()) {
-                    throw new JSONException("unexpected end in 'false'");
+                if (offset + 5 > end()
+                        || ch(offset + 1) != 'a'
+                        || ch(offset + 2) != 'l'
+                        || ch(offset + 3) != 's'
+                        || ch(offset + 4) != 'e') {
+                    throw new JSONException("invalid value at offset " + offset);
                 }
                 offset += 5;
             }
             case 'n' -> {
-                if (offset + 4 > end()) {
-                    throw new JSONException("unexpected end in 'null'");
+                if (offset + 4 > end()
+                        || ch(offset + 1) != 'u'
+                        || ch(offset + 2) != 'l'
+                        || ch(offset + 3) != 'l') {
+                    throw new JSONException("invalid value at offset " + offset);
                 }
                 offset += 4;
             }
@@ -843,11 +853,22 @@ public abstract sealed class JSONParser implements Closeable
         if (offset < e && ch(offset) == '-') {
             offset++;
         }
-        while (offset < e && ch(offset) >= '0' && ch(offset) <= '9') {
+        if (offset >= e || ch(offset) < '0' || ch(offset) > '9') {
+            throw new JSONException("invalid number at offset " + offset);
+        }
+        if (ch(offset) == '0') {
             offset++;
+        } else {
+            offset++;
+            while (offset < e && ch(offset) >= '0' && ch(offset) <= '9') {
+                offset++;
+            }
         }
         if (offset < e && ch(offset) == '.') {
             offset++;
+            if (offset >= e || ch(offset) < '0' || ch(offset) > '9') {
+                throw new JSONException("invalid number: expected digit after '.'");
+            }
             while (offset < e && ch(offset) >= '0' && ch(offset) <= '9') {
                 offset++;
             }
@@ -856,6 +877,9 @@ public abstract sealed class JSONParser implements Closeable
             offset++;
             if (offset < e && (ch(offset) == '+' || ch(offset) == '-')) {
                 offset++;
+            }
+            if (offset >= e || ch(offset) < '0' || ch(offset) > '9') {
+                throw new JSONException("invalid number: expected digit in exponent");
             }
             while (offset < e && ch(offset) >= '0' && ch(offset) <= '9') {
                 offset++;

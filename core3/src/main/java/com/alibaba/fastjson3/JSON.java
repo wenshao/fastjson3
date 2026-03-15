@@ -213,9 +213,9 @@ public final class JSON {
             return false;
         }
         try (JSONParser parser = JSONParser.of(json)) {
-            parser.readAny();
+            parser.skipValue();
             return parser.isEnd();
-        } catch (JSONException e) {
+        } catch (JSONException | ArrayIndexOutOfBoundsException e) {
             return false;
         }
     }
@@ -228,11 +228,102 @@ public final class JSON {
             return false;
         }
         try (JSONParser parser = JSONParser.of(jsonBytes)) {
-            parser.readAny();
+            parser.skipValue();
             return parser.isEnd();
-        } catch (JSONException e) {
+        } catch (JSONException | ArrayIndexOutOfBoundsException e) {
             return false;
         }
+    }
+
+    /**
+     * Check if a string is a valid JSON object.
+     */
+    public static boolean isValidObject(String json) {
+        if (json == null || json.isEmpty()) {
+            return false;
+        }
+        if (firstNonWhitespace(json) != '{') {
+            return false;
+        }
+        try (JSONParser parser = JSONParser.of(json)) {
+            parser.skipValue();
+            return parser.isEnd();
+        } catch (JSONException | ArrayIndexOutOfBoundsException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Check if a byte array is a valid JSON object (UTF-8).
+     */
+    public static boolean isValidObject(byte[] jsonBytes) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return false;
+        }
+        if (firstNonWhitespace(jsonBytes) != '{') {
+            return false;
+        }
+        try (JSONParser parser = JSONParser.of(jsonBytes)) {
+            parser.skipValue();
+            return parser.isEnd();
+        } catch (JSONException | ArrayIndexOutOfBoundsException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Check if a string is a valid JSON array.
+     */
+    public static boolean isValidArray(String json) {
+        if (json == null || json.isEmpty()) {
+            return false;
+        }
+        if (firstNonWhitespace(json) != '[') {
+            return false;
+        }
+        try (JSONParser parser = JSONParser.of(json)) {
+            parser.skipValue();
+            return parser.isEnd();
+        } catch (JSONException | ArrayIndexOutOfBoundsException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Check if a byte array is a valid JSON array (UTF-8).
+     */
+    public static boolean isValidArray(byte[] jsonBytes) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return false;
+        }
+        if (firstNonWhitespace(jsonBytes) != '[') {
+            return false;
+        }
+        try (JSONParser parser = JSONParser.of(jsonBytes)) {
+            parser.skipValue();
+            return parser.isEnd();
+        } catch (JSONException | ArrayIndexOutOfBoundsException e) {
+            return false;
+        }
+    }
+
+    private static int firstNonWhitespace(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+                return c;
+            }
+        }
+        return -1;
+    }
+
+    private static int firstNonWhitespace(byte[] bytes) {
+        for (byte b : bytes) {
+            if (b != ' ' && b != '\t' && b != '\n' && b != '\r') {
+                return b & 0xFF;
+            }
+        }
+        return -1;
     }
 
     // ==================== Convenience ====================
