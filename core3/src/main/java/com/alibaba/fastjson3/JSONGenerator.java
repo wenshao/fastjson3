@@ -107,6 +107,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
     protected JSONGenerator(long features) {
         this.features = features;
+        if ((features & WriteFeature.ReferenceDetection.mask) != 0) {
+            this.referenceDetection = true;
+            this.references = new java.util.IdentityHashMap<>();
+        }
     }
 
     /**
@@ -122,7 +126,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
     /**
      * Check and register an object for circular reference detection.
-     * Returns true if this is the first time seeing this object (safe to serialize).
      * Throws JSONException if a circular reference is detected.
      * No-op when reference detection is disabled.
      */
@@ -382,38 +385,47 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
             }
             pushReference(map);
-            startObject();
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                writeName(String.valueOf(entry.getKey()));
-                writeAny(entry.getValue());
+            try {
+                startObject();
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    writeName(String.valueOf(entry.getKey()));
+                    writeAny(entry.getValue());
+                }
+                endObject();
+            } finally {
+                popReference(map);
+                writeDepth--;
             }
-            endObject();
-            popReference(map);
-            writeDepth--;
         } else if (value instanceof Collection<?> coll) {
             if (++writeDepth > MAX_WRITE_DEPTH) {
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
             }
             pushReference(coll);
-            startArray();
-            for (Object item : coll) {
-                writeAny(item);
+            try {
+                startArray();
+                for (Object item : coll) {
+                    writeAny(item);
+                }
+                endArray();
+            } finally {
+                popReference(coll);
+                writeDepth--;
             }
-            endArray();
-            popReference(coll);
-            writeDepth--;
         } else if (value instanceof Object[] arr) {
             if (++writeDepth > MAX_WRITE_DEPTH) {
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
             }
             pushReference(arr);
-            startArray();
-            for (Object item : arr) {
-                writeAny(item);
+            try {
+                startArray();
+                for (Object item : arr) {
+                    writeAny(item);
+                }
+                endArray();
+            } finally {
+                popReference(arr);
+                writeDepth--;
             }
-            endArray();
-            popReference(arr);
-            writeDepth--;
         } else if (value instanceof Enum<?> e) {
             writeString(e.name());
         } else if (value instanceof LocalDateTime ldt) {
