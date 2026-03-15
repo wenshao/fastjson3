@@ -101,8 +101,47 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     public NameFilter[] nameFilters;
     public com.alibaba.fastjson3.filter.LabelFilter labelFilter;
 
+    // Circular reference detection — null when disabled (zero overhead)
+    private java.util.IdentityHashMap<Object, Object> references;
+    private boolean referenceDetection;
+
     protected JSONGenerator(long features) {
         this.features = features;
+    }
+
+    /**
+     * Enable circular reference detection. When enabled, serializing an object
+     * that has already been seen in the current object graph throws JSONException.
+     */
+    public void setReferenceDetection(boolean enabled) {
+        this.referenceDetection = enabled;
+        if (enabled && references == null) {
+            references = new java.util.IdentityHashMap<>();
+        }
+    }
+
+    /**
+     * Check and register an object for circular reference detection.
+     * Returns true if this is the first time seeing this object (safe to serialize).
+     * Throws JSONException if a circular reference is detected.
+     * No-op when reference detection is disabled.
+     */
+    public void pushReference(Object obj) {
+        if (!referenceDetection || obj == null) {
+            return;
+        }
+        if (references.put(obj, Boolean.TRUE) != null) {
+            throw new JSONException("circular reference detected: " + obj.getClass().getName());
+        }
+    }
+
+    /**
+     * Remove an object from the reference tracking set after serialization completes.
+     */
+    public void popReference(Object obj) {
+        if (referenceDetection && obj != null) {
+            references.remove(obj);
+        }
     }
 
     public void setFilters(PropertyFilter[] pf, ValueFilter[] vf, NameFilter[] nf) {
@@ -342,32 +381,38 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (++writeDepth > MAX_WRITE_DEPTH) {
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
             }
+            pushReference(map);
             startObject();
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 writeName(String.valueOf(entry.getKey()));
                 writeAny(entry.getValue());
             }
             endObject();
+            popReference(map);
             writeDepth--;
         } else if (value instanceof Collection<?> coll) {
             if (++writeDepth > MAX_WRITE_DEPTH) {
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
             }
+            pushReference(coll);
             startArray();
             for (Object item : coll) {
                 writeAny(item);
             }
             endArray();
+            popReference(coll);
             writeDepth--;
         } else if (value instanceof Object[] arr) {
             if (++writeDepth > MAX_WRITE_DEPTH) {
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
             }
+            pushReference(arr);
             startArray();
             for (Object item : arr) {
                 writeAny(item);
             }
             endArray();
+            popReference(arr);
             writeDepth--;
         } else if (value instanceof Enum<?> e) {
             writeString(e.name());

@@ -503,7 +503,11 @@ public final class ObjectMapper {
         try (JSONGenerator generator = JSONGenerator.of()) {
             applyFilters(generator);
             writeValue0(generator, obj);
-            return generator.toString();
+            String json = generator.toString();
+            if ((writeFeatures & WriteFeature.PrettyFormat.mask) != 0) {
+                return prettyFormat(json);
+            }
+            return json;
         }
     }
 
@@ -519,6 +523,9 @@ public final class ObjectMapper {
         try (JSONGenerator generator = JSONGenerator.ofUTF8()) {
             applyFilters(generator);
             writeValue0(generator, obj);
+            if ((writeFeatures & WriteFeature.PrettyFormat.mask) != 0) {
+                return prettyFormat(generator.toString()).getBytes(StandardCharsets.UTF_8);
+            }
             return generator.toByteArray();
         }
     }
@@ -771,6 +778,104 @@ public final class ObjectMapper {
         }
     }
 
+    /**
+     * Format compact JSON string with 2-space indentation.
+     * Post-processing approach: zero overhead on the hot serialization path.
+     */
+    static String prettyFormat(String json) {
+        int len = json.length();
+        StringBuilder sb = new StringBuilder(len + (len >> 2));
+        int indent = 0;
+        boolean inString = false;
+
+        for (int i = 0; i < len; i++) {
+            char c = json.charAt(i);
+
+            if (inString) {
+                sb.append(c);
+                if (c == '"' && !isEscaped(json, i)) {
+                    inString = false;
+                }
+                continue;
+            }
+
+            switch (c) {
+                case '"':
+                    sb.append(c);
+                    inString = true;
+                    break;
+                case '{':
+                case '[':
+                    sb.append(c);
+                    // Don't add newline if next non-whitespace char is the matching close
+                    if (i + 1 < len && isMatchingClose(json, i + 1, c)) {
+                        // empty object/array: write close immediately
+                        sb.append(c == '{' ? '}' : ']');
+                        i = skipTo(json, i + 1, c == '{' ? '}' : ']');
+                    } else {
+                        indent++;
+                        sb.append('\n');
+                        appendIndent(sb, indent);
+                    }
+                    break;
+                case '}':
+                case ']':
+                    indent--;
+                    sb.append('\n');
+                    appendIndent(sb, indent);
+                    sb.append(c);
+                    break;
+                case ',':
+                    sb.append(c);
+                    sb.append('\n');
+                    appendIndent(sb, indent);
+                    break;
+                case ':':
+                    sb.append(c);
+                    sb.append(' ');
+                    break;
+                default:
+                    sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static boolean isEscaped(String json, int quoteIndex) {
+        int backslashes = 0;
+        for (int i = quoteIndex - 1; i >= 0 && json.charAt(i) == '\\'; i--) {
+            backslashes++;
+        }
+        return (backslashes & 1) == 1;
+    }
+
+    private static boolean isMatchingClose(String json, int from, char open) {
+        char close = (open == '{') ? '}' : ']';
+        for (int i = from; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                continue;
+            }
+            return c == close;
+        }
+        return false;
+    }
+
+    private static int skipTo(String json, int from, char target) {
+        for (int i = from; i < json.length(); i++) {
+            if (json.charAt(i) == target) {
+                return i;
+            }
+        }
+        return from;
+    }
+
+    private static void appendIndent(StringBuilder sb, int level) {
+        for (int i = 0; i < level; i++) {
+            sb.append("  ");
+        }
+    }
+
     private static boolean isBasicType(Class<?> type) {
         return type == String.class
                 || type == Object.class
@@ -811,6 +916,9 @@ public final class ObjectMapper {
         }
         if (labelFilter != null) {
             generator.labelFilter = labelFilter;
+        }
+        if ((writeFeatures & WriteFeature.ReferenceDetection.mask) != 0) {
+            generator.setReferenceDetection(true);
         }
     }
 
@@ -954,7 +1062,11 @@ public final class ObjectMapper {
             }
             try (JSONGenerator generator = JSONGenerator.of()) {
                 writeValue0(generator, obj);
-                return generator.toString();
+                String json = generator.toString();
+                if ((features & WriteFeature.PrettyFormat.mask) != 0) {
+                    return prettyFormat(json);
+                }
+                return json;
             }
         }
 
@@ -967,6 +1079,9 @@ public final class ObjectMapper {
             }
             try (JSONGenerator generator = JSONGenerator.ofUTF8()) {
                 writeValue0(generator, obj);
+                if ((features & WriteFeature.PrettyFormat.mask) != 0) {
+                    return prettyFormat(generator.toString()).getBytes(StandardCharsets.UTF_8);
+                }
                 return generator.toByteArray();
             }
         }
