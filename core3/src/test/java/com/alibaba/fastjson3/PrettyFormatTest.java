@@ -1,6 +1,5 @@
 package com.alibaba.fastjson3;
 
-import com.alibaba.fastjson3.annotation.JSONField;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;

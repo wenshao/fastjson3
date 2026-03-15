@@ -762,12 +762,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     count--;
                 }
                 if (count > 0 && buf[count - 1] != '{') {
-                    ensureCapacity(count + len + 5);
                     buf[count++] = ',';
-                } else {
-                    ensureCapacity(count + len + 4);
                 }
                 writeNewlineIndent();
+                ensureCapacity(count + len + 4); // after indent, ensure space for name
             } else {
                 ensureCapacity(count + len + 4);
             }
@@ -789,12 +787,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     count--;
                 }
                 if (count > 0 && buf[count - 1] != '{') {
-                    ensureCapacity(count + len + 2);
                     buf[count++] = ',';
-                } else {
-                    ensureCapacity(count + len + 2);
                 }
                 writeNewlineIndent();
+                ensureCapacity(count + len + 1); // after indent, ensure space for name
             } else {
                 ensureCapacity(count + len + 1);
             }
@@ -1736,7 +1732,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeInt32(value);
                 return;
             }
-            // No ensureCapacity — covered by SAFE_MARGIN (2048)
+            ensureCapacity(nameBytesLen + 25);
             int pos;
             if (nameByteLongs != null) {
                 writeName0(nameByteLongs, nameBytesLen);
@@ -1758,7 +1754,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeInt64(value);
                 return;
             }
-            // No ensureCapacity — covered by SAFE_MARGIN (2048)
+            ensureCapacity(nameBytesLen + 25);
             int pos;
             if (nameByteLongs != null) {
                 writeName0(nameByteLongs, nameBytesLen);
@@ -1780,7 +1776,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeDouble(value);
                 return;
             }
-            // No ensureCapacity — covered by SAFE_MARGIN (2048)
+            ensureCapacity(nameBytesLen + 25);
             int pos;
             if (nameByteLongs != null) {
                 writeName0(nameByteLongs, nameBytesLen);
@@ -1802,7 +1798,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeBool(value);
                 return;
             }
-            // No ensureCapacity — covered by SAFE_MARGIN (2048)
+            ensureCapacity(nameBytesLen + 25);
             int pos;
             if (nameByteLongs != null) {
                 writeName0(nameByteLongs, nameBytesLen);
