@@ -28,50 +28,54 @@ import java.nio.charset.StandardCharsets;
  */
 public final class FieldWriter implements Comparable<FieldWriter> {
     // Type tags
-    static final int TYPE_GENERIC = 0;
-    static final int TYPE_STRING = 1;
-    static final int TYPE_INT = 2;
-    static final int TYPE_LONG = 3;
-    static final int TYPE_DOUBLE = 4;
-    static final int TYPE_FLOAT = 5;
-    static final int TYPE_BOOL = 6;
-    static final int TYPE_OBJECT = 7;
-    static final int TYPE_LIST_STRING = 8;
-    static final int TYPE_LIST_OBJECT = 9;
+    public static final int TYPE_GENERIC = 0;
+    public static final int TYPE_STRING = 1;
+    public static final int TYPE_INT = 2;
+    public static final int TYPE_LONG = 3;
+    public static final int TYPE_DOUBLE = 4;
+    public static final int TYPE_FLOAT = 5;
+    public static final int TYPE_BOOL = 6;
+    public static final int TYPE_OBJECT = 7;
+    public static final int TYPE_LIST_STRING = 8;
+    public static final int TYPE_LIST_OBJECT = 9;
+    public static final int TYPE_LONG_ARRAY = 10;
+    public static final int TYPE_INT_ARRAY = 11;
+    public static final int TYPE_STRING_ARRAY = 12;
+    public static final int TYPE_DOUBLE_ARRAY = 13;
 
     final String fieldName;
     final int ordinal;
     final Type fieldType;
-    final Class<?> fieldClass;
+    public final Class<?> fieldClass;
     final Method getter;
     final Field field;
-    final long fieldOffset; // Unsafe field offset, -1 if unavailable
-    final int typeTag;
-    final Inclusion inclusion; // resolved at creation time, DEFAULT = no extra check
+    public final long fieldOffset; // Unsafe field offset, -1 if unavailable
+    public final int typeTag;
+    public final Inclusion inclusion; // resolved at creation time, DEFAULT = no extra check
 
     // Pre-encoded field name token: "fieldName":
-    final char[] nameChars;
-    final byte[] nameBytes;
+    public final char[] nameChars;
+    public final byte[] nameBytes;
     // Pre-encoded as long[] for bulk Unsafe.putLong writes (8 bytes at a time)
-    final long[] nameByteLongs;
-    final int nameBytesLen; // actual byte count (not padded)
+    public final long[] nameByteLongs;
+    public final int nameBytesLen; // actual byte count (not padded)
 
     // For TYPE_OBJECT / TYPE_LIST_OBJECT: cached ObjectWriter + class guard
     private volatile ObjectWriter<Object> cachedWriter;
     private volatile Class<?> cachedWriterClass;
 
     // For TYPE_LIST_STRING / TYPE_LIST_OBJECT: element class
-    final Class<?> elementClass;
+    public final Class<?> elementClass;
 
     // Optional: date/time format pattern + cached formatter
-    final String format;
+    public final String format;
     final java.time.format.DateTimeFormatter formatter;
 
     // Optional: custom ObjectWriter for this field (from @JSONField(serializeUsing=))
-    final ObjectWriter<Object> customWriter;
+    public final ObjectWriter<Object> customWriter;
 
     // Optional: label for view-based filtering (from @JSONField(label=))
-    final String label;
+    public final String label;
 
     // Private constructor — use factory methods
     @SuppressWarnings("unchecked")
@@ -198,6 +202,18 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         if (fieldClass == boolean.class || fieldClass == Boolean.class) {
             return TYPE_BOOL;
+        }
+        if (fieldClass == long[].class) {
+            return TYPE_LONG_ARRAY;
+        }
+        if (fieldClass == int[].class) {
+            return TYPE_INT_ARRAY;
+        }
+        if (fieldClass == String[].class) {
+            return TYPE_STRING_ARRAY;
+        }
+        if (fieldClass == double[].class) {
+            return TYPE_DOUBLE_ARRAY;
         }
         if (!fieldClass.isPrimitive() && !fieldClass.isArray()
                 && fieldClass != Object.class
@@ -391,6 +407,10 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             case TYPE_OBJECT -> writeObject(generator, bean, features);
             case TYPE_LIST_STRING -> writeListString(generator, bean, features);
             case TYPE_LIST_OBJECT -> writeListObject(generator, bean, features);
+            case TYPE_LONG_ARRAY -> writeLongArray(generator, bean, features);
+            case TYPE_INT_ARRAY -> writeIntArray(generator, bean, features);
+            case TYPE_STRING_ARRAY -> writeStringArray(generator, bean, features);
+            case TYPE_DOUBLE_ARRAY -> writeDoubleArray(generator, bean, features);
             default -> writeGeneric(generator, bean, features);
         }
     }
@@ -425,17 +445,15 @@ public final class FieldWriter implements Comparable<FieldWriter> {
 
     private void writeLong(JSONGenerator generator, Object bean, long features) {
         if (fieldOffset >= 0 && fieldClass == long.class) {
-            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-            long v = JDKUtils.getLongField(bean, fieldOffset);
-            generator.writeInt64(v);
+            generator.writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars,
+                    JDKUtils.getLongField(bean, fieldOffset));
         } else {
             Object value = getObjectValue(bean);
             if (value == null) {
                 writeNull(generator, features);
                 return;
             }
-            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-            generator.writeInt64((Long) value);
+            generator.writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars, (Long) value);
         }
     }
 
@@ -550,6 +568,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         generator.startArray();
         for (int i = 0, size = list.size(); i < size; i++) {
+            generator.beforeArrayValue();
             String s = (String) list.get(i);
             if (s == null) {
                 generator.writeNull();
@@ -583,6 +602,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 }
             }
             for (int i = 0, size = list.size(); i < size; i++) {
+                generator.beforeArrayValue();
                 Object item = list.get(i);
                 if (item == null) {
                     generator.writeNull();
@@ -596,6 +616,46 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         } finally {
             generator.popReference(list);
         }
+    }
+
+    private void writeLongArray(JSONGenerator generator, Object bean, long features) {
+        long[] value = (long[]) getObjectValue(bean);
+        if (value == null) {
+            writeNull(generator, features);
+            return;
+        }
+        generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+        generator.writeLongArray(value);
+    }
+
+    private void writeIntArray(JSONGenerator generator, Object bean, long features) {
+        int[] value = (int[]) getObjectValue(bean);
+        if (value == null) {
+            writeNull(generator, features);
+            return;
+        }
+        generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+        generator.writeIntArray(value);
+    }
+
+    private void writeStringArray(JSONGenerator generator, Object bean, long features) {
+        String[] value = (String[]) getObjectValue(bean);
+        if (value == null) {
+            writeNull(generator, features);
+            return;
+        }
+        generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+        generator.writeStringArray(value);
+    }
+
+    private void writeDoubleArray(JSONGenerator generator, Object bean, long features) {
+        double[] value = (double[]) getObjectValue(bean);
+        if (value == null) {
+            writeNull(generator, features);
+            return;
+        }
+        generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+        generator.writeDoubleArray(value);
     }
 
     private void writeGeneric(JSONGenerator generator, Object bean, long features) {

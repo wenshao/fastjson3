@@ -500,7 +500,7 @@ public final class ObjectMapper {
         if (obj == null) {
             return "null";
         }
-        try (JSONGenerator generator = JSONGenerator.of()) {
+        try (JSONGenerator generator = createCharGenerator()) {
             applyFilters(generator);
             writeValue0(generator, obj);
             String json = generator.toString();
@@ -520,7 +520,7 @@ public final class ObjectMapper {
         if (obj == null) {
             return "null".getBytes(StandardCharsets.UTF_8);
         }
-        try (JSONGenerator generator = JSONGenerator.ofUTF8()) {
+        try (JSONGenerator generator = createUTF8Generator()) {
             applyFilters(generator);
             writeValue0(generator, obj);
             if ((writeFeatures & WriteFeature.PrettyFormat.mask) != 0) {
@@ -910,6 +910,20 @@ public final class ObjectMapper {
         return nameFilters;
     }
 
+    private JSONGenerator createCharGenerator() {
+        if (writeFeatures != 0) {
+            return new JSONGenerator.Char(writeFeatures);
+        }
+        return JSONGenerator.of();
+    }
+
+    private JSONGenerator createUTF8Generator() {
+        if (writeFeatures != 0) {
+            return new JSONGenerator.UTF8(writeFeatures);
+        }
+        return JSONGenerator.ofUTF8();
+    }
+
     private void applyFilters(JSONGenerator generator) {
         if (propertyFilters.length > 0 || valueFilters.length > 0 || nameFilters.length > 0) {
             generator.setFilters(propertyFilters, valueFilters, nameFilters);
@@ -1060,7 +1074,7 @@ public final class ObjectMapper {
             if (obj == null) {
                 return "null";
             }
-            try (JSONGenerator generator = JSONGenerator.of(WriteFeature.valuesFrom(features))) {
+            try (JSONGenerator generator = features != 0 ? new JSONGenerator.Char(features) : JSONGenerator.of()) {
                 writeValue0(generator, obj);
                 String json = generator.toString();
                 if ((features & WriteFeature.PrettyFormat.mask) != 0) {
@@ -1077,7 +1091,7 @@ public final class ObjectMapper {
             if (obj == null) {
                 return "null".getBytes(StandardCharsets.UTF_8);
             }
-            try (JSONGenerator generator = JSONGenerator.ofUTF8(WriteFeature.valuesFrom(features))) {
+            try (JSONGenerator generator = features != 0 ? new JSONGenerator.UTF8(features) : JSONGenerator.ofUTF8()) {
                 writeValue0(generator, obj);
                 if ((features & WriteFeature.PrettyFormat.mask) != 0) {
                     return prettyFormat(generator.toString()).getBytes(StandardCharsets.UTF_8);

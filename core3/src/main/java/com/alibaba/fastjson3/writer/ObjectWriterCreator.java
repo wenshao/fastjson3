@@ -458,44 +458,69 @@ public final class ObjectWriterCreator {
 
     @SuppressWarnings("unchecked")
     private static <T> ObjectWriter<T> buildObjectWriter(FieldWriter[] writers, Method anyGetterMethod) {
+        if (anyGetterMethod == null) {
+            // Concrete final class — JIT can devirtualize + inline write() for nested objects
+            return (ObjectWriter<T>) new ReflectObjectWriter(writers);
+        }
+        // Lambda fallback for anyGetter (rare)
         return (generator, object, fieldName, fieldType, features) -> {
             generator.startObject();
-            if (generator.hasFilters() || generator.labelFilter != null) {
-                com.alibaba.fastjson3.filter.LabelFilter lf = generator.labelFilter;
-                for (FieldWriter fw : writers) {
-                    if (lf != null && fw.label != null && !lf.apply(fw.label)) {
-                        continue;
-                    }
-                    if (generator.hasFilters()) {
-                        fw.writeFieldFiltered(generator, object, features,
-                                generator.propertyFilters, generator.valueFilters, generator.nameFilters);
-                    } else {
-                        fw.writeField(generator, object, features);
+            writeFields(generator, writers, object, features);
+            try {
+                java.util.Map<?, ?> extra = (java.util.Map<?, ?>) anyGetterMethod.invoke(object);
+                if (extra != null) {
+                    for (java.util.Map.Entry<?, ?> e : extra.entrySet()) {
+                        generator.writeName(String.valueOf(e.getKey()));
+                        generator.writeAny(e.getValue());
                     }
                 }
-            } else {
-                for (FieldWriter fw : writers) {
-                    fw.writeField(generator, object, features);
-                }
-            }
-            // anyGetter: append Map entries after regular fields
-            if (anyGetterMethod != null) {
-                try {
-                    java.util.Map<?, ?> extra = (java.util.Map<?, ?>) anyGetterMethod.invoke(object);
-                    if (extra != null) {
-                        for (java.util.Map.Entry<?, ?> e : extra.entrySet()) {
-                            generator.writeName(String.valueOf(e.getKey()));
-                            generator.writeAny(e.getValue());
-                        }
-                    }
-                } catch (java.lang.reflect.InvocationTargetException e) {
-                    throw new com.alibaba.fastjson3.JSONException("anyGetter error", e.getTargetException());
-                } catch (Exception e) {
-                    throw new com.alibaba.fastjson3.JSONException("anyGetter error", e);
-                }
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                throw new com.alibaba.fastjson3.JSONException("anyGetter error", e.getTargetException());
+            } catch (Exception e) {
+                throw new com.alibaba.fastjson3.JSONException("anyGetter error", e);
             }
             generator.endObject();
         };
+    }
+
+    static void writeFields(com.alibaba.fastjson3.JSONGenerator generator, FieldWriter[] writers, Object object, long features) {
+        if (generator.hasFilters() || generator.labelFilter != null) {
+            com.alibaba.fastjson3.filter.LabelFilter lf = generator.labelFilter;
+            for (FieldWriter fw : writers) {
+                if (lf != null && fw.label != null && !lf.apply(fw.label)) continue;
+                if (generator.hasFilters()) {
+                    fw.writeFieldFiltered(generator, object, features,
+                            generator.propertyFilters, generator.valueFilters, generator.nameFilters);
+                } else {
+                    fw.writeField(generator, object, features);
+                }
+            }
+        } else {
+            for (FieldWriter fw : writers) {
+                fw.writeField(generator, object, features);
+            }
+        }
+    }
+
+    /**
+     * Concrete ObjectWriter for reflection-created POJOs.
+     * Using a final class (not lambda) enables JIT to devirtualize the write() call
+     * at megamorphic call sites (e.g., FieldWriter.writeListObject's elemWriter.write loop).
+     */
+    static final class ReflectObjectWriter implements com.alibaba.fastjson3.ObjectWriter<Object> {
+        final FieldWriter[] writers;
+
+        ReflectObjectWriter(FieldWriter[] writers) {
+            this.writers = writers;
+        }
+
+        @Override
+        public void write(com.alibaba.fastjson3.JSONGenerator generator, Object object,
+                          Object fieldName, java.lang.reflect.Type fieldType, long features) {
+            generator.startObject();
+            writeFields(generator, writers, object, features);
+            generator.endObject();
+        }
     }
 
     /**

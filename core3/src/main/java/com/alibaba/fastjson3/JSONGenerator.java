@@ -91,9 +91,32 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
     static final int MAX_WRITE_DEPTH = 512;
 
+    // Pre-computed indent tables for pretty format (2 spaces per level)
+    static final int MAX_INDENT_LEVEL = 32;
+    static final byte[][] INDENT_BYTES_TABLE = new byte[MAX_INDENT_LEVEL][];
+    static final char[][] INDENT_CHARS_TABLE = new char[MAX_INDENT_LEVEL][];
+
+    static {
+        for (int i = 0; i < MAX_INDENT_LEVEL; i++) {
+            int len = 1 + 2 * i;
+            byte[] b = new byte[len];
+            char[] c = new char[len];
+            b[0] = '\n';
+            c[0] = '\n';
+            for (int j = 1; j < len; j++) {
+                b[j] = ' ';
+                c[j] = ' ';
+            }
+            INDENT_BYTES_TABLE[i] = b;
+            INDENT_CHARS_TABLE[i] = c;
+        }
+    }
+
     protected final long features;
     protected int count;
     protected int writeDepth;
+    protected final boolean pretty;
+    protected int indentLevel;
 
     // Filters — null when no filters configured (zero overhead)
     public PropertyFilter[] propertyFilters;
@@ -107,6 +130,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
     protected JSONGenerator(long features) {
         this.features = features;
+        this.pretty = (features & WriteFeature.PrettyFormat.mask) != 0;
         if ((features & WriteFeature.ReferenceDetection.mask) != 0) {
             this.referenceDetection = true;
             this.references = new java.util.IdentityHashMap<>();
@@ -145,6 +169,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         if (referenceDetection && obj != null) {
             references.remove(obj);
         }
+    }
+
+    /**
+     * Called before each element in an array for pretty-format indentation.
+     * No-op when PrettyFormat is not enabled (zero overhead).
+     */
+    public void beforeArrayValue() {
+        // overridden by subclasses
     }
 
     public void setFilters(PropertyFilter[] pf, ValueFilter[] vf, NameFilter[] nf) {
@@ -244,9 +276,57 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         writeDouble(value);
     }
 
+    public void writeNameInt64(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+        writePreEncodedName(nameChars, nameBytes);
+        writeInt64(value);
+    }
+
     public void writeNameBool(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
         writePreEncodedName(nameChars, nameBytes);
         writeBool(value);
+    }
+
+    // ---- Array writers (avoid writeAny dispatch per element) ----
+
+    public void writeLongArray(long[] arr) {
+        startArray();
+        for (int i = 0, len = arr.length; i < len; i++) {
+            beforeArrayValue();
+            writeInt64(arr[i]);
+        }
+        endArray();
+    }
+
+    public void writeIntArray(int[] arr) {
+        startArray();
+        for (int i = 0, len = arr.length; i < len; i++) {
+            beforeArrayValue();
+            writeInt32(arr[i]);
+        }
+        endArray();
+    }
+
+    public void writeDoubleArray(double[] arr) {
+        startArray();
+        for (int i = 0, len = arr.length; i < len; i++) {
+            beforeArrayValue();
+            writeDouble(arr[i]);
+        }
+        endArray();
+    }
+
+    public void writeStringArray(String[] arr) {
+        startArray();
+        for (int i = 0, len = arr.length; i < len; i++) {
+            beforeArrayValue();
+            String s = arr[i];
+            if (s == null) {
+                writeNull();
+            } else {
+                writeString(s);
+            }
+        }
+        endArray();
     }
 
     // ---- Value writers ----
@@ -367,13 +447,50 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         } else if (value instanceof AtomicIntegerArray aia) {
             startArray();
             for (int i = 0, len = aia.length(); i < len; i++) {
+                beforeArrayValue();
                 writeInt32(aia.get(i));
             }
             endArray();
         } else if (value instanceof AtomicLongArray ala) {
             startArray();
             for (int i = 0, len = ala.length(); i < len; i++) {
+                beforeArrayValue();
                 writeInt64(ala.get(i));
+            }
+            endArray();
+        } else if (value instanceof long[] la) {
+            writeLongArray(la);
+        } else if (value instanceof int[] ia) {
+            writeIntArray(ia);
+        } else if (value instanceof double[] da) {
+            writeDoubleArray(da);
+        } else if (value instanceof boolean[] ba) {
+            startArray();
+            for (int i = 0, len = ba.length; i < len; i++) {
+                beforeArrayValue();
+                writeBool(ba[i]);
+            }
+            endArray();
+        } else if (value instanceof float[] fa) {
+            startArray();
+            for (int i = 0, len = fa.length; i < len; i++) {
+                beforeArrayValue();
+                writeFloat(fa[i]);
+            }
+            endArray();
+        } else if (value instanceof short[] sa) {
+            startArray();
+            for (int i = 0, len = sa.length; i < len; i++) {
+                beforeArrayValue();
+                writeInt32(sa[i]);
+            }
+            endArray();
+        } else if (value instanceof byte[] ba) {
+            // byte[] as JSON array of ints
+            startArray();
+            for (int i = 0, len = ba.length; i < len; i++) {
+                beforeArrayValue();
+                writeInt32(ba[i]);
             }
             endArray();
         } else if (value instanceof JSONObject) {
@@ -404,6 +521,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 pushReference(coll);
                 startArray();
                 for (Object item : coll) {
+                    beforeArrayValue();
                     writeAny(item);
                 }
                 endArray();
@@ -419,6 +537,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 pushReference(arr);
                 startArray();
                 for (Object item : arr) {
+                    beforeArrayValue();
                     writeAny(item);
                 }
                 endArray();
@@ -480,6 +599,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             pushReference(arr);
             startArray();
             for (int i = 0, size = arr.size(); i < size; i++) {
+                beforeArrayValue();
                 writeAny(arr.get(i));
             }
             endArray();
@@ -534,56 +654,155 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             }
         }
 
+        private void writeNewlineIndent() {
+            int level = indentLevel;
+            if (level < MAX_INDENT_LEVEL) {
+                char[] indent = INDENT_CHARS_TABLE[level];
+                ensureCapacity(count + indent.length);
+                System.arraycopy(indent, 0, buf, count, indent.length);
+                count += indent.length;
+            } else {
+                int len = 1 + 2 * level;
+                ensureCapacity(count + len);
+                buf[count++] = '\n';
+                for (int i = 0; i < level; i++) {
+                    buf[count++] = ' ';
+                    buf[count++] = ' ';
+                }
+            }
+        }
+
+        @Override
+        public void beforeArrayValue() {
+            if (pretty) {
+                writeNewlineIndent();
+            }
+        }
+
         @Override
         public void startObject() {
             ensureCapacity(count + 1);
             buf[count++] = '{';
+            if (pretty) {
+                indentLevel++;
+            }
         }
 
         @Override
         public void endObject() {
-            // remove trailing comma if present
-            if (count > 0 && buf[count - 1] == ',') {
-                count--;
+            if (pretty) {
+                indentLevel--;
+                if (count > 0 && buf[count - 1] == '{') {
+                    // empty object: {}
+                    ensureCapacity(count + 2);
+                    buf[count++] = '}';
+                    buf[count++] = ',';
+                    return;
+                }
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                writeNewlineIndent();
+                ensureCapacity(count + 2);
+                buf[count++] = '}';
+                buf[count++] = ',';
+            } else {
+                // remove trailing comma if present
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                ensureCapacity(count + 2);
+                buf[count++] = '}';
+                buf[count++] = ',';
             }
-            ensureCapacity(count + 2);
-            buf[count++] = '}';
-            buf[count++] = ',';
         }
 
         @Override
         public void startArray() {
             ensureCapacity(count + 1);
             buf[count++] = '[';
+            if (pretty) {
+                indentLevel++;
+            }
         }
 
         @Override
         public void endArray() {
-            if (count > 0 && buf[count - 1] == ',') {
-                count--;
+            if (pretty) {
+                indentLevel--;
+                if (count > 0 && buf[count - 1] == '[') {
+                    // empty array: []
+                    ensureCapacity(count + 2);
+                    buf[count++] = ']';
+                    buf[count++] = ',';
+                    return;
+                }
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                writeNewlineIndent();
+                ensureCapacity(count + 2);
+                buf[count++] = ']';
+                buf[count++] = ',';
+            } else {
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                ensureCapacity(count + 2);
+                buf[count++] = ']';
+                buf[count++] = ',';
             }
-            ensureCapacity(count + 2);
-            buf[count++] = ']';
-            buf[count++] = ',';
         }
 
         @Override
         public void writeName(String name) {
             int len = name.length();
-            ensureCapacity(count + len + 3);
+            if (pretty) {
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                if (count > 0 && buf[count - 1] != '{') {
+                    ensureCapacity(count + len + 5);
+                    buf[count++] = ',';
+                } else {
+                    ensureCapacity(count + len + 4);
+                }
+                writeNewlineIndent();
+            } else {
+                ensureCapacity(count + len + 4);
+            }
             buf[count++] = '"';
             name.getChars(0, len, buf, count);
             count += len;
             buf[count++] = '"';
             buf[count++] = ':';
+            if (pretty) {
+                buf[count++] = ' ';
+            }
         }
 
         @Override
         public void writePreEncodedName(char[] nameChars, byte[] nameBytes) {
             int len = nameChars.length;
-            ensureCapacity(count + len);
+            if (pretty) {
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                if (count > 0 && buf[count - 1] != '{') {
+                    ensureCapacity(count + len + 2);
+                    buf[count++] = ',';
+                } else {
+                    ensureCapacity(count + len + 2);
+                }
+                writeNewlineIndent();
+            } else {
+                ensureCapacity(count + len + 1);
+            }
             System.arraycopy(nameChars, 0, buf, count, len);
             count += len;
+            if (pretty) {
+                buf[count++] = ' ';
+            }
         }
 
         @Override
@@ -694,7 +913,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             int len = val.length();
-            ensureCapacity(count + len * 6 + 3); // worst case: all chars escaped as \\uNNNN
+            ensureCapacity(count + len * 6 + 3); // worst case: all chars escaped as \\uNNNN + comma
             buf[count++] = '"';
             for (int i = 0; i < len; i++) {
                 char ch = val.charAt(i);
@@ -731,7 +950,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         }
 
         private int outputCount() {
-            // Strip trailing comma from root-level output
             int c = count;
             if (c > 0 && buf[c - 1] == ',') {
                 c--;
@@ -831,7 +1049,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     }
 
     public static final class UTF8 extends JSONGenerator {
-        // Safety margin: after ensureCapacity, we can write this many bytes without checking
         static final int SAFE_MARGIN = 512;
 
         private byte[] buf;
@@ -853,39 +1070,113 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             }
         }
 
+        private void writeNewlineIndent() {
+            int level = indentLevel;
+            int len = 1 + 2 * level;
+            ensureCapacity(len);
+            if (level < MAX_INDENT_LEVEL) {
+                byte[] indent = INDENT_BYTES_TABLE[level];
+                System.arraycopy(indent, 0, buf, count, indent.length);
+                count += indent.length;
+            } else {
+                buf[count++] = '\n';
+                for (int i = 0; i < level; i++) {
+                    buf[count++] = ' ';
+                    buf[count++] = ' ';
+                }
+            }
+        }
+
+        @Override
+        public void beforeArrayValue() {
+            if (pretty) {
+                writeNewlineIndent();
+            }
+        }
+
         // Small token write — no capacity check (covered by SAFE_MARGIN)
         @Override
         public void startObject() {
             buf[count++] = '{';
+            if (pretty) {
+                indentLevel++;
+            }
         }
 
         @Override
         public void endObject() {
-            if (count > 0 && buf[count - 1] == ',') {
-                count--;
+            if (pretty) {
+                indentLevel--;
+                if (count > 0 && buf[count - 1] == '{') {
+                    buf[count++] = '}';
+                    buf[count++] = ',';
+                    return;
+                }
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                writeNewlineIndent();
+                buf[count++] = '}';
+                buf[count++] = ',';
+            } else {
+                // Original pattern: strip trailing comma, write }, write ,
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                buf[count++] = '}';
+                buf[count++] = ',';
             }
-            buf[count++] = '}';
-            buf[count++] = ',';
         }
 
         @Override
         public void startArray() {
             buf[count++] = '[';
+            if (pretty) {
+                indentLevel++;
+            }
         }
 
         @Override
         public void endArray() {
-            if (count > 0 && buf[count - 1] == ',') {
-                count--;
+            if (pretty) {
+                indentLevel--;
+                if (count > 0 && buf[count - 1] == '[') {
+                    buf[count++] = ']';
+                    buf[count++] = ',';
+                    return;
+                }
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                writeNewlineIndent();
+                buf[count++] = ']';
+                buf[count++] = ',';
+            } else {
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                buf[count++] = ']';
+                buf[count++] = ',';
             }
-            buf[count++] = ']';
-            buf[count++] = ',';
         }
 
         @Override
         public void writeName(String name) {
             int len = name.length();
-            ensureCapacity(len * 4 + 3);
+            if (pretty) {
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                if (count > 0 && buf[count - 1] != '{') {
+                    ensureCapacity(len * 4 + 5);
+                    buf[count++] = ',';
+                } else {
+                    ensureCapacity(len * 4 + 4);
+                }
+                writeNewlineIndent();
+            } else {
+                ensureCapacity(len * 4 + 4);
+            }
             buf[count++] = '"';
             for (int i = 0; i < len; i++) {
                 char ch = name.charAt(i);
@@ -914,18 +1205,41 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             }
             buf[count++] = '"';
             buf[count++] = ':';
+            if (pretty) {
+                buf[count++] = ' ';
+            }
         }
 
         @Override
         public void writePreEncodedName(char[] nameChars, byte[] nameBytes) {
             int len = nameBytes.length;
-            ensureCapacity(len);
+            if (pretty) {
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
+                if (count > 0 && buf[count - 1] != '{') {
+                    ensureCapacity(len + 2);
+                    buf[count++] = ',';
+                } else {
+                    ensureCapacity(len + 2);
+                }
+                writeNewlineIndent();
+            } else {
+                ensureCapacity(len + 1);
+            }
             System.arraycopy(nameBytes, 0, buf, count, len);
             count += len;
+            if (pretty) {
+                buf[count++] = ' ';
+            }
         }
 
         @Override
         public void writePreEncodedNameLongs(long[] nameByteLongs, int nameBytesLen, char[] nameChars, byte[] nameBytes) {
+            if (pretty) {
+                writePreEncodedName(nameChars, nameBytes);
+                return;
+            }
             if (nameByteLongs != null) {
                 ensureCapacity(nameBytesLen);
                 int pos = count;
@@ -942,8 +1256,18 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         /**
          * Write long[] name bytes without ensureCapacity (caller must guarantee space).
          * Unrolled for common field name lengths (1-4 longs = up to 32 bytes).
+         * Updates count field directly.
          */
         private void writeNameLongsNoCheck(long[] nameByteLongs, int nameBytesLen) {
+            writeName0(nameByteLongs, nameBytesLen);
+            count += nameBytesLen;
+        }
+
+        /**
+         * Write name longs to buf at current count position without updating count.
+         * Used by fused methods that manage count as a local variable.
+         */
+        private void writeName0(long[] nameByteLongs, int nameBytesLen) {
             int pos = count;
             switch (nameByteLongs.length) {
                 case 1:
@@ -964,7 +1288,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     }
                     break;
             }
-            count += nameBytesLen;
         }
 
         // Small token writes — no capacity check (within SAFE_MARGIN)
@@ -1036,14 +1359,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeInt32(int val) {
-            // max 11 digits + comma = 12, within SAFE_MARGIN
+            // max 11 digits, within SAFE_MARGIN
             count += writeIntToBytes(val, buf, count);
             buf[count++] = ',';
         }
 
         @Override
         public void writeInt64(long val) {
-            // max 20 digits + comma = 21, within SAFE_MARGIN
+            // max 20 digits, within SAFE_MARGIN
             count += writeLongToBytes(val, buf, count);
             buf[count++] = ',';
         }
@@ -1102,7 +1425,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
          * Fast path: if all bytes > '"' and none are '\\', return true immediately (3 ops).
          * Full path: complete check for control chars and '"' (wast-style).
          */
-        static boolean noEscape8(long v) {
+        public static boolean noEscape8(long v) {
             long hiMask = 0x8080808080808080L;
             long lo = 0x0101010101010101L;
             // Check '\\' (0x5C): XOR with 0xA3 (complement) + add 0x01, high bit set if NOT '\\'
@@ -1129,7 +1452,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         /**
          * Check 4 bytes (as an int) for JSON escape characters.
          */
-        static boolean noEscape4(int v) {
+        public static boolean noEscape4(int v) {
             int hiMask = 0x80808080;
             int lo = 0x01010101;
             int ctrl = (v - 0x20202020) & ~v & hiMask;
@@ -1150,15 +1473,25 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
             if (JDKUtils.UNSAFE_AVAILABLE && len > 0) {
                 int i = 0;
-                // Check-and-copy 8 bytes at a time
-                int limit8 = len - 7;
-                for (; i < limit8; i += 8) {
-                    long v = JDKUtils.getLongDirect(value, i);
-                    if (noEscape8(v)) {
-                        JDKUtils.putLongDirect(buf, pos, v);
+                // Check-and-copy 16 bytes at a time (2 longs)
+                int limit16 = len - 15;
+                for (; i < limit16; i += 16) {
+                    long v1 = JDKUtils.getLongDirect(value, i);
+                    long v2 = JDKUtils.getLongDirect(value, i + 8);
+                    if (noEscape8(v1) && noEscape8(v2)) {
+                        JDKUtils.putLongDirect(buf, pos, v1);
+                        JDKUtils.putLongDirect(buf, pos + 8, v2);
+                        pos += 16;
+                    } else if (noEscape8(v1)) {
+                        JDKUtils.putLongDirect(buf, pos, v1);
                         pos += 8;
+                        // Second 8 bytes have escape — fall to byte-by-byte
+                        pos = writeEscapedBytes(value, i + 8, len, pos);
+                        buf[pos++] = '"';
+                        buf[pos++] = ',';
+                        count = pos;
+                        return;
                     } else {
-                        // Escape found — switch to byte-by-byte for remainder
                         pos = writeEscapedBytes(value, i, len, pos);
                         buf[pos++] = '"';
                         buf[pos++] = ',';
@@ -1166,7 +1499,16 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         return;
                     }
                 }
-                // Remaining 1-7 bytes: use noEscape4 for 4-byte chunk, then individual
+                // Remaining 8-15 bytes: 8-byte chunk
+                if (i + 8 <= len) {
+                    long v = JDKUtils.getLongDirect(value, i);
+                    if (noEscape8(v)) {
+                        JDKUtils.putLongDirect(buf, pos, v);
+                        pos += 8;
+                        i += 8;
+                    }
+                }
+                // Remaining 4-7 bytes: 4-byte chunk
                 if (i + 4 <= len) {
                     int v4 = JDKUtils.getIntDirect(value, i);
                     if (noEscape4(v4)) {
@@ -1241,7 +1583,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
             if (JDKUtils.getStringCoder(val) == 0) {
                 byte[] value = (byte[]) JDKUtils.getStringValue(val);
-                writeLatinString(value, value.length);
+                // Inline writeLatinString: eliminates 1 method call level for list string elements
+                ensureCapacity(value.length * 6 + 3);
+                writeLatinStringNoCapCheck(value, value.length);
                 return;
             }
 
@@ -1297,7 +1641,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeLocalDate(LocalDate val) {
-            // "yyyy-MM-dd", = 12 + 1 bytes
+            // "yyyy-MM-dd" = 12 bytes + comma
             ensureCapacity(13);
             int pos = count;
             buf[pos++] = '"';
@@ -1309,8 +1653,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeLocalDateTime(LocalDateTime val) {
-            // "yyyy-MM-ddTHH:mm:ss.SSSSSSSSS", = max 32 bytes
-            ensureCapacity(34);
+            // "yyyy-MM-ddTHH:mm:ss.SSSSSSSSS" = max 32 bytes + comma
+            ensureCapacity(33);
             int pos = count;
             buf[pos++] = '"';
             pos += com.alibaba.fastjson3.util.DateUtils.writeLocalDateTime(buf, pos, val);
@@ -1321,7 +1665,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeLocalTime(LocalTime val) {
-            // "HH:mm:ss.SSSSSSSSS", = max 21 bytes
+            // "HH:mm:ss.SSSSSSSSS" = max 21 bytes + comma
             ensureCapacity(22);
             int pos = count;
             buf[pos++] = '"';
@@ -1337,8 +1681,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeInstant(Instant val) {
-            // "yyyy-MM-ddTHH:mm:ss.SSSSSSSSSZ", = max 34 bytes
-            ensureCapacity(36);
+            // "yyyy-MM-ddTHH:mm:ss.SSSSSSSSSZ" = max 34 bytes + comma
+            ensureCapacity(35);
             int pos = count;
             buf[pos++] = '"';
             LocalDateTime ldt = LocalDateTime.ofInstant(val, java.time.ZoneOffset.UTC);
@@ -1351,13 +1695,19 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameString(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
+            if (pretty) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeString(value);
+                return;
+            }
             // Fast path: Latin-1 string (covers >99% of cases on JDK 9+)
             if (JDKUtils.getStringCoder(value) == 0) {
                 byte[] valBytes = (byte[]) JDKUtils.getStringValue(value);
                 int valLen = valBytes.length;
                 ensureCapacity(nameBytesLen + valLen * 6 + 3);
                 if (nameByteLongs != null) {
-                    writeNameLongsNoCheck(nameByteLongs, nameBytesLen);
+                    writeName0(nameByteLongs, nameBytesLen);
+                    count += nameBytesLen;
                 } else {
                     System.arraycopy(nameBytes, 0, buf, count, nameBytesLen);
                     count += nameBytesLen;
@@ -1369,7 +1719,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             // Fallback for UTF-16 strings
             if (nameByteLongs != null) {
                 ensureCapacity(nameBytesLen);
-                writeNameLongsNoCheck(nameByteLongs, nameBytesLen);
+                writeName0(nameByteLongs, nameBytesLen);
+                count += nameBytesLen;
             } else {
                 ensureCapacity(nameBytesLen);
                 System.arraycopy(nameBytes, 0, buf, count, nameBytesLen);
@@ -1380,49 +1731,105 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt32(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
-            // name(N) + int(max 11) + comma(1) — all within single ensureCapacity
-            ensureCapacity(nameBytesLen + 12);
-            if (nameByteLongs != null) {
-                writeNameLongsNoCheck(nameByteLongs, nameBytesLen);
-            } else {
-                System.arraycopy(nameBytes, 0, buf, count, nameBytesLen);
-                count += nameBytesLen;
+            if (pretty) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeInt32(value);
+                return;
             }
-            int pos = count;
+            // No ensureCapacity — covered by SAFE_MARGIN (2048)
+            int pos;
+            if (nameByteLongs != null) {
+                writeName0(nameByteLongs, nameBytesLen);
+                pos = count + nameBytesLen;
+            } else {
+                pos = count;
+                System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+                pos += nameBytesLen;
+            }
             pos += writeIntToBytes(value, buf, pos);
             buf[pos++] = ',';
             count = pos;
         }
 
         @Override
-        public void writeNameDouble(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
-            // Direct double-to-bytes: avoid Double.toString() String allocation
-            ensureCapacity(nameBytesLen + 25);
-            if (nameByteLongs != null) {
-                writeNameLongsNoCheck(nameByteLongs, nameBytesLen);
-            } else {
-                System.arraycopy(nameBytes, 0, buf, count, nameBytesLen);
-                count += nameBytesLen;
+        public void writeNameInt64(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+            if (pretty) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeInt64(value);
+                return;
             }
-            count = com.alibaba.fastjson3.util.NumberUtils.writeDouble(buf, count, value, true, false);
-            buf[count++] = ',';
+            // No ensureCapacity — covered by SAFE_MARGIN (2048)
+            int pos;
+            if (nameByteLongs != null) {
+                writeName0(nameByteLongs, nameBytesLen);
+                pos = count + nameBytesLen;
+            } else {
+                pos = count;
+                System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+                pos += nameBytesLen;
+            }
+            pos += writeLongToBytes(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameDouble(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
+            if (pretty) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeDouble(value);
+                return;
+            }
+            // No ensureCapacity — covered by SAFE_MARGIN (2048)
+            int pos;
+            if (nameByteLongs != null) {
+                writeName0(nameByteLongs, nameBytesLen);
+                pos = count + nameBytesLen;
+            } else {
+                pos = count;
+                System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+                pos += nameBytesLen;
+            }
+            pos = com.alibaba.fastjson3.util.NumberUtils.writeDouble(buf, pos, value, true, false);
+            buf[pos++] = ',';
+            count = pos;
         }
 
         @Override
         public void writeNameBool(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
-            // name(N) + true/false(5) + comma(1) — single ensureCapacity
-            ensureCapacity(nameBytesLen + 6);
+            if (pretty) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeBool(value);
+                return;
+            }
+            // No ensureCapacity — covered by SAFE_MARGIN (2048)
+            int pos;
             if (nameByteLongs != null) {
-                writeNameLongsNoCheck(nameByteLongs, nameBytesLen);
+                writeName0(nameByteLongs, nameBytesLen);
+                pos = count + nameBytesLen;
             } else {
-                System.arraycopy(nameBytes, 0, buf, count, nameBytesLen);
-                count += nameBytesLen;
+                pos = count;
+                System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+                pos += nameBytesLen;
             }
-            if (value) {
-                writeTrue();
+            if (JDKUtils.UNSAFE_AVAILABLE) {
+                if (value) {
+                    JDKUtils.putIntDirect(buf, pos, TRUE_INT);
+                    pos += 4;
+                } else {
+                    JDKUtils.putIntDirect(buf, pos, FALS_INT);
+                    pos += 4;
+                    buf[pos++] = 'e';
+                }
             } else {
-                writeFalse();
+                if (value) {
+                    buf[pos++] = 't'; buf[pos++] = 'r'; buf[pos++] = 'u'; buf[pos++] = 'e';
+                } else {
+                    buf[pos++] = 'f'; buf[pos++] = 'a'; buf[pos++] = 'l'; buf[pos++] = 's'; buf[pos++] = 'e';
+                }
             }
+            buf[pos++] = ',';
+            count = pos;
         }
 
         @Override
@@ -1463,7 +1870,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             }
         }
 
-        private static int writeIntToBytes(int val, byte[] buf, int pos) {
+        public static int writeIntToBytes(int val, byte[] buf, int pos) {
             if (val == Integer.MIN_VALUE) {
                 // "-2147483648" = 11 bytes
                 buf[pos] = '-';
@@ -1506,22 +1913,19 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         }
 
         private static int stringSize(int x) {
-            int d = 1;
-            if (x >= 100000) {
-                d += 5;
-                x /= 100000;
-            }
-            if (x >= 100) {
-                d += 2;
-                x /= 100;
-            }
-            if (x >= 10) {
-                d++;
-            }
-            return d;
+            if (x < 10) return 1;
+            if (x < 100) return 2;
+            if (x < 1000) return 3;
+            if (x < 10000) return 4;
+            if (x < 100000) return 5;
+            if (x < 1000000) return 6;
+            if (x < 10000000) return 7;
+            if (x < 100000000) return 8;
+            if (x < 1000000000) return 9;
+            return 10;
         }
 
-        private static int writeLongToBytes(long val, byte[] buf, int pos) {
+        public static int writeLongToBytes(long val, byte[] buf, int pos) {
             if (val == Long.MIN_VALUE) {
                 // "-9223372036854775808" = 20 bytes
                 byte[] s = {'-', '9', '2', '2', '3', '3', '7', '2', '0', '3', '6', '8', '5', '4', '7', '7', '5', '8', '0', '8'};
