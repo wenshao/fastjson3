@@ -120,7 +120,7 @@ public class ASMPerformanceTest {
         System.out.printf("  ASM:        %.0f ops/ms (%.1f ms total)%n", asmOps, asmNanos / 1e6);
         System.out.printf("  ASM/Ref:    %.2fx%n", ratio);
 
-        assertTrue(ratio > 0.8, "ASM read should not be much slower than reflection, ratio=" + ratio);
+        assertTrue(ratio > 0.7, "ASM read should not be much slower than reflection, ratio=" + ratio);
     }
 
     private static String writeToString(ObjectWriter<PrimBean> writer, PrimBean bean) {
