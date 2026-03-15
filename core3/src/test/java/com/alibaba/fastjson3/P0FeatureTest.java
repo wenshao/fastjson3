@@ -308,6 +308,28 @@ public class P0FeatureTest {
         assertThrows(JSONException.class, () -> mapper.writeValueAsString(bean));
     }
 
+    public static class BeanWithContainers {
+        public String name;
+        public Object map;
+        public Object list;
+    }
+
+    @Test
+    public void testReferenceDetectionNoFalsePositiveOnContainers() {
+        // Map/List via Object field should NOT cause false circular reference
+        BeanWithContainers bean = new BeanWithContainers();
+        bean.name = "test";
+        bean.map = java.util.Map.of("k", "v");
+        bean.list = java.util.List.of(1, 2, 3);
+
+        ObjectMapper mapper = ObjectMapper.builder()
+                .enableWrite(WriteFeature.ReferenceDetection)
+                .build();
+        String json = mapper.writeValueAsString(bean);
+        assertTrue(json.contains("\"name\":\"test\""), json);
+        assertTrue(json.contains("\"k\":\"v\""), json);
+    }
+
     // ==================== JSONException offset ====================
 
     @Test
