@@ -291,6 +291,23 @@ public class P0FeatureTest {
         assertThrows(JSONException.class, () -> mapper.writeValueAsString(a));
     }
 
+    public static class GenericSelfRef {
+        public String name;
+        public Object self; // declared as Object, not typed
+    }
+
+    @Test
+    public void testCircularReferenceGenericField() {
+        GenericSelfRef bean = new GenericSelfRef();
+        bean.name = "a";
+        bean.self = bean; // circular via Object field
+
+        ObjectMapper mapper = ObjectMapper.builder()
+                .enableWrite(WriteFeature.ReferenceDetection)
+                .build();
+        assertThrows(JSONException.class, () -> mapper.writeValueAsString(bean));
+    }
+
     // ==================== JSONException offset ====================
 
     @Test
