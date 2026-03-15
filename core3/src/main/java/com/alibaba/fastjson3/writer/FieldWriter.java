@@ -604,7 +604,12 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         } else if (value instanceof BigDecimal bd) {
             generator.writeDecimal(bd);
         } else {
-            generator.writeAny(value);
+            generator.pushReference(value);
+            try {
+                generator.writeAny(value);
+            } finally {
+                generator.popReference(value);
+            }
         }
     }
 
