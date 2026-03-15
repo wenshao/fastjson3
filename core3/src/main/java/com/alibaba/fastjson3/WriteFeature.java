@@ -118,4 +118,31 @@ public enum WriteFeature {
         }
         return flags;
     }
+
+    /**
+     * Convert a bitmask back to a WriteFeature array.
+     * Used to pass features to JSONGenerator factory methods.
+     */
+    static WriteFeature[] valuesFrom(long mask) {
+        if (mask == 0) {
+            return EMPTY;
+        }
+        WriteFeature[] all = values();
+        int count = 0;
+        for (WriteFeature f : all) {
+            if ((mask & f.mask) != 0) {
+                count++;
+            }
+        }
+        WriteFeature[] result = new WriteFeature[count];
+        int idx = 0;
+        for (WriteFeature f : all) {
+            if ((mask & f.mask) != 0) {
+                result[idx++] = f;
+            }
+        }
+        return result;
+    }
+
+    private static final WriteFeature[] EMPTY = {};
 }

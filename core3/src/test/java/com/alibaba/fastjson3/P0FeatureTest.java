@@ -234,6 +234,63 @@ public class P0FeatureTest {
         assertTrue(json.contains("\"name\":\"b\""), json);
     }
 
+    @Test
+    public void testCircularReferenceViaValueWriter() {
+        SelfRefBean bean = new SelfRefBean();
+        bean.name = "a";
+        bean.self = bean;
+
+        ObjectMapper mapper = ObjectMapper.shared();
+        assertThrows(JSONException.class, () ->
+                mapper.writer().with(WriteFeature.ReferenceDetection).writeValueAsString(bean));
+    }
+
+    @Test
+    public void testCircularReferenceViaValueWriterBytes() {
+        SelfRefBean bean = new SelfRefBean();
+        bean.name = "a";
+        bean.self = bean;
+
+        ObjectMapper mapper = ObjectMapper.shared();
+        assertThrows(JSONException.class, () ->
+                mapper.writer().with(WriteFeature.ReferenceDetection).writeValueAsBytes(bean));
+    }
+
+    @Test
+    public void testCircularReferenceJSONObject() {
+        JSONObject obj = new JSONObject();
+        obj.put("name", "test");
+        obj.put("self", obj); // circular!
+
+        assertThrows(JSONException.class, () ->
+                JSON.toJSONString(obj, WriteFeature.ReferenceDetection));
+    }
+
+    @Test
+    public void testCircularReferenceJSONArray() {
+        JSONArray arr = new JSONArray();
+        arr.add("test");
+        arr.add(arr); // circular!
+
+        assertThrows(JSONException.class, () ->
+                JSON.toJSONString(arr, WriteFeature.ReferenceDetection));
+    }
+
+    @Test
+    public void testCircularReferenceMutual() {
+        SelfRefBean a = new SelfRefBean();
+        SelfRefBean b = new SelfRefBean();
+        a.name = "a";
+        a.self = b;
+        b.name = "b";
+        b.self = a; // A→B→A
+
+        ObjectMapper mapper = ObjectMapper.builder()
+                .enableWrite(WriteFeature.ReferenceDetection)
+                .build();
+        assertThrows(JSONException.class, () -> mapper.writeValueAsString(a));
+    }
+
     // ==================== JSONException offset ====================
 
     @Test

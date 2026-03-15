@@ -1060,7 +1060,7 @@ public final class ObjectMapper {
             if (obj == null) {
                 return "null";
             }
-            try (JSONGenerator generator = JSONGenerator.of()) {
+            try (JSONGenerator generator = JSONGenerator.of(WriteFeature.valuesFrom(features))) {
                 writeValue0(generator, obj);
                 String json = generator.toString();
                 if ((features & WriteFeature.PrettyFormat.mask) != 0) {
@@ -1077,7 +1077,7 @@ public final class ObjectMapper {
             if (obj == null) {
                 return "null".getBytes(StandardCharsets.UTF_8);
             }
-            try (JSONGenerator generator = JSONGenerator.ofUTF8()) {
+            try (JSONGenerator generator = JSONGenerator.ofUTF8(WriteFeature.valuesFrom(features))) {
                 writeValue0(generator, obj);
                 if ((features & WriteFeature.PrettyFormat.mask) != 0) {
                     return prettyFormat(generator.toString()).getBytes(StandardCharsets.UTF_8);

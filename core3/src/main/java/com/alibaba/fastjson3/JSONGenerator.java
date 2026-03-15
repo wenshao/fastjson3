@@ -384,8 +384,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (++writeDepth > MAX_WRITE_DEPTH) {
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
             }
-            pushReference(map);
             try {
+                pushReference(map);
                 startObject();
                 for (Map.Entry<?, ?> entry : map.entrySet()) {
                     writeName(String.valueOf(entry.getKey()));
@@ -400,8 +400,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (++writeDepth > MAX_WRITE_DEPTH) {
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
             }
-            pushReference(coll);
             try {
+                pushReference(coll);
                 startArray();
                 for (Object item : coll) {
                     writeAny(item);
@@ -415,8 +415,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (++writeDepth > MAX_WRITE_DEPTH) {
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
             }
-            pushReference(arr);
             try {
+                pushReference(arr);
                 startArray();
                 for (Object item : arr) {
                     writeAny(item);
@@ -458,25 +458,35 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         if (++writeDepth > MAX_WRITE_DEPTH) {
             throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
         }
-        startObject();
-        for (Map.Entry<String, Object> entry : obj.entrySet()) {
-            writeName(entry.getKey());
-            writeAny(entry.getValue());
+        try {
+            pushReference(obj);
+            startObject();
+            for (Map.Entry<String, Object> entry : obj.entrySet()) {
+                writeName(entry.getKey());
+                writeAny(entry.getValue());
+            }
+            endObject();
+        } finally {
+            popReference(obj);
+            writeDepth--;
         }
-        endObject();
-        writeDepth--;
     }
 
     private void writeJSONArray(JSONArray arr) {
         if (++writeDepth > MAX_WRITE_DEPTH) {
             throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
         }
-        startArray();
-        for (int i = 0, size = arr.size(); i < size; i++) {
-            writeAny(arr.get(i));
+        try {
+            pushReference(arr);
+            startArray();
+            for (int i = 0, size = arr.size(); i < size; i++) {
+                writeAny(arr.get(i));
+            }
+            endArray();
+        } finally {
+            popReference(arr);
+            writeDepth--;
         }
-        endArray();
-        writeDepth--;
     }
 
     // ---- Output ----
