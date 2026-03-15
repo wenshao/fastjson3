@@ -603,7 +603,16 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             generator.writeFloat(f);
         } else if (value instanceof BigDecimal bd) {
             generator.writeDecimal(bd);
+        } else if (value instanceof java.util.Map
+                || value instanceof java.util.Collection
+                || value instanceof Object[]
+                || value instanceof com.alibaba.fastjson3.JSONObject
+                || value instanceof com.alibaba.fastjson3.JSONArray) {
+            // Container types: writeAny handles its own pushReference/popReference
+            generator.writeAny(value);
         } else {
+            // POJO types: need reference tracking here since writeAny's ObjectWriter
+            // branch does not do pushReference
             generator.pushReference(value);
             try {
                 generator.writeAny(value);
