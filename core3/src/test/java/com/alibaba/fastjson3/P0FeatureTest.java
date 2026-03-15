@@ -330,6 +330,25 @@ public class P0FeatureTest {
         assertTrue(json.contains("\"k\":\"v\""), json);
     }
 
+    public static class BeanWithSerializableField {
+        public String name;
+        public java.io.Serializable data; // non-container declared type, may hold Map at runtime
+    }
+
+    @Test
+    public void testReferenceDetectionNoFalsePositiveOnPolymorphicContainer() {
+        BeanWithSerializableField bean = new BeanWithSerializableField();
+        bean.name = "test";
+        bean.data = new java.util.HashMap<>(java.util.Map.of("key", "value"));
+
+        ObjectMapper mapper = ObjectMapper.builder()
+                .enableWrite(WriteFeature.ReferenceDetection)
+                .build();
+        String json = mapper.writeValueAsString(bean);
+        assertTrue(json.contains("\"name\":\"test\""), json);
+        assertTrue(json.contains("\"key\":\"value\""), json);
+    }
+
     // ==================== JSONException offset ====================
 
     @Test

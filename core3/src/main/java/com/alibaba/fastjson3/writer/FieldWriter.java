@@ -338,6 +338,18 @@ public final class FieldWriter implements Comparable<FieldWriter> {
      * Check if a value is "empty" for NON_EMPTY inclusion.
      * Only called when inclusion == NON_EMPTY (resolved at creation time).
      */
+    /**
+     * Check if a value is a container type whose reference tracking is handled
+     * internally by JSONGenerator.writeAny(). Avoids double pushReference.
+     */
+    private static boolean isContainerType(Object value) {
+        return value instanceof java.util.Map
+                || value instanceof java.util.Collection
+                || value instanceof Object[]
+                || value instanceof com.alibaba.fastjson3.JSONObject
+                || value instanceof com.alibaba.fastjson3.JSONArray;
+    }
+
     private static boolean isEmpty(Object value) {
         if (value == null) {
             return true;
@@ -493,7 +505,12 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             }
             return;
         }
-        generator.pushReference(value);
+        // Only push reference for non-container types; writeAny handles its own
+        // pushReference for Map/Collection/Object[]/JSONObject/JSONArray internally
+        boolean trackRef = !isContainerType(value);
+        if (trackRef) {
+            generator.pushReference(value);
+        }
         try {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
 
@@ -514,7 +531,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 generator.writeAny(value);
             }
         } finally {
-            generator.popReference(value);
+            if (trackRef) {
+                generator.popReference(value);
+            }
         }
     }
 
@@ -603,11 +622,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             generator.writeFloat(f);
         } else if (value instanceof BigDecimal bd) {
             generator.writeDecimal(bd);
-        } else if (value instanceof java.util.Map
-                || value instanceof java.util.Collection
-                || value instanceof Object[]
-                || value instanceof com.alibaba.fastjson3.JSONObject
-                || value instanceof com.alibaba.fastjson3.JSONArray) {
+        } else if (isContainerType(value)) {
             // Container types: writeAny handles its own pushReference/popReference
             generator.writeAny(value);
         } else {
