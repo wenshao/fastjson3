@@ -494,25 +494,28 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             return;
         }
         generator.pushReference(value);
-        generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+        try {
+            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
 
-        Class<?> valueClass = value.getClass();
-        ObjectWriter<Object> writer = cachedWriter;
-        if (writer == null || cachedWriterClass != valueClass) {
-            writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(valueClass);
-            if (writer != null) {
-                // Write class guard BEFORE writer data to prevent another thread
-                // from seeing new writer with stale class guard
-                cachedWriterClass = valueClass;
-                cachedWriter = writer;
+            Class<?> valueClass = value.getClass();
+            ObjectWriter<Object> writer = cachedWriter;
+            if (writer == null || cachedWriterClass != valueClass) {
+                writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(valueClass);
+                if (writer != null) {
+                    // Write class guard BEFORE writer data to prevent another thread
+                    // from seeing new writer with stale class guard
+                    cachedWriterClass = valueClass;
+                    cachedWriter = writer;
+                }
             }
+            if (writer != null) {
+                writer.write(generator, value, fieldName, fieldType, features);
+            } else {
+                generator.writeAny(value);
+            }
+        } finally {
+            generator.popReference(value);
         }
-        if (writer != null) {
-            writer.write(generator, value, fieldName, fieldType, features);
-        } else {
-            generator.writeAny(value);
-        }
-        generator.popReference(value);
     }
 
     @SuppressWarnings("unchecked")
@@ -549,28 +552,31 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             return;
         }
         generator.pushReference(list);
-        generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-        generator.startArray();
+        try {
+            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            generator.startArray();
 
-        ObjectWriter<Object> elemWriter = cachedWriter;
-        if (elemWriter == null && elementClass != null) {
-            elemWriter = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(elementClass);
-            if (elemWriter != null) {
-                cachedWriter = elemWriter;
+            ObjectWriter<Object> elemWriter = cachedWriter;
+            if (elemWriter == null && elementClass != null) {
+                elemWriter = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(elementClass);
+                if (elemWriter != null) {
+                    cachedWriter = elemWriter;
+                }
             }
-        }
-        for (int i = 0, size = list.size(); i < size; i++) {
-            Object item = list.get(i);
-            if (item == null) {
-                generator.writeNull();
-            } else if (elemWriter != null) {
-                elemWriter.write(generator, item, null, null, features);
-            } else {
-                generator.writeAny(item);
+            for (int i = 0, size = list.size(); i < size; i++) {
+                Object item = list.get(i);
+                if (item == null) {
+                    generator.writeNull();
+                } else if (elemWriter != null) {
+                    elemWriter.write(generator, item, null, null, features);
+                } else {
+                    generator.writeAny(item);
+                }
             }
+            generator.endArray();
+        } finally {
+            generator.popReference(list);
         }
-        generator.endArray();
-        generator.popReference(list);
     }
 
     private void writeGeneric(JSONGenerator generator, Object bean, long features) {
