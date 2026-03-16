@@ -711,6 +711,19 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 }
                 break;
             }
+            default:
+                // Complex types: LIST_OBJECT, LIST_STRING, arrays, generic → separate method
+                return writeOneFieldStaticComplex(gen, buf, pos, fw, bean, features);
+        }
+        // Fallback for boxed/nullable primitive types
+        gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
+    }
+
+    /** Handle complex field types in a separate method to keep writeOneFieldStatic small for JIT. */
+    private static int writeOneFieldStaticComplex(UTF8 gen, byte[] buf, int pos,
+                                                   com.alibaba.fastjson3.writer.FieldWriter fw,
+                                                   Object bean, long features) {
+        switch (fw.typeTag) {
             case com.alibaba.fastjson3.writer.FieldWriter.TYPE_LIST_OBJECT: {
                 if (fw.fieldOffset >= 0 && fw.elementClass != null) {
                     @SuppressWarnings("unchecked")
@@ -758,10 +771,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                             gen.count = pos; gen.ensureCapacity(sNeeded); buf = gen.buf; pos = gen.count;
                         }
                         int r = UTF8.writeStringStatic(buf, pos, s);
-                        if (r >= 0) { pos = r; } // includes trailing comma
-                        else {
-                            gen.count = pos; gen.writeString(s); pos = gen.count; buf = gen.buf;
-                        }
+                        if (r >= 0) { pos = r; }
+                        else { gen.count = pos; gen.writeString(s); pos = gen.count; buf = gen.buf; }
                     }
                     if (pos > 0 && buf[pos - 1] == ',') pos--;
                     buf[pos++] = ']'; buf[pos++] = ',';
@@ -769,8 +780,63 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 }
                 break;
             }
-            default:
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_STRING_ARRAY: {
+                if (fw.fieldOffset >= 0) {
+                    String[] arr = (String[]) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (arr == null) return pos;
+                    pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    buf[pos++] = '[';
+                    for (String s : arr) {
+                        if (s == null) {
+                            com.alibaba.fastjson3.util.JDKUtils.putIntDirect(buf, pos, UTF8.NULL_INT);
+                            pos += 4; buf[pos++] = ','; continue;
+                        }
+                        int sn = s.length() + 3;
+                        if (pos + sn + UTF8.SAFE_MARGIN > buf.length) {
+                            gen.count = pos; gen.ensureCapacity(sn); buf = gen.buf; pos = gen.count;
+                        }
+                        int r = UTF8.writeStringStatic(buf, pos, s);
+                        if (r >= 0) { pos = r; }
+                        else { gen.count = pos; gen.writeString(s); pos = gen.count; buf = gen.buf; }
+                    }
+                    if (pos > 0 && buf[pos - 1] == ',') pos--;
+                    buf[pos++] = ']'; buf[pos++] = ',';
+                    return pos;
+                }
                 break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_LONG_ARRAY: {
+                if (fw.fieldOffset >= 0) {
+                    long[] arr = (long[]) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (arr == null) return pos;
+                    pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    buf[pos++] = '[';
+                    for (long v : arr) {
+                        pos += UTF8.writeLongToBytes(v, buf, pos);
+                        buf[pos++] = ',';
+                    }
+                    if (pos > 0 && buf[pos - 1] == ',') pos--;
+                    buf[pos++] = ']'; buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_INT_ARRAY: {
+                if (fw.fieldOffset >= 0) {
+                    int[] arr = (int[]) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (arr == null) return pos;
+                    pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    buf[pos++] = '[';
+                    for (int v : arr) {
+                        pos += UTF8.writeIntToBytes(v, buf, pos);
+                        buf[pos++] = ',';
+                    }
+                    if (pos > 0 && buf[pos - 1] == ',') pos--;
+                    buf[pos++] = ']'; buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
         }
         // Fallback
         gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
