@@ -14,8 +14,12 @@ class JDKUtilsTest {
 
     @Test
     void testUnsafeAvailable() {
-        // Unsafe should be available on standard HotSpot JVM
-        assertNotNull(JDKUtils.UNSAFE_AVAILABLE, "UNSAFE_AVAILABLE should be defined");
+        // UNSAFE_AVAILABLE is a boolean flag indicating Unsafe availability
+        // The value itself is not important to test, but related behavior is
+        // Tests that require Unsafe will skip if not available
+        boolean isUnsafeAvailable = JDKUtils.UNSAFE_AVAILABLE;
+        // Just verify the field is accessible and has a boolean value
+        assertTrue(isUnsafeAvailable == true || isUnsafeAvailable == false);
     }
 
     @Test
@@ -26,10 +30,11 @@ class JDKUtilsTest {
 
     @Test
     void testVectorSupport() {
-        // Vector API support is optional, but the flag should be defined
-        assertTrue(JDKUtils.VECTOR_SUPPORT == true || JDKUtils.VECTOR_SUPPORT == false);
+        // Vector API support is optional - when enabled, byte size should be at least 16
+        // The flag itself is just an indicator
         if (JDKUtils.VECTOR_SUPPORT) {
-            assertTrue(JDKUtils.VECTOR_BYTE_SIZE >= 16);
+            assertTrue(JDKUtils.VECTOR_BYTE_SIZE >= 16,
+                    "VECTOR_BYTE_SIZE should be at least 16 when vector support is enabled");
         }
     }
 
@@ -158,11 +163,18 @@ class JDKUtilsTest {
 
         JDKUtils.putShortDirect(buf, 0, expected);
 
-        // Read back using getIntDirect and check first 2 bytes
+        // Read back using getIntDirect and check the short value
         int intValue = JDKUtils.getIntDirect(buf, 0);
-        // On little-endian: low 16 bits contain the short
-        // On big-endian: high 16 bits contain the short
-        short result = (short) (intValue & 0xFFFF);
+
+        // Extract the short based on native byte order
+        short result;
+        if (java.nio.ByteOrder.nativeOrder() == java.nio.ByteOrder.LITTLE_ENDIAN) {
+            // Little-endian: low 16 bits contain the short
+            result = (short) (intValue & 0xFFFF);
+        } else {
+            // Big-endian: high 16 bits contain the short
+            result = (short) ((intValue >> 16) & 0xFFFF);
+        }
 
         assertEquals(expected, result);
     }

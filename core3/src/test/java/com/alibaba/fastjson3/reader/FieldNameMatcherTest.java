@@ -1,9 +1,7 @@
 package com.alibaba.fastjson3.reader;
 
-import com.alibaba.fastjson3.JSONParser;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.*;

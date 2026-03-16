@@ -219,9 +219,9 @@ class BufferPoolTest {
         int threadCount = 8;
         int iterationsPerThread = 50;
         Thread[] threads = new Thread[threadCount];
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>();
 
         for (int i = 0; i < threadCount; i++) {
-            final int threadId = i;
             threads[i] = new Thread(() -> {
                 try {
                     for (int j = 0; j < iterationsPerThread; j++) {
@@ -234,8 +234,8 @@ class BufferPoolTest {
                         assertNotNull(charBuf);
                         BufferPool.returnCharBuffer(charBuf);
                     }
-                } catch (Exception e) {
-                    e.printStackTrace();
+                } catch (Throwable t) {
+                    failure.compareAndSet(null, t);
                 }
             });
             threads[i].start();
@@ -245,8 +245,10 @@ class BufferPoolTest {
             thread.join();
         }
 
-        // If we reach here without exception, test passed
-        assertTrue(true);
+        // Fail test if any thread threw an exception
+        if (failure.get() != null) {
+            throw new AssertionError("Concurrent test failed", failure.get());
+        }
     }
 
     // ==================== Edge cases ====================
