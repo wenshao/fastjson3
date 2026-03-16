@@ -503,11 +503,7 @@ public final class ObjectMapper {
         try (JSONGenerator generator = createCharGenerator()) {
             applyFilters(generator);
             writeValue0(generator, obj);
-            String json = generator.toString();
-            if ((writeFeatures & WriteFeature.PrettyFormat.mask) != 0) {
-                return prettyFormat(json);
-            }
-            return json;
+            return generator.toString();
         }
     }
 
@@ -523,9 +519,6 @@ public final class ObjectMapper {
         try (JSONGenerator generator = createUTF8Generator()) {
             applyFilters(generator);
             writeValue0(generator, obj);
-            if ((writeFeatures & WriteFeature.PrettyFormat.mask) != 0) {
-                return prettyFormat(generator.toString()).getBytes(StandardCharsets.UTF_8);
-            }
             return generator.toByteArray();
         }
     }
@@ -1076,11 +1069,7 @@ public final class ObjectMapper {
             }
             try (JSONGenerator generator = features != 0 ? new JSONGenerator.Char(features) : JSONGenerator.of()) {
                 writeValue0(generator, obj);
-                String json = generator.toString();
-                if ((features & WriteFeature.PrettyFormat.mask) != 0) {
-                    return prettyFormat(json);
-                }
-                return json;
+                return generator.toString();
             }
         }
 
@@ -1093,9 +1082,6 @@ public final class ObjectMapper {
             }
             try (JSONGenerator generator = features != 0 ? new JSONGenerator.UTF8(features) : JSONGenerator.ofUTF8()) {
                 writeValue0(generator, obj);
-                if ((features & WriteFeature.PrettyFormat.mask) != 0) {
-                    return prettyFormat(generator.toString()).getBytes(StandardCharsets.UTF_8);
-                }
                 return generator.toByteArray();
             }
         }
