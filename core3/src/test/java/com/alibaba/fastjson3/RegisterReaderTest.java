@@ -3,9 +3,6 @@ package com.alibaba.fastjson3;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.alibaba.fastjson3.ObjectReader;
-import com.alibaba.fastjson3.JSONParser;
-
 /**
  * Test runtime registration of ObjectReader/ObjectWriter and its interaction
  * with ClassValue cache.
