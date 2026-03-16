@@ -40,6 +40,8 @@ public class RegisterReaderTest {
 
         // Register custom reader BEFORE any lookup
         ObjectReader<TestType> customReader = (parser, fieldType, fieldName, features) -> {
+            // Consume parser input to avoid issues if validation is added later
+            parser.readString();
             TestType obj = new TestType();
             obj.value = "PRE-REGISTERED";
             return obj;
