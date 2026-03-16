@@ -618,131 +618,178 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         gen.ensureCapacity(writers.length * 48);
         byte[] buf = gen.buf;
         int pos = gen.count;
-        buf[pos++] = '{'; // startObject
+        // Use pos-passing helper for the actual work (enables recursive calls for nested objects)
+        pos = writeFieldsStaticUTF8(gen, buf, pos, writers, bean, features);
+        gen.count = pos;
+    }
 
+    /**
+     * Write object fields: tiny loop that calls writeOneFieldStatic per field.
+     * Keeping this method small (~15 lines) ensures JIT can fully inline it.
+     */
+    private static int writeFieldsStaticUTF8(UTF8 gen, byte[] buf, int pos,
+                                              com.alibaba.fastjson3.writer.FieldWriter[] writers,
+                                              Object bean, long features) {
+        buf[pos++] = '{';
         for (com.alibaba.fastjson3.writer.FieldWriter fw : writers) {
-            if (fw.customWriter != null || fw.format != null || fw.label != null) {
-                // Flush and use virtual path for custom fields
-                gen.count = pos;
-                fw.writeField(gen, bean, features);
-                pos = gen.count;
-                buf = gen.buf;
-                continue;
-            }
-
-            switch (fw.typeTag) {
-                case com.alibaba.fastjson3.writer.FieldWriter.TYPE_INT: {
-                    if (fw.fieldOffset >= 0 && fw.fieldClass == int.class) {
-                        int needed = fw.nameBytesLen + 12;
-                        if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
-                            gen.count = pos;
-                            gen.ensureCapacity(needed);
-                            buf = gen.buf;
-                            pos = gen.count;
-                        }
-                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
-                        pos += UTF8.writeIntToBytes(com.alibaba.fastjson3.util.JDKUtils.getInt(bean, fw.fieldOffset), buf, pos);
-                        buf[pos++] = ',';
-                        continue;
-                    }
-                    break;
-                }
-                case com.alibaba.fastjson3.writer.FieldWriter.TYPE_LONG: {
-                    if (fw.fieldOffset >= 0 && fw.fieldClass == long.class) {
-                        int needed = fw.nameBytesLen + 21;
-                        if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
-                            gen.count = pos;
-                            gen.ensureCapacity(needed);
-                            buf = gen.buf;
-                            pos = gen.count;
-                        }
-                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
-                        pos += UTF8.writeLongToBytes(com.alibaba.fastjson3.util.JDKUtils.getLongField(bean, fw.fieldOffset), buf, pos);
-                        buf[pos++] = ',';
-                        continue;
-                    }
-                    break;
-                }
-                case com.alibaba.fastjson3.writer.FieldWriter.TYPE_DOUBLE: {
-                    if (fw.fieldOffset >= 0 && fw.fieldClass == double.class) {
-                        int needed = fw.nameBytesLen + 25;
-                        if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
-                            gen.count = pos;
-                            gen.ensureCapacity(needed);
-                            buf = gen.buf;
-                            pos = gen.count;
-                        }
-                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
-                        pos = com.alibaba.fastjson3.util.NumberUtils.writeDouble(buf, pos, com.alibaba.fastjson3.util.JDKUtils.getDouble(bean, fw.fieldOffset), true, false);
-                        buf[pos++] = ',';
-                        continue;
-                    }
-                    break;
-                }
-                case com.alibaba.fastjson3.writer.FieldWriter.TYPE_BOOL: {
-                    if (fw.fieldOffset >= 0 && fw.fieldClass == boolean.class) {
-                        int needed = fw.nameBytesLen + 6;
-                        if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
-                            gen.count = pos;
-                            gen.ensureCapacity(needed);
-                            buf = gen.buf;
-                            pos = gen.count;
-                        }
-                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
-                        if (com.alibaba.fastjson3.util.JDKUtils.getBoolean(bean, fw.fieldOffset)) {
-                            com.alibaba.fastjson3.util.JDKUtils.putIntDirect(buf, pos, UTF8.TRUE_INT);
-                            pos += 4;
-                        } else {
-                            com.alibaba.fastjson3.util.JDKUtils.putIntDirect(buf, pos, UTF8.FALS_INT);
-                            pos += 4;
-                            buf[pos++] = 'e';
-                        }
-                        buf[pos++] = ',';
-                        continue;
-                    }
-                    break;
-                }
-                case com.alibaba.fastjson3.writer.FieldWriter.TYPE_STRING: {
-                    if (fw.fieldOffset >= 0) {
-                        String s = (String) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
-                        if (s == null) continue; // skip nulls by default
-                        if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(s) == 0) {
-                            byte[] strBytes = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(s);
-                            int strLen = strBytes.length;
-                            // Ensure capacity for name + string
-                            int needed = fw.nameBytesLen + strLen + 3;
-                            if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
-                                gen.count = pos;
-                                gen.ensureCapacity(needed);
-                                buf = gen.buf;
-                                pos = gen.count;
-                            }
-                            pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
-                            pos = UTF8.writeLatinStringStatic(buf, pos, strBytes, strLen);
-                            continue;
-                        }
-                        // Non-Latin: fall through to virtual path
-                    }
-                    break;
-                }
-                default:
-                    break;
-            }
-
-            // Fallback: flush pos, use existing virtual dispatch
-            gen.count = pos;
-            fw.writeField(gen, bean, features);
-            pos = gen.count;
-            buf = gen.buf;
+            pos = writeOneFieldStatic(gen, buf, pos, fw, bean, features);
+            buf = gen.buf; // re-read in case ensureCapacity reallocated
         }
-
-        // endObject
-        if (pos > 0 && buf[pos - 1] == ',') {
-            pos--;
-        }
+        if (pos > 0 && buf[pos - 1] == ',') pos--;
         buf[pos++] = '}';
         buf[pos++] = ',';
-        gen.count = pos;
+        return pos;
+    }
+
+    /**
+     * Write a single field (name + value) using static methods. Returns new pos.
+     * The switch dispatch is compiled as a tableswitch by the JVM — fast ~2 cycles.
+     */
+    private static int writeOneFieldStatic(UTF8 gen, byte[] buf, int pos,
+                                            com.alibaba.fastjson3.writer.FieldWriter fw,
+                                            Object bean, long features) {
+        if (fw.customWriter != null || fw.format != null || fw.label != null) {
+            gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
+        }
+        switch (fw.typeTag) {
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_INT: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == int.class) {
+                    pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    pos += UTF8.writeIntToBytes(com.alibaba.fastjson3.util.JDKUtils.getInt(bean, fw.fieldOffset), buf, pos);
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_LONG: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == long.class) {
+                    pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    pos += UTF8.writeLongToBytes(com.alibaba.fastjson3.util.JDKUtils.getLongField(bean, fw.fieldOffset), buf, pos);
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_DOUBLE: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == double.class) {
+                    pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    pos = com.alibaba.fastjson3.util.NumberUtils.writeDouble(buf, pos, com.alibaba.fastjson3.util.JDKUtils.getDouble(bean, fw.fieldOffset), true, false);
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_BOOL: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == boolean.class) {
+                    pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    if (com.alibaba.fastjson3.util.JDKUtils.getBoolean(bean, fw.fieldOffset)) {
+                        com.alibaba.fastjson3.util.JDKUtils.putIntDirect(buf, pos, UTF8.TRUE_INT);
+                        pos += 4;
+                    } else {
+                        com.alibaba.fastjson3.util.JDKUtils.putIntDirect(buf, pos, UTF8.FALS_INT);
+                        pos += 4;
+                        buf[pos++] = 'e';
+                    }
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_STRING: {
+                if (fw.fieldOffset >= 0) {
+                    String s = (String) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (s == null) return pos;
+                    Object sv = com.alibaba.fastjson3.util.JDKUtils.getStringValue(s);
+                    if (sv instanceof byte[] strBytes && strBytes.length == s.length()) {
+                        int needed = fw.nameBytesLen + strBytes.length + 3;
+                        if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
+                            gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count;
+                        }
+                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                        return UTF8.writeLatinStringStatic(buf, pos, strBytes, strBytes.length);
+                    }
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_LIST_OBJECT: {
+                if (fw.fieldOffset >= 0 && fw.elementClass != null) {
+                    @SuppressWarnings("unchecked")
+                    java.util.List<?> list = (java.util.List<?>) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (list == null || list.isEmpty()) return pos;
+                    com.alibaba.fastjson3.writer.FieldWriter[] elemFws = getElementWriters(fw.elementClass);
+                    if (elemFws != null) {
+                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                        buf[pos++] = '[';
+                        for (int j = 0, size = list.size(); j < size; j++) {
+                            Object item = list.get(j);
+                            if (item == null) {
+                                com.alibaba.fastjson3.util.JDKUtils.putIntDirect(buf, pos, UTF8.NULL_INT);
+                                pos += 4; buf[pos++] = ','; continue;
+                            }
+                            if (pos + elemFws.length * 48 + UTF8.SAFE_MARGIN > buf.length) {
+                                gen.count = pos; gen.ensureCapacity(elemFws.length * 48);
+                                buf = gen.buf; pos = gen.count;
+                            }
+                            pos = writeFieldsStaticUTF8(gen, buf, pos, elemFws, item, features);
+                            buf = gen.buf;
+                        }
+                        if (pos > 0 && buf[pos - 1] == ',') pos--;
+                        buf[pos++] = ']'; buf[pos++] = ',';
+                        return pos;
+                    }
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_LIST_STRING: {
+                if (fw.fieldOffset >= 0) {
+                    @SuppressWarnings("unchecked")
+                    java.util.List<String> list = (java.util.List<String>) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (list == null || list.isEmpty()) return pos;
+                    pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    buf[pos++] = '[';
+                    for (int j = 0, size = list.size(); j < size; j++) {
+                        String s = list.get(j);
+                        if (s == null) {
+                            com.alibaba.fastjson3.util.JDKUtils.putIntDirect(buf, pos, UTF8.NULL_INT);
+                            pos += 4; buf[pos++] = ','; continue;
+                        }
+                        int sNeeded = s.length() + 3;
+                        if (pos + sNeeded + UTF8.SAFE_MARGIN > buf.length) {
+                            gen.count = pos; gen.ensureCapacity(sNeeded); buf = gen.buf; pos = gen.count;
+                        }
+                        int r = UTF8.writeStringStatic(buf, pos, s);
+                        if (r >= 0) { pos = r; } // includes trailing comma
+                        else {
+                            gen.count = pos; gen.writeString(s); pos = gen.count; buf = gen.buf;
+                        }
+                    }
+                    if (pos > 0 && buf[pos - 1] == ',') pos--;
+                    buf[pos++] = ']'; buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        // Fallback
+        gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
+    }
+
+    // Cache for element type FieldWriters (for LIST_OBJECT inline serialization)
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, com.alibaba.fastjson3.writer.FieldWriter[]>
+            ELEMENT_WRITERS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static com.alibaba.fastjson3.writer.FieldWriter[] getElementWriters(Class<?> elementClass) {
+        return ELEMENT_WRITERS_CACHE.computeIfAbsent(elementClass, cls -> {
+            try {
+                com.alibaba.fastjson3.ObjectWriter<?> w = com.alibaba.fastjson3.writer.ObjectWriterCreator.createObjectWriter(cls);
+                if (w instanceof com.alibaba.fastjson3.writer.ObjectWriterCreator.ReflectObjectWriter rw) {
+                    return rw.writers;
+                }
+            } catch (Exception ignored) {}
+            return null;
+        });
     }
 
     // ---- Output ----
@@ -1991,6 +2038,18 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
                 return pos + nameBytesLen;
             }
+        }
+
+        /**
+         * Write a string value with quotes and trailing comma.
+         * Returns new pos, or -1 if non-Latin (caller should fall back to virtual path).
+         */
+        public static int writeStringStatic(byte[] buf, int pos, String value) {
+            Object sv = com.alibaba.fastjson3.util.JDKUtils.getStringValue(value);
+            if (sv instanceof byte[] bytes && bytes.length == value.length()) {
+                return writeLatinStringStatic(buf, pos, bytes, bytes.length);
+            }
+            return -1; // non-Latin: signal fallback
         }
 
         /**

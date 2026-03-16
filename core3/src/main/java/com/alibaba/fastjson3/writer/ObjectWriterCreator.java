@@ -507,8 +507,8 @@ public final class ObjectWriterCreator {
      * Using a final class (not lambda) enables JIT to devirtualize the write() call
      * at megamorphic call sites (e.g., FieldWriter.writeListObject's elemWriter.write loop).
      */
-    static final class ReflectObjectWriter implements com.alibaba.fastjson3.ObjectWriter<Object> {
-        final FieldWriter[] writers;
+    public static final class ReflectObjectWriter implements com.alibaba.fastjson3.ObjectWriter<Object> {
+        public final FieldWriter[] writers;
 
         ReflectObjectWriter(FieldWriter[] writers) {
             this.writers = writers;
