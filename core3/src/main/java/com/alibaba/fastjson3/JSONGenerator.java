@@ -909,7 +909,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             int len = val.length();
-            ensureCapacity(count + len * 6 + 3); // worst case: all chars escaped as \\uNNNN + comma
+            ensureCapacity(count + len + 3);
             buf[count++] = '"';
             for (int i = 0; i < len; i++) {
                 char ch = val.charAt(i);
@@ -1441,7 +1441,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
          * Write a Latin-1 string value with progressive-width escape checking.
          */
         private void writeLatinString(byte[] value, int len) {
-            ensureCapacity(len * 6 + 3);
+            ensureCapacity(len + 3);
             writeLatinStringNoCapCheck(value, len);
         }
 
@@ -1469,24 +1469,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
             if (JDKUtils.UNSAFE_AVAILABLE && len > 0) {
                 int i = 0;
-                // Check-and-copy 16 bytes at a time (2 longs)
-                int limit16 = len - 15;
-                for (; i < limit16; i += 16) {
-                    long v1 = JDKUtils.getLongDirect(value, i);
-                    long v2 = JDKUtils.getLongDirect(value, i + 8);
-                    if (noEscape8(v1) && noEscape8(v2)) {
-                        JDKUtils.putLongDirect(buf, pos, v1);
-                        JDKUtils.putLongDirect(buf, pos + 8, v2);
-                        pos += 16;
-                    } else if (noEscape8(v1)) {
-                        JDKUtils.putLongDirect(buf, pos, v1);
+                // Check-and-copy 8 bytes at a time
+                for (; i + 7 < len; i += 8) {
+                    long v = JDKUtils.getLongDirect(value, i);
+                    if (noEscape8(v)) {
+                        JDKUtils.putLongDirect(buf, pos, v);
                         pos += 8;
-                        // Second 8 bytes have escape — fall to byte-by-byte
-                        pos = writeEscapedBytes(value, i + 8, len, pos);
-                        buf[pos++] = '"';
-                        buf[pos++] = ',';
-                        count = pos;
-                        return;
                     } else {
                         pos = writeEscapedBytes(value, i, len, pos);
                         buf[pos++] = '"';
@@ -1495,39 +1483,13 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         return;
                     }
                 }
-                // Remaining 8-15 bytes: 8-byte chunk
-                if (i + 8 <= len) {
-                    long v = JDKUtils.getLongDirect(value, i);
-                    if (noEscape8(v)) {
-                        JDKUtils.putLongDirect(buf, pos, v);
-                        pos += 8;
-                        i += 8;
-                    }
-                }
-                // Remaining 4-7 bytes: 4-byte chunk
-                if (i + 4 <= len) {
-                    int v4 = JDKUtils.getIntDirect(value, i);
-                    if (noEscape4(v4)) {
-                        JDKUtils.putIntDirect(buf, pos, v4);
-                        pos += 4;
-                        i += 4;
-                    }
-                }
+                // Remaining 0-7 bytes
                 for (; i < len; i++) {
                     byte b = value[i];
                     if (b >= 0x20 && b != '"' && b != '\\') {
                         buf[pos++] = b;
                     } else {
                         pos = writeEscapedByte(b, pos);
-                        for (i++; i < len; i++) {
-                            b = value[i];
-                            if (b >= 0x20 && b != '"' && b != '\\') {
-                                buf[pos++] = b;
-                            } else {
-                                pos = writeEscapedByte(b, pos);
-                            }
-                        }
-                        break;
                     }
                 }
             } else {
@@ -1545,6 +1507,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 if (b >= 0x20 && b != '"' && b != '\\') {
                     buf[pos++] = b;
                 } else {
+                    // Escape expansion may need more space (up to 6 bytes per char)
+                    if (pos + 6 > buf.length) {
+                        count = pos;
+                        ensureCapacity((end - i) * 6 + 6);
+                        pos = count;
+                    }
                     pos = writeEscapedByte(b, pos);
                 }
             }
@@ -1580,14 +1548,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (JDKUtils.getStringCoder(val) == 0) {
                 byte[] value = (byte[]) JDKUtils.getStringValue(val);
                 // Inline writeLatinString: eliminates 1 method call level for list string elements
-                ensureCapacity(value.length * 6 + 3);
+                ensureCapacity(value.length + 3);
                 writeLatinStringNoCapCheck(value, value.length);
                 return;
             }
 
             // General path: char-by-char with escaping and UTF-8 encoding
             int len = val.length();
-            ensureCapacity(len * 6 + 3);
+            ensureCapacity(len + 3);
             int pos = count;
             buf[pos++] = '"';
             for (int i = 0; i < len; i++) {
@@ -1700,7 +1668,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (JDKUtils.getStringCoder(value) == 0) {
                 byte[] valBytes = (byte[]) JDKUtils.getStringValue(value);
                 int valLen = valBytes.length;
-                ensureCapacity(nameBytesLen + valLen * 6 + 3);
+                // Like wast: use actual length + safety margin, not worst-case len*6.
+                // If escapes are found, writeEscapedBytes handles expansion.
+                ensureCapacity(nameBytesLen + valLen + 3);
                 if (nameByteLongs != null) {
                     writeName0(nameByteLongs, nameBytesLen);
                     count += nameBytesLen;
