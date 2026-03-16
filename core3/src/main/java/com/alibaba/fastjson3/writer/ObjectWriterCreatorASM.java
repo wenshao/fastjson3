@@ -258,7 +258,7 @@ public final class ObjectWriterCreatorASM {
             throw new JSONException("no field or getter for int property: " + fi.jsonName);
         }
 
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt32",
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt32Compact",
                 "([JI[B[CI)V");
     }
 
@@ -286,7 +286,7 @@ public final class ObjectWriterCreatorASM {
         } else {
             throw new JSONException("no field or getter for long property: " + fi.jsonName);
         }
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt64",
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt64Compact",
                 "([JI[B[CJ)V");
     }
 
@@ -315,7 +315,7 @@ public final class ObjectWriterCreatorASM {
             throw new JSONException("no field or getter for double property: " + fi.jsonName);
         }
 
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameDouble",
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameDoubleCompact",
                 "([JI[B[CD)V");
     }
 
@@ -325,7 +325,7 @@ public final class ObjectWriterCreatorASM {
     ) {
         mw.aload(1);
         loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongsCompact",
                 "([JI[C[B)V");
 
         mw.aload(1);
@@ -374,7 +374,7 @@ public final class ObjectWriterCreatorASM {
             throw new JSONException("no field or getter for boolean property: " + fi.jsonName);
         }
 
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameBool",
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameBoolCompact",
                 "([JI[B[CZ)V");
     }
 
@@ -405,7 +405,7 @@ public final class ObjectWriterCreatorASM {
         mw.aload(1); // generator
         loadNameFields(mw, classInternalName, namePrefix);
         mw.aload(8); // value
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameString",
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameStringCompact",
                 "([JI[B[CLjava/lang/String;)V");
 
         mw.visitLabel(end);
@@ -445,7 +445,7 @@ public final class ObjectWriterCreatorASM {
         // generator.writePreEncodedNameLongs(...)
         mw.aload(1);
         loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongsCompact",
                 "([JI[C[B)V");
 
         // generator.writeAny(value)
@@ -479,7 +479,7 @@ public final class ObjectWriterCreatorASM {
         mw.visitLabel(notNull);
         mw.aload(1);
         loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs", "([JI[C[B)V");
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongsCompact", "([JI[C[B)V");
 
         mw.aload(1);
         mw.aload(8);

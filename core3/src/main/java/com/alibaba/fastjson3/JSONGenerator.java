@@ -286,6 +286,34 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         writeBool(value);
     }
 
+    // ---- Compact (non-pretty) variants — called by ASM-generated code. No pretty checks. ----
+    // Default implementations delegate to the pretty-aware versions.
+    // UTF8 subclass overrides with implementations that skip the pretty check.
+
+    public void writePreEncodedNameLongsCompact(long[] nameByteLongs, int nameBytesLen, char[] nameChars, byte[] nameBytes) {
+        writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+    }
+
+    public void writeNameStringCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
+        writeNameString(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
+    }
+
+    public void writeNameInt32Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
+        writeNameInt32(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
+    }
+
+    public void writeNameInt64Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+        writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
+    }
+
+    public void writeNameDoubleCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
+        writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
+    }
+
+    public void writeNameBoolCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
+        writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
+    }
+
     // ---- Array writers (avoid writeAny dispatch per element) ----
 
     public void writeLongArray(long[] arr) {
@@ -2017,6 +2045,138 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeBool(value);
                 return;
             }
+            ensureCapacity(nameBytesLen + 25);
+            int pos;
+            if (nameByteLongs != null) {
+                writeName0(nameByteLongs, nameBytesLen);
+                pos = count + nameBytesLen;
+            } else {
+                pos = count;
+                System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+                pos += nameBytesLen;
+            }
+            if (JDKUtils.UNSAFE_AVAILABLE) {
+                if (value) {
+                    JDKUtils.putIntDirect(buf, pos, TRUE_INT);
+                    pos += 4;
+                } else {
+                    JDKUtils.putIntDirect(buf, pos, FALS_INT);
+                    pos += 4;
+                    buf[pos++] = 'e';
+                }
+            } else {
+                if (value) {
+                    buf[pos++] = 't'; buf[pos++] = 'r'; buf[pos++] = 'u'; buf[pos++] = 'e';
+                } else {
+                    buf[pos++] = 'f'; buf[pos++] = 'a'; buf[pos++] = 'l'; buf[pos++] = 's'; buf[pos++] = 'e';
+                }
+            }
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        // ---- Compact (non-pretty) variants — called by ASM-generated code ----
+
+        @Override
+        public void writePreEncodedNameLongsCompact(long[] nameByteLongs, int nameBytesLen, char[] nameChars, byte[] nameBytes) {
+            if (nameByteLongs != null) {
+                ensureCapacity(nameBytesLen);
+                int pos = count;
+                for (long v : nameByteLongs) {
+                    JDKUtils.putLongDirect(buf, pos, v);
+                    pos += 8;
+                }
+                count += nameBytesLen;
+            } else {
+                int len = nameBytes.length;
+                ensureCapacity(len);
+                System.arraycopy(nameBytes, 0, buf, count, len);
+                count += len;
+            }
+        }
+
+        @Override
+        public void writeNameStringCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
+            if (JDKUtils.getStringCoder(value) == 0) {
+                byte[] valBytes = (byte[]) JDKUtils.getStringValue(value);
+                int valLen = valBytes.length;
+                ensureCapacity(nameBytesLen + valLen + 3);
+                if (nameByteLongs != null) {
+                    writeName0(nameByteLongs, nameBytesLen);
+                    count += nameBytesLen;
+                } else {
+                    System.arraycopy(nameBytes, 0, buf, count, nameBytesLen);
+                    count += nameBytesLen;
+                }
+                writeLatinStringNoCapCheck(valBytes, valLen);
+                return;
+            }
+            // Fallback for UTF-16 strings
+            if (nameByteLongs != null) {
+                ensureCapacity(nameBytesLen);
+                writeName0(nameByteLongs, nameBytesLen);
+                count += nameBytesLen;
+            } else {
+                ensureCapacity(nameBytesLen);
+                System.arraycopy(nameBytes, 0, buf, count, nameBytesLen);
+                count += nameBytesLen;
+            }
+            writeString(value);
+        }
+
+        @Override
+        public void writeNameInt32Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
+            ensureCapacity(nameBytesLen + 25);
+            int pos;
+            if (nameByteLongs != null) {
+                writeName0(nameByteLongs, nameBytesLen);
+                pos = count + nameBytesLen;
+            } else {
+                pos = count;
+                System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+                pos += nameBytesLen;
+            }
+            pos += writeIntToBytes(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameInt64Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+            ensureCapacity(nameBytesLen + 25);
+            int pos;
+            if (nameByteLongs != null) {
+                writeName0(nameByteLongs, nameBytesLen);
+                pos = count + nameBytesLen;
+            } else {
+                pos = count;
+                System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+                pos += nameBytesLen;
+            }
+            pos += writeLongToBytes(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameDoubleCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
+            ensureCapacity(nameBytesLen + 25);
+            int pos;
+            if (nameByteLongs != null) {
+                writeName0(nameByteLongs, nameBytesLen);
+                pos = count + nameBytesLen;
+            } else {
+                pos = count;
+                System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+                pos += nameBytesLen;
+            }
+            pos = com.alibaba.fastjson3.util.NumberUtils.writeDouble(buf, pos, value, true, false);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameBoolCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
             ensureCapacity(nameBytesLen + 25);
             int pos;
             if (nameByteLongs != null) {
