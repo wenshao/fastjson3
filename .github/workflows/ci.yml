@@ -34,14 +34,23 @@ jobs:
       - name: Build & Test
         run: mvn -B -T 1C clean test --file pom.xml
 
+      - name: Verify coverage report
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
+        run: |
+          echo "Checking for jacoco.xml..."
+          ls -la core3/target/site/jacoco/jacoco.xml || echo "File not found!"
+          wc -l core3/target/site/jacoco/jacoco.xml || echo "Cannot count lines!"
+
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
         uses: codecov/codecov-action@v5
         with:
-          files: core3/target/site/jacoco/jacoco.xml
+          files: ./core3/target/site/jacoco/jacoco.xml
           flags: core3
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+          name: codecov-umbrella
 
       - name: Upload test reports
         if: failure()
