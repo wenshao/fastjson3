@@ -38,8 +38,10 @@ public final class BufferPool {
     private BufferPool() {
     }
 
+    @SuppressWarnings("deprecation")
     private static int cacheIndex() {
-        return System.identityHashCode(Thread.currentThread()) & POOL_MASK;
+        // Build-time replaceable: Android → identityHashCode, JDK19+ → threadId()
+        return (int) Thread.currentThread().getId() & POOL_MASK;
     }
 
     // ==================== Byte buffer ====================
