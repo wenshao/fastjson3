@@ -5,7 +5,7 @@ The next generation of [fastjson2](https://github.com/alibaba/fastjson2), **buil
 fastjson3 adopts a [Jackson 3](https://github.com/FasterXML/jackson-core) style API design (`ObjectMapper`, `readValue`, `writeValueAsString`), making it easy to migrate from both fastjson2 and Jackson. Under the hood, it inherits fastjson2's high-performance parsing and serialization engine.
 
 [![CI](https://github.com/wenshao/fastjson3/actions/workflows/ci.yml/badge.svg)](https://github.com/wenshao/fastjson3/actions/workflows/ci.yml)
-[![codecov](https://app.codecov.io/gh/wenshao/fastjson3/graph/badge.svg)](https://app.codecov.io/gh/wenshao/fastjson3)
+[![codecov](https://codecov.io/gh/wenshao/fastjson3/branch/main/graph/badge.svg)](https://app.codecov.io/gh/wenshao/fastjson3)
 
 ## By the Numbers
 
