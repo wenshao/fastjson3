@@ -25,13 +25,13 @@ import java.util.List;
  * <h3>Using presets for common configurations:</h3>
  * <pre>
  * // Lenient parsing for config files (allows comments, single quotes)
- * User user = JSON.parseObject(jsonStr, User.class, ParsePreset.LENIENT);
+ * User user = JSON.parse(configJson, User.class, ParseConfig.LENIENT);
  *
  * // Pretty output for logging
- * String json = JSON.toJSONString(obj, WritePreset.PRETTY);
+ * String json = JSON.write(obj, WriteConfig.PRETTY);
  *
  * // Strict validation for APIs
- * User user = JSON.parseObject(apiJson, User.class, ParsePreset.STRICT);
+ * User user = JSON.parse(apiJson, User.class, ParseConfig.STRICT);
  * </pre>
  *
  * <p>For advanced configuration, use {@link ObjectMapper}:</p>
@@ -49,75 +49,6 @@ public final class JSON {
     public static final String VERSION = "3.0.0-SNAPSHOT";
 
     private JSON() {
-    }
-
-    /**
-     * Preset configurations for parsing JSON.
-     * These provide common feature combinations without requiring
-     * knowledge of individual {@link ReadFeature} flags.
-     */
-    public enum ParsePreset {
-        /** Standard JSON parsing (no special features) */
-        DEFAULT,
-
-        /** Lenient parsing: allows comments, single quotes, unquoted fields, smart matching */
-        LENIENT,
-
-        /** Strict parsing: errors on unknown properties, null for primitives */
-        STRICT;
-
-        /**
-         * Get the ReadFeature flags for this preset.
-         */
-        public ReadFeature[] features() {
-            return switch (this) {
-                case DEFAULT -> new ReadFeature[0];
-                case LENIENT -> new ReadFeature[]{
-                    ReadFeature.AllowComments,
-                    ReadFeature.AllowSingleQuotes,
-                    ReadFeature.AllowUnquotedFieldNames,
-                    ReadFeature.SupportSmartMatch
-                };
-                case STRICT -> new ReadFeature[]{
-                    ReadFeature.ErrorOnUnknownProperties,
-                    ReadFeature.ErrorOnNullForPrimitives
-                };
-            };
-        }
-    }
-
-    /**
-     * Preset configurations for writing JSON.
-     * These provide common feature combinations without requiring
-     * knowledge of individual {@link WriteFeature} flags.
-     */
-    public enum WritePreset {
-        /** Standard JSON writing (no special features) */
-        DEFAULT,
-
-        /** Pretty format: human-readable with indentation */
-        PRETTY,
-
-        /** Include nulls: write null fields instead of omitting them */
-        WITH_NULLS,
-
-        /** Pretty with nulls: combined pretty format and null inclusion */
-        PRETTY_WITH_NULLS;
-
-        /**
-         * Get the WriteFeature flags for this preset.
-         */
-        public WriteFeature[] features() {
-            return switch (this) {
-                case DEFAULT -> new WriteFeature[0];
-                case PRETTY -> new WriteFeature[]{WriteFeature.PrettyFormat};
-                case WITH_NULLS -> new WriteFeature[]{WriteFeature.WriteNulls};
-                case PRETTY_WITH_NULLS -> new WriteFeature[]{
-                    WriteFeature.PrettyFormat,
-                    WriteFeature.WriteNulls
-                };
-            };
-        }
     }
 
     // ==================== Parse ====================
@@ -179,24 +110,6 @@ public final class JSON {
      */
     public static <T> T parseObject(String json, TypeReference<T> typeRef) {
         return ObjectMapper.shared().readValue(json, typeRef);
-    }
-
-    /**
-     * Parse JSON string to typed Java object using a preset configuration.
-     *
-     * <pre>
-     * // Lenient parsing for config files
-     * User user = JSON.parseObject(configJson, User.class, ParsePreset.LENIENT);
-     *
-     * // Strict validation for APIs
-     * User user = JSON.parseObject(apiJson, User.class, ParsePreset.STRICT);
-     * </pre>
-     */
-    public static <T> T parseObject(String json, Class<T> type, ParsePreset preset) {
-        if (json == null || json.isEmpty()) {
-            return null;
-        }
-        return parseObject(json, type, preset.features());
     }
 
     /**
@@ -269,24 +182,6 @@ public final class JSON {
     }
 
     /**
-     * Serialize object to JSON string using a preset configuration.
-     *
-     * <pre>
-     * // Pretty output for logging
-     * String json = JSON.toJSONString(obj, WritePreset.PRETTY);
-     *
-     * // Include null fields
-     * String json = JSON.toJSONString(obj, WritePreset.WITH_NULLS);
-     *
-     * // Pretty with nulls
-     * String json = JSON.toJSONString(obj, WritePreset.PRETTY_WITH_NULLS);
-     * </pre>
-     */
-    public static String toJSONString(Object obj, WritePreset preset) {
-        return toJSONString(obj, preset.features());
-    }
-
-    /**
      * Serialize object to UTF-8 byte array.
      */
     public static byte[] toJSONBytes(Object obj) {
@@ -318,18 +213,6 @@ public final class JSON {
             generator.writeAny(obj);
             return generator.toByteArray();
         }
-    }
-
-    /**
-     * Serialize object to UTF-8 byte array using a preset configuration.
-     *
-     * <pre>
-     * // Pretty output for logging
-     * byte[] json = JSON.toJSONBytes(obj, WritePreset.PRETTY);
-     * </pre>
-     */
-    public static byte[] toJSONBytes(Object obj, WritePreset preset) {
-        return toJSONBytes(obj, preset.features());
     }
 
     // ==================== Validate ====================
