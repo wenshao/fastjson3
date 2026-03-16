@@ -125,7 +125,7 @@ public enum WriteFeature {
      */
     public static WriteFeature[] valuesFrom(long mask) {
         if (mask == 0) {
-            return EMPTY;
+            return new WriteFeature[0];
         }
         WriteFeature[] all = values();
         int count = 0;
@@ -143,6 +143,4 @@ public enum WriteFeature {
         }
         return result;
     }
-
-    private static final WriteFeature[] EMPTY = {};
 }

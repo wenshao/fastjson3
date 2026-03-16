@@ -113,7 +113,7 @@ public enum ReadFeature {
      */
     public static ReadFeature[] valuesFrom(long mask) {
         if (mask == 0) {
-            return EMPTY;
+            return new ReadFeature[0];
         }
         ReadFeature[] all = values();
         int count = Long.bitCount(mask);
@@ -126,6 +126,4 @@ public enum ReadFeature {
         }
         return result;
     }
-
-    private static final ReadFeature[] EMPTY = {};
 }
