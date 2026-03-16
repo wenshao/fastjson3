@@ -190,6 +190,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     }
 
     /**
+     * Public ensureCapacity for ASM-generated code to call once per object.
+     * Subclasses that support capacity management should override.
+     */
+    public void ensureCapacityPublic(int needed) {
+        // default no-op; overridden by UTF8
+    }
+
+    /**
      * Create a UTF-16 writer (char-based, optimal for String output).
      */
     public static JSONGenerator of() {
@@ -1343,6 +1351,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             }
         }
 
+        @Override
+        public void ensureCapacityPublic(int needed) {
+            ensureCapacity(needed);
+        }
+
         private void writeNewlineIndent() {
             int level = indentLevel;
             int len = 1 + 2 * level;
@@ -2080,7 +2093,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         @Override
         public void writePreEncodedNameLongsCompact(long[] nameByteLongs, int nameBytesLen, char[] nameChars, byte[] nameBytes) {
             if (nameByteLongs != null) {
-                ensureCapacity(nameBytesLen);
                 int pos = count;
                 for (long v : nameByteLongs) {
                     JDKUtils.putLongDirect(buf, pos, v);
@@ -2089,7 +2101,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 count += nameBytesLen;
             } else {
                 int len = nameBytes.length;
-                ensureCapacity(len);
                 System.arraycopy(nameBytes, 0, buf, count, len);
                 count += len;
             }
@@ -2100,7 +2111,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (JDKUtils.getStringCoder(value) == 0) {
                 byte[] valBytes = (byte[]) JDKUtils.getStringValue(value);
                 int valLen = valBytes.length;
-                ensureCapacity(nameBytesLen + valLen + 3);
+                ensureCapacity(valLen + 3);
                 if (nameByteLongs != null) {
                     writeName0(nameByteLongs, nameBytesLen);
                     count += nameBytesLen;
@@ -2113,11 +2124,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             }
             // Fallback for UTF-16 strings
             if (nameByteLongs != null) {
-                ensureCapacity(nameBytesLen);
                 writeName0(nameByteLongs, nameBytesLen);
                 count += nameBytesLen;
             } else {
-                ensureCapacity(nameBytesLen);
                 System.arraycopy(nameBytes, 0, buf, count, nameBytesLen);
                 count += nameBytesLen;
             }
@@ -2126,7 +2135,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt32Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
-            ensureCapacity(nameBytesLen + 25);
             int pos;
             if (nameByteLongs != null) {
                 writeName0(nameByteLongs, nameBytesLen);
@@ -2143,7 +2151,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt64Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
-            ensureCapacity(nameBytesLen + 25);
             int pos;
             if (nameByteLongs != null) {
                 writeName0(nameByteLongs, nameBytesLen);
@@ -2160,7 +2167,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameDoubleCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
-            ensureCapacity(nameBytesLen + 25);
             int pos;
             if (nameByteLongs != null) {
                 writeName0(nameByteLongs, nameBytesLen);
@@ -2177,7 +2183,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameBoolCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
-            ensureCapacity(nameBytesLen + 25);
             int pos;
             if (nameByteLongs != null) {
                 writeName0(nameByteLongs, nameBytesLen);

@@ -189,6 +189,17 @@ public final class ObjectWriterCreatorASM {
         mw.checkcast(beanInternalName);
         mw.astore(7);
 
+        // Pre-compute total estimated capacity: sum of all name bytes + 48 per field + 2 for {}
+        // This allows Compact methods to skip per-field ensureCapacity
+        int totalEstimated = 2; // for { and }
+        for (FieldWriterInfo fi : fields) {
+            int nameEncodedLen = ("\"" + fi.jsonName + "\":").getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            totalEstimated += nameEncodedLen + 48; // name + max value size
+        }
+        mw.aload(1);
+        mw.visitLdcInsn(totalEstimated);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "ensureCapacityPublic", "(I)V");
+
         // generator.startObject()
         mw.aload(1);
         mw.invokevirtual(TYPE_JSON_GENERATOR, "startObject", "()V");
