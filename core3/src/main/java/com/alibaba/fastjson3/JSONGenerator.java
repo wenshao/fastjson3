@@ -609,6 +609,142 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         }
     }
 
+    /**
+     * Write all fields of an object using static methods (JSONB.IO pattern).
+     * Entire loop uses local pos -- only reads gen.count once at entry, writes once at exit.
+     * Zero virtual dispatch for primitive and Latin-1 string fields.
+     */
+    public static void writeObjectStaticUTF8(UTF8 gen, com.alibaba.fastjson3.writer.FieldWriter[] writers, Object bean, long features) {
+        gen.ensureCapacity(writers.length * 48);
+        byte[] buf = gen.buf;
+        int pos = gen.count;
+        buf[pos++] = '{'; // startObject
+
+        for (com.alibaba.fastjson3.writer.FieldWriter fw : writers) {
+            if (fw.customWriter != null || fw.format != null || fw.label != null) {
+                // Flush and use virtual path for custom fields
+                gen.count = pos;
+                fw.writeField(gen, bean, features);
+                pos = gen.count;
+                buf = gen.buf;
+                continue;
+            }
+
+            switch (fw.typeTag) {
+                case com.alibaba.fastjson3.writer.FieldWriter.TYPE_INT: {
+                    if (fw.fieldOffset >= 0 && fw.fieldClass == int.class) {
+                        int needed = fw.nameBytesLen + 12;
+                        if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
+                            gen.count = pos;
+                            gen.ensureCapacity(needed);
+                            buf = gen.buf;
+                            pos = gen.count;
+                        }
+                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                        pos += UTF8.writeIntToBytes(com.alibaba.fastjson3.util.JDKUtils.getInt(bean, fw.fieldOffset), buf, pos);
+                        buf[pos++] = ',';
+                        continue;
+                    }
+                    break;
+                }
+                case com.alibaba.fastjson3.writer.FieldWriter.TYPE_LONG: {
+                    if (fw.fieldOffset >= 0 && fw.fieldClass == long.class) {
+                        int needed = fw.nameBytesLen + 21;
+                        if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
+                            gen.count = pos;
+                            gen.ensureCapacity(needed);
+                            buf = gen.buf;
+                            pos = gen.count;
+                        }
+                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                        pos += UTF8.writeLongToBytes(com.alibaba.fastjson3.util.JDKUtils.getLongField(bean, fw.fieldOffset), buf, pos);
+                        buf[pos++] = ',';
+                        continue;
+                    }
+                    break;
+                }
+                case com.alibaba.fastjson3.writer.FieldWriter.TYPE_DOUBLE: {
+                    if (fw.fieldOffset >= 0 && fw.fieldClass == double.class) {
+                        int needed = fw.nameBytesLen + 25;
+                        if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
+                            gen.count = pos;
+                            gen.ensureCapacity(needed);
+                            buf = gen.buf;
+                            pos = gen.count;
+                        }
+                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                        pos = com.alibaba.fastjson3.util.NumberUtils.writeDouble(buf, pos, com.alibaba.fastjson3.util.JDKUtils.getDouble(bean, fw.fieldOffset), true, false);
+                        buf[pos++] = ',';
+                        continue;
+                    }
+                    break;
+                }
+                case com.alibaba.fastjson3.writer.FieldWriter.TYPE_BOOL: {
+                    if (fw.fieldOffset >= 0 && fw.fieldClass == boolean.class) {
+                        int needed = fw.nameBytesLen + 6;
+                        if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
+                            gen.count = pos;
+                            gen.ensureCapacity(needed);
+                            buf = gen.buf;
+                            pos = gen.count;
+                        }
+                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                        if (com.alibaba.fastjson3.util.JDKUtils.getBoolean(bean, fw.fieldOffset)) {
+                            com.alibaba.fastjson3.util.JDKUtils.putIntDirect(buf, pos, UTF8.TRUE_INT);
+                            pos += 4;
+                        } else {
+                            com.alibaba.fastjson3.util.JDKUtils.putIntDirect(buf, pos, UTF8.FALS_INT);
+                            pos += 4;
+                            buf[pos++] = 'e';
+                        }
+                        buf[pos++] = ',';
+                        continue;
+                    }
+                    break;
+                }
+                case com.alibaba.fastjson3.writer.FieldWriter.TYPE_STRING: {
+                    if (fw.fieldOffset >= 0) {
+                        String s = (String) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                        if (s == null) continue; // skip nulls by default
+                        if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(s) == 0) {
+                            byte[] strBytes = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(s);
+                            int strLen = strBytes.length;
+                            // Ensure capacity for name + string
+                            int needed = fw.nameBytesLen + strLen + 3;
+                            if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
+                                gen.count = pos;
+                                gen.ensureCapacity(needed);
+                                buf = gen.buf;
+                                pos = gen.count;
+                            }
+                            pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                            pos = UTF8.writeLatinStringStatic(buf, pos, strBytes, strLen);
+                            continue;
+                        }
+                        // Non-Latin: fall through to virtual path
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+
+            // Fallback: flush pos, use existing virtual dispatch
+            gen.count = pos;
+            fw.writeField(gen, bean, features);
+            pos = gen.count;
+            buf = gen.buf;
+        }
+
+        // endObject
+        if (pos > 0 && buf[pos - 1] == ',') {
+            pos--;
+        }
+        buf[pos++] = '}';
+        buf[pos++] = ',';
+        gen.count = pos;
+    }
+
     // ---- Output ----
 
     /**
@@ -1834,6 +1970,96 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 buf = null;
                 pooled = false;
             }
+        }
+
+        // ---- Static write methods (JSONB.IO pattern): take byte[] buf + int pos, return new pos ----
+
+        /**
+         * Write pre-encoded field name bytes directly into buf at pos.
+         * Uses nameByteLongs for bulk 8-byte writes when available.
+         */
+        public static int writeNameStatic(byte[] buf, int pos, long[] nameByteLongs, byte[] nameBytes, int nameBytesLen) {
+            if (nameByteLongs != null) {
+                int startPos = pos;
+                for (long v : nameByteLongs) {
+                    JDKUtils.putLongDirect(buf, pos, v);
+                    pos += 8;
+                }
+                // putLong may overwrite past actual length (padded to 8)
+                return startPos + nameBytesLen;
+            } else {
+                System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+                return pos + nameBytesLen;
+            }
+        }
+
+        /**
+         * Write a Latin-1 string value with quotes and trailing comma, using static methods only.
+         * Returns new pos after writing "value",
+         */
+        public static int writeLatinStringStatic(byte[] buf, int pos, byte[] value, int len) {
+            buf[pos++] = '"';
+            int i = 0;
+            for (; i + 7 < len; i += 8) {
+                long v = JDKUtils.getLongDirect(value, i);
+                if (noEscape8(v)) {
+                    JDKUtils.putLongDirect(buf, pos, v);
+                    pos += 8;
+                } else {
+                    pos = writeEscapedBytesDirect(value, i, len, buf, pos);
+                    buf[pos++] = '"';
+                    buf[pos++] = ',';
+                    return pos;
+                }
+            }
+            for (; i < len; i++) {
+                byte b = value[i];
+                if (b >= 0x20 && b != '"' && b != '\\') {
+                    buf[pos++] = b;
+                } else {
+                    pos = writeEscapedByteDirect(b, buf, pos);
+                }
+            }
+            buf[pos++] = '"';
+            buf[pos++] = ',';
+            return pos;
+        }
+
+        /**
+         * Write bytes with JSON escaping, using only static access to buf parameter.
+         */
+        public static int writeEscapedBytesDirect(byte[] src, int from, int end, byte[] buf, int pos) {
+            for (int i = from; i < end; i++) {
+                byte b = src[i];
+                if (b >= 0x20 && b != '"' && b != '\\') {
+                    buf[pos++] = b;
+                } else {
+                    pos = writeEscapedByteDirect(b, buf, pos);
+                }
+            }
+            return pos;
+        }
+
+        /**
+         * Write a single escaped byte, using only static access to buf parameter.
+         */
+        public static int writeEscapedByteDirect(byte b, byte[] buf, int pos) {
+            int ch = b & 0xFF;
+            char escaped = ESCAPE_CHARS[ch];
+            if (escaped != 0 && ch != '/') {
+                buf[pos++] = '\\';
+                buf[pos++] = (byte) escaped;
+            } else if (ch < 0x20) {
+                buf[pos++] = '\\';
+                buf[pos++] = 'u';
+                buf[pos++] = '0';
+                buf[pos++] = '0';
+                buf[pos++] = (byte) DIGITS[ch >> 4];
+                buf[pos++] = (byte) DIGITS[ch & 0xF];
+            } else {
+                buf[pos++] = b;
+            }
+            return pos;
         }
 
         public static int writeIntToBytes(int val, byte[] buf, int pos) {

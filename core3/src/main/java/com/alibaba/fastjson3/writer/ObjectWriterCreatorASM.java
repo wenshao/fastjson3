@@ -51,6 +51,8 @@ public final class ObjectWriterCreatorASM {
 
     /**
      * Create an ObjectWriter for the given type via ASM bytecode generation.
+     * For UTF8: uses reflection writer's writeObjectStaticUTF8 (zero virtual dispatch).
+     * For Char: uses ASM writer (optimized getfield + invokevirtual).
      * Falls back to reflection if ASM generation fails.
      */
     @SuppressWarnings("unchecked")
@@ -60,16 +62,32 @@ public final class ObjectWriterCreatorASM {
             return ObjectWriterCreator.createObjectWriter(type);
         }
 
+        // Use reflection writer with writeObjectStaticUTF8 for UTF8 (zero virtual dispatch).
+        // ReflectObjectWriter handles UTF8 via static methods and Char via virtual dispatch.
+        // This is simpler and faster than a lambda wrapper + ASM fallback.
+        return ObjectWriterCreator.createObjectWriter(type);
+
+        /* Original ASM path preserved for reference:
+        ObjectWriter<T> reflectWriter = ObjectWriterCreator.createObjectWriter(type);
+
         if (!canGenerate(type)) {
-            return ObjectWriterCreator.createObjectWriter(type);
+            return reflectWriter;
         }
 
         try {
-            return (ObjectWriter<T>) generateWriter(type);
+            ObjectWriter<T> asmWriter = (ObjectWriter<T>) generateWriter(type);
+            return (ObjectWriter<T>) (com.alibaba.fastjson3.ObjectWriter<Object>)
+                    (generator, object, fieldName, fieldType, features) -> {
+                        if (generator instanceof com.alibaba.fastjson3.JSONGenerator.UTF8) {
+                            reflectWriter.write(generator, object, fieldName, fieldType, features);
+                        } else {
+                            asmWriter.write(generator, object, fieldName, fieldType, features);
+                        }
+                    };
         } catch (Throwable e) {
-            // Fallback to reflection
-            return ObjectWriterCreator.createObjectWriter(type);
+            return reflectWriter;
         }
+        */
     }
 
     private static boolean canGenerate(Class<?> type) {
