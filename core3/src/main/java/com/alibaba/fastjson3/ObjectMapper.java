@@ -687,8 +687,14 @@ public final class ObjectMapper {
                 if (writerCreator != null) {
                     writer = writerCreator.apply(rawType);
                 } else {
+                    // Try ASM first (Compact methods + upfront ensureCapacity),
+                    // fall back to reflection for unsupported types
                     Class<?> mixIn = mixInCache.get(rawType);
-                    writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
+                    if (mixIn == null && !useJacksonAnnotation) {
+                        writer = com.alibaba.fastjson3.writer.ObjectWriterCreatorASM.createObjectWriter(rawType);
+                    } else {
+                        writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
+                    }
                 }
             } catch (Exception e) {
                 return null;
