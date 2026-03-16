@@ -62,32 +62,15 @@ public final class ObjectWriterCreatorASM {
             return ObjectWriterCreator.createObjectWriter(type);
         }
 
-        // Use reflection writer with writeObjectStaticUTF8 for UTF8 (zero virtual dispatch).
-        // ReflectObjectWriter handles UTF8 via static methods and Char via virtual dispatch.
-        // This is simpler and faster than a lambda wrapper + ASM fallback.
-        return ObjectWriterCreator.createObjectWriter(type);
-
-        /* Original ASM path preserved for reference:
-        ObjectWriter<T> reflectWriter = ObjectWriterCreator.createObjectWriter(type);
-
         if (!canGenerate(type)) {
-            return reflectWriter;
+            return ObjectWriterCreator.createObjectWriter(type);
         }
 
         try {
-            ObjectWriter<T> asmWriter = (ObjectWriter<T>) generateWriter(type);
-            return (ObjectWriter<T>) (com.alibaba.fastjson3.ObjectWriter<Object>)
-                    (generator, object, fieldName, fieldType, features) -> {
-                        if (generator instanceof com.alibaba.fastjson3.JSONGenerator.UTF8) {
-                            reflectWriter.write(generator, object, fieldName, fieldType, features);
-                        } else {
-                            asmWriter.write(generator, object, fieldName, fieldType, features);
-                        }
-                    };
+            return (ObjectWriter<T>) generateWriter(type);
         } catch (Throwable e) {
-            return reflectWriter;
+            return ObjectWriterCreator.createObjectWriter(type);
         }
-        */
     }
 
     private static boolean canGenerate(Class<?> type) {

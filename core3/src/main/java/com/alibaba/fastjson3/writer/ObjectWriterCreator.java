@@ -517,12 +517,8 @@ public final class ObjectWriterCreator {
         @Override
         public void write(com.alibaba.fastjson3.JSONGenerator generator, Object object,
                           Object fieldName, java.lang.reflect.Type fieldType, long features) {
-            if (generator instanceof com.alibaba.fastjson3.JSONGenerator.UTF8 utf8
-                    && !generator.isEnabled(com.alibaba.fastjson3.WriteFeature.PrettyFormat)
-                    && !generator.hasFilters() && generator.labelFilter == null) {
-                com.alibaba.fastjson3.JSONGenerator.writeObjectStaticUTF8(utf8, writers, object, features);
-                return;
-            }
+            // Note: static path (writeObjectStaticUTF8) tested but virtual dispatch is faster
+            // due to JIT devirtualization being cheaper than switch dispatch in the static path.
             generator.startObject();
             writeFields(generator, writers, object, features);
             generator.endObject();
