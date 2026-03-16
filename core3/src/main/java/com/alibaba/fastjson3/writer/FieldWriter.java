@@ -624,6 +624,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             writeNull(generator, features);
             return;
         }
+        if (inclusion == Inclusion.NON_EMPTY && value.length == 0) {
+            return;
+        }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         generator.writeLongArray(value);
     }
@@ -632,6 +635,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         int[] value = (int[]) getObjectValue(bean);
         if (value == null) {
             writeNull(generator, features);
+            return;
+        }
+        if (inclusion == Inclusion.NON_EMPTY && value.length == 0) {
             return;
         }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
@@ -644,6 +650,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             writeNull(generator, features);
             return;
         }
+        if (inclusion == Inclusion.NON_EMPTY && value.length == 0) {
+            return;
+        }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         generator.writeStringArray(value);
     }
@@ -652,6 +661,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         double[] value = (double[]) getObjectValue(bean);
         if (value == null) {
             writeNull(generator, features);
+            return;
+        }
+        if (inclusion == Inclusion.NON_EMPTY && value.length == 0) {
             return;
         }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
