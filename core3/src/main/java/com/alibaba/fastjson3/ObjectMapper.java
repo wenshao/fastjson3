@@ -893,10 +893,7 @@ public final class ObjectMapper {
      * Create a character generator with the specified features.
      */
     private JSONGenerator createCharGenerator(long features) {
-        if (features != 0) {
-            return JSONGenerator.of(WriteFeature.valuesFrom(features));
-        }
-        return JSONGenerator.of();
+        return JSONGenerator.of(features);  // direct mask, no array allocation
     }
 
     // ==================== Write: byte[] output ====================
@@ -926,10 +923,7 @@ public final class ObjectMapper {
      * Create a UTF-8 generator with the specified features.
      */
     private JSONGenerator createUTF8Generator(long features) {
-        if (features != 0) {
-            return JSONGenerator.ofUTF8(WriteFeature.valuesFrom(features));
-        }
-        return JSONGenerator.ofUTF8();
+        return JSONGenerator.ofUTF8(features);  // direct mask, no array allocation
     }
 
     /**
