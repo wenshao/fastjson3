@@ -904,6 +904,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     /**
      * Get the number of bytes/chars written.
      */
+    /** Reset count for buffer reuse (diagnostic only). */
+    public void resetForReuse() { count = 0; }
+
     public int size() {
         return count;
     }
