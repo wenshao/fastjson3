@@ -120,10 +120,62 @@ public final class ObjectMapper {
     // Thread-safe caches for ObjectReader/ObjectWriter instances
     private final ConcurrentHashMap<Type, ObjectReader<?>> readerCache;
     private final ConcurrentHashMap<Type, ObjectWriter<?>> writerCache;
+    // Fast Class→Reader cache: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns (fory-style)
+    // All lookups (modules, builtins, basic type check, mixIn, reader creation) done once in computeValue.
+    // Note: readerCache is checked first in getObjectReader() to support runtime registerReader() overrides.
+    private final ClassValue<ObjectReader<?>> readerClassCache = new ClassValue<>() {
+        @Override
+        protected ObjectReader<?> computeValue(Class<?> type) {
+            // Defensive: check readerCache in case a race condition put a value during compute
+            ObjectReader<?> cached = readerCache.get(type);
+            if (cached != null) {
+                return cached;
+            }
+
+            // Try modules first (user-provided readers)
+            for (ObjectReaderModule module : readerModules) {
+                ObjectReader<?> reader = module.getObjectReader(type);
+                if (reader != null) {
+                    return reader;
+                }
+            }
+
+            // Try built-in codecs (Optional, UUID, Duration, etc.)
+            ObjectReader<?> reader = BuiltinCodecs.getReader(type);
+            if (reader != null) {
+                return reader;
+            }
+
+            // Basic types don't need custom readers
+            if (isBasicType(type)) {
+                return null;
+            }
+
+            // Auto-create POJO reader (ASM or reflection)
+            try {
+                if (readerCreator != null) {
+                    return readerCreator.apply(type);
+                } else {
+                    Class<?> mixIn = mixInCache.get(type);
+                    return ObjectReaderCreator.createObjectReader(type, mixIn, useJacksonAnnotation);
+                }
+            } catch (Exception e) {
+                return null;
+            }
+        }
+    };
     // Fast Class→Writer cache: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns (fory-style)
+    // Note: writerCache is checked first in getObjectWriter() to support runtime registerWriter() overrides.
     private final ClassValue<ObjectWriter<?>> writerClassCache = new ClassValue<>() {
         @Override
         protected ObjectWriter<?> computeValue(Class<?> type) {
+            // Defensive: check writerCache in case a race condition put a value during compute
+            ObjectWriter<?> cached = writerCache.get(type);
+            if (cached != null) {
+                return cached;
+            }
+            // Delegate to slow path which contains all writer creation logic
+            // Note: type is always Class<?> here, but slow path handles it correctly
             return getObjectWriterSlow(type);
         }
     };
@@ -996,16 +1048,36 @@ public final class ObjectMapper {
 
     /**
      * Look up or create an ObjectReader for the given type.
-     * Results are cached for reuse.
+     * Results are cached for reuse. Runtime registration via {@link #registerReader(Type, ObjectReader)}
+     * is supported and takes precedence over cached ClassValue entries for Class types.
      */
     @SuppressWarnings("unchecked")
     public <T> ObjectReader<T> getObjectReader(Type type) {
+        // Check readerCache first to support runtime registerReader() overrides
         ObjectReader<?> reader = readerCache.get(type);
         if (reader != null) {
             return (ObjectReader<T>) reader;
         }
 
-        // Try modules
+        // Fast path for Class types: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns
+        if (type instanceof Class<?> cls) {
+            return (ObjectReader<T>) readerClassCache.get(cls);
+        }
+        // Slow path for non-Class types (ParameterizedType, GenericArrayType, TypeVariable, WildcardType)
+        return getObjectReaderSlow(type);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> ObjectReader<T> getObjectReaderSlow(Type type) {
+        // Only used for non-Class types (ParameterizedType, GenericArrayType, TypeVariable, WildcardType)
+        // Class types are handled by readerClassCache in getObjectReader()
+        if (type instanceof Class<?>) {
+            // Should not reach here, but handle gracefully
+            return null;
+        }
+
+        // Try modules for generic types
+        ObjectReader<?> reader = null;
         for (ObjectReaderModule module : readerModules) {
             reader = module.getObjectReader(type);
             if (reader != null) {
@@ -1013,53 +1085,30 @@ public final class ObjectMapper {
                 return (ObjectReader<T>) reader;
             }
         }
+        // Generic type readers are not auto-created (would need element type resolution)
+        // Users can register custom readers for specific generic types via modules
 
-        // Auto-create reader (only for class types)
-        if (!(type instanceof Class<?> clazz)) {
-            return null;
-        }
-
-        // Try built-in codecs first (Optional, UUID, Duration, etc.)
-        // Must be before isBasicType() because some builtin types (Year, YearMonth)
-        // are Temporal subtypes that isBasicType() would reject
-        reader = BuiltinCodecs.getReader(clazz);
-        if (reader != null) {
-            readerCache.putIfAbsent(type, reader);
-            return (ObjectReader<T>) reader;
-        }
-
-        if (isBasicType(clazz)) {
-            return null;
-        }
-
-        try {
-            if (readerCreator != null) {
-                reader = readerCreator.apply(clazz);
-            } else {
-                Class<?> mixIn = mixInCache.get(clazz);
-                reader = ObjectReaderCreator.createObjectReader(clazz, mixIn, useJacksonAnnotation);
-            }
-        } catch (Exception e) {
-            return null;
-        }
-        if (reader != null) {
-            readerCache.putIfAbsent(type, reader);
-            return (ObjectReader<T>) reader;
-        }
         return null;
     }
 
     /**
      * Look up or create an ObjectWriter for the given type.
-     * Results are cached for reuse.
+     * Results are cached for reuse. Runtime registration via {@link #registerWriter(Type, ObjectWriter)}
+     * is supported and takes precedence over cached ClassValue entries for Class types.
      */
     @SuppressWarnings("unchecked")
     public <T> ObjectWriter<T> getObjectWriter(Type type) {
+        // Check writerCache first to support runtime registerWriter() overrides
+        ObjectWriter<?> writer = writerCache.get(type);
+        if (writer != null) {
+            return (ObjectWriter<T>) writer;
+        }
+
         // Fast path for Class types: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns
         if (type instanceof Class<?> cls) {
             return (ObjectWriter<T>) writerClassCache.get(cls);
         }
-        // Slow path for ParameterizedType etc.
+        // Slow path for non-Class types (ParameterizedType, GenericArrayType, TypeVariable, WildcardType)
         return getObjectWriterSlow(type);
     }
 
