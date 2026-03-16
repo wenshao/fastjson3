@@ -546,7 +546,7 @@ public final class JSON {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(json, config.features())) {
+        try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(config.mask()))) {
             return parser.readAny();
         }
     }

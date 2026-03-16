@@ -2,6 +2,7 @@ package com.alibaba.fastjson3;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -404,7 +405,7 @@ public class UnifiedAPITest {
         assertNotNull(bytes);
         assertTrue(bytes.length > 0);
         // Check for newline in bytes (pretty format)
-        String json = new String(bytes);
+        String json = new String(bytes, StandardCharsets.UTF_8);
         assertTrue(json.contains("\n"));
     }
 

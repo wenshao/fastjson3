@@ -116,7 +116,13 @@ public enum ReadFeature {
             return EMPTY;
         }
         ReadFeature[] all = values();
-        int count = Long.bitCount(mask);
+        // Count only valid features (ignore invalid mask bits to avoid null elements)
+        int count = 0;
+        for (ReadFeature f : all) {
+            if ((mask & f.mask) != 0) {
+                count++;
+            }
+        }
         ReadFeature[] result = new ReadFeature[count];
         int idx = 0;
         for (ReadFeature f : all) {

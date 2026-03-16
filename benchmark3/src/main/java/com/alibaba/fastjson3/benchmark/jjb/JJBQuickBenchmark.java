@@ -24,18 +24,24 @@ public class JJBQuickBenchmark {
 
     static {
         try {
-            InputStream is = JJBQuickBenchmark.class.getClassLoader().getResourceAsStream("data/jjb/user.json");
-            userBytes = is.readAllBytes();
-            is.close();
-
-            is = JJBQuickBenchmark.class.getClassLoader().getResourceAsStream("data/jjb/client.json");
-            clientBytes = is.readAllBytes();
-            is.close();
+            userBytes = loadResource("data/jjb/user.json");
+            clientBytes = loadResource("data/jjb/client.json");
 
             user = com.alibaba.fastjson2.JSON.parseObject(userBytes, Users.class);
             client = com.alibaba.fastjson2.JSON.parseObject(clientBytes, Clients.class);
         } catch (Throwable ex) {
-            ex.printStackTrace();
+            throw new RuntimeException("Failed to initialize benchmark data", ex);
+        }
+    }
+
+    private static byte[] loadResource(String path) {
+        try (InputStream is = JJBQuickBenchmark.class.getClassLoader().getResourceAsStream(path)) {
+            if (is == null) {
+                throw new RuntimeException("Resource not found: " + path);
+            }
+            return is.readAllBytes();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load resource: " + path, e);
         }
     }
 

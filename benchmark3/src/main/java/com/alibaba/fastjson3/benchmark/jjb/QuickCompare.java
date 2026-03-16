@@ -1,17 +1,13 @@
 package com.alibaba.fastjson3.benchmark.jjb;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 public class QuickCompare {
     public static void main(String[] args) throws Exception {
         // Load test data
-        InputStream is = QuickCompare.class.getClassLoader().getResourceAsStream("data/jjb/user.json");
-        byte[] userBytes = is.readAllBytes();
-        is.close();
-
-        is = QuickCompare.class.getClassLoader().getResourceAsStream("data/jjb/client.json");
-        byte[] clientBytes = is.readAllBytes();
-        is.close();
+        byte[] userBytes = loadResource("data/jjb/user.json");
+        byte[] clientBytes = loadResource("data/jjb/client.json");
 
         // Parse test objects once
         Users user = com.alibaba.fastjson2.JSON.parseObject(userBytes, Users.class);
@@ -115,5 +111,16 @@ public class QuickCompare {
                                  (wastWrite - fastjson3Write) * 100.0 / wastWrite +
                                  (wastWrite2 - fastjson3Write2) * 100.0 / wastWrite2) / 4.0;
         System.out.printf("fastjson3平均领先: %.1f%%\n", avgImprovement);
+    }
+
+    private static byte[] loadResource(String path) {
+        try (InputStream is = QuickCompare.class.getClassLoader().getResourceAsStream(path)) {
+            if (is == null) {
+                throw new RuntimeException("Resource not found: " + path);
+            }
+            return is.readAllBytes();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load resource: " + path, e);
+        }
     }
 }
