@@ -108,6 +108,13 @@ public final class ObjectMapper {
     // Thread-safe caches for ObjectReader/ObjectWriter instances
     private final ConcurrentHashMap<Type, ObjectReader<?>> readerCache;
     private final ConcurrentHashMap<Type, ObjectWriter<?>> writerCache;
+    // Fast Class→Writer cache: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns (fory-style)
+    private final ClassValue<ObjectWriter<?>> writerClassCache = new ClassValue<>() {
+        @Override
+        protected ObjectWriter<?> computeValue(Class<?> type) {
+            return getObjectWriterSlow(type);
+        }
+    };
 
     private ObjectMapper(
             long readFeatures,
@@ -639,6 +646,16 @@ public final class ObjectMapper {
      */
     @SuppressWarnings("unchecked")
     public <T> ObjectWriter<T> getObjectWriter(Type type) {
+        // Fast path for Class types: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns
+        if (type instanceof Class<?> cls) {
+            return (ObjectWriter<T>) writerClassCache.get(cls);
+        }
+        // Slow path for ParameterizedType etc.
+        return getObjectWriterSlow(type);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> ObjectWriter<T> getObjectWriterSlow(Type type) {
         ObjectWriter<?> writer = writerCache.get(type);
         if (writer != null) {
             return (ObjectWriter<T>) writer;
@@ -687,8 +704,6 @@ public final class ObjectMapper {
                 if (writerCreator != null) {
                     writer = writerCreator.apply(rawType);
                 } else {
-                    // Try ASM first (Compact methods + upfront ensureCapacity),
-                    // fall back to reflection for unsupported types
                     Class<?> mixIn = mixInCache.get(rawType);
                     if (mixIn == null && !useJacksonAnnotation) {
                         writer = com.alibaba.fastjson3.writer.ObjectWriterCreatorASM.createObjectWriter(rawType);
