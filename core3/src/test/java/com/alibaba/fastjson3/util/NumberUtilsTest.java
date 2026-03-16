@@ -37,7 +37,8 @@ class NumberUtilsTest {
         int off = NumberUtils.writeDouble(buf, 0, 42.0, false, false);
 
         String result = new String(buf, 0, off, StandardCharsets.ISO_8859_1);
-        assertTrue(result.equals("42") || result.equals("42.0"));
+        // writeDouble always appends ".0" for integer-valued doubles
+        assertEquals("42.0", result);
     }
 
     @Test
@@ -46,7 +47,8 @@ class NumberUtilsTest {
         int off = NumberUtils.writeDouble(buf, 0, -42.0, false, false);
 
         String result = new String(buf, 0, off, StandardCharsets.ISO_8859_1);
-        assertTrue(result.equals("-42") || result.equals("-42.0"));
+        // writeDouble always appends ".0" for integer-valued doubles
+        assertEquals("-42.0", result);
     }
 
     @Test
