@@ -103,4 +103,29 @@ public enum ReadFeature {
         }
         return flags;
     }
+
+    /**
+     * Convert a bitmask back to a ReadFeature array.
+     * Used to pass features to JSONParser factory methods.
+     *
+     * @param mask the feature mask
+     * @return array of enabled features
+     */
+    public static ReadFeature[] valuesFrom(long mask) {
+        if (mask == 0) {
+            return EMPTY;
+        }
+        ReadFeature[] all = values();
+        int count = Long.bitCount(mask);
+        ReadFeature[] result = new ReadFeature[count];
+        int idx = 0;
+        for (ReadFeature f : all) {
+            if ((mask & f.mask) != 0) {
+                result[idx++] = f;
+            }
+        }
+        return result;
+    }
+
+    private static final ReadFeature[] EMPTY = {};
 }

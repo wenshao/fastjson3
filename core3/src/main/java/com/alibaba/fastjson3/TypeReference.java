@@ -23,7 +23,10 @@ public abstract class TypeReference<T> {
         if (superClass instanceof ParameterizedType) {
             this.type = ((ParameterizedType) superClass).getActualTypeArguments()[0];
         } else {
-            throw new JSONException("TypeReference must be created with actual type parameter");
+            throw new JSONException(
+                "TypeReference must be created as an anonymous class with actual type parameter. " +
+                "Use: new TypeReference<List<User>>() {} instead of new TypeReference<List<User>>()");
+
         }
     }
 
