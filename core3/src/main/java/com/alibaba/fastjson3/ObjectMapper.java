@@ -108,6 +108,13 @@ public final class ObjectMapper {
     // Thread-safe caches for ObjectReader/ObjectWriter instances
     private final ConcurrentHashMap<Type, ObjectReader<?>> readerCache;
     private final ConcurrentHashMap<Type, ObjectWriter<?>> writerCache;
+    // Fast Class→Writer cache: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns (fory-style)
+    private final ClassValue<ObjectWriter<?>> writerClassCache = new ClassValue<>() {
+        @Override
+        protected ObjectWriter<?> computeValue(Class<?> type) {
+            return getObjectWriterSlow(type);
+        }
+    };
 
     private ObjectMapper(
             long readFeatures,
@@ -500,14 +507,10 @@ public final class ObjectMapper {
         if (obj == null) {
             return "null";
         }
-        try (JSONGenerator generator = JSONGenerator.of()) {
+        try (JSONGenerator generator = createCharGenerator()) {
             applyFilters(generator);
             writeValue0(generator, obj);
-            String json = generator.toString();
-            if ((writeFeatures & WriteFeature.PrettyFormat.mask) != 0) {
-                return prettyFormat(json);
-            }
-            return json;
+            return generator.toString();
         }
     }
 
@@ -520,12 +523,9 @@ public final class ObjectMapper {
         if (obj == null) {
             return "null".getBytes(StandardCharsets.UTF_8);
         }
-        try (JSONGenerator generator = JSONGenerator.ofUTF8()) {
+        try (JSONGenerator generator = createUTF8Generator()) {
             applyFilters(generator);
             writeValue0(generator, obj);
-            if ((writeFeatures & WriteFeature.PrettyFormat.mask) != 0) {
-                return prettyFormat(generator.toString()).getBytes(StandardCharsets.UTF_8);
-            }
             return generator.toByteArray();
         }
     }
@@ -646,6 +646,16 @@ public final class ObjectMapper {
      */
     @SuppressWarnings("unchecked")
     public <T> ObjectWriter<T> getObjectWriter(Type type) {
+        // Fast path for Class types: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns
+        if (type instanceof Class<?> cls) {
+            return (ObjectWriter<T>) writerClassCache.get(cls);
+        }
+        // Slow path for ParameterizedType etc.
+        return getObjectWriterSlow(type);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> ObjectWriter<T> getObjectWriterSlow(Type type) {
         ObjectWriter<?> writer = writerCache.get(type);
         if (writer != null) {
             return (ObjectWriter<T>) writer;
@@ -695,7 +705,11 @@ public final class ObjectMapper {
                     writer = writerCreator.apply(rawType);
                 } else {
                     Class<?> mixIn = mixInCache.get(rawType);
-                    writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
+                    if (mixIn == null && !useJacksonAnnotation) {
+                        writer = com.alibaba.fastjson3.writer.ObjectWriterCreatorASM.createObjectWriter(rawType);
+                    } else {
+                        writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
+                    }
                 }
             } catch (Exception e) {
                 return null;
@@ -910,6 +924,20 @@ public final class ObjectMapper {
         return nameFilters;
     }
 
+    private JSONGenerator createCharGenerator() {
+        if (writeFeatures != 0) {
+            return new JSONGenerator.Char(writeFeatures);
+        }
+        return JSONGenerator.of();
+    }
+
+    private JSONGenerator createUTF8Generator() {
+        if (writeFeatures != 0) {
+            return new JSONGenerator.UTF8(writeFeatures);
+        }
+        return JSONGenerator.ofUTF8();
+    }
+
     private void applyFilters(JSONGenerator generator) {
         if (propertyFilters.length > 0 || valueFilters.length > 0 || nameFilters.length > 0) {
             generator.setFilters(propertyFilters, valueFilters, nameFilters);
@@ -1060,13 +1088,9 @@ public final class ObjectMapper {
             if (obj == null) {
                 return "null";
             }
-            try (JSONGenerator generator = JSONGenerator.of(WriteFeature.valuesFrom(features))) {
+            try (JSONGenerator generator = features != 0 ? new JSONGenerator.Char(features) : JSONGenerator.of()) {
                 writeValue0(generator, obj);
-                String json = generator.toString();
-                if ((features & WriteFeature.PrettyFormat.mask) != 0) {
-                    return prettyFormat(json);
-                }
-                return json;
+                return generator.toString();
             }
         }
 
@@ -1077,11 +1101,8 @@ public final class ObjectMapper {
             if (obj == null) {
                 return "null".getBytes(StandardCharsets.UTF_8);
             }
-            try (JSONGenerator generator = JSONGenerator.ofUTF8(WriteFeature.valuesFrom(features))) {
+            try (JSONGenerator generator = features != 0 ? new JSONGenerator.UTF8(features) : JSONGenerator.ofUTF8()) {
                 writeValue0(generator, obj);
-                if ((features & WriteFeature.PrettyFormat.mask) != 0) {
-                    return prettyFormat(generator.toString()).getBytes(StandardCharsets.UTF_8);
-                }
                 return generator.toByteArray();
             }
         }

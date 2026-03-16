@@ -51,7 +51,12 @@ public final class ObjectWriterCreatorASM {
 
     /**
      * Create an ObjectWriter for the given type via ASM bytecode generation.
+     * Generated writers use direct getfield access and invoke JSONGenerator's
+     * writeNameXxx methods for each field, with upfront ensureCapacity.
      * Falls back to reflection if ASM generation fails.
+     *
+     * <p>Note: ASM writers skip null fields by default (standard JSON behavior).
+     * For {@code WriteNulls} support, use the reflection-based writer path.</p>
      */
     @SuppressWarnings("unchecked")
     public static <T> ObjectWriter<T> createObjectWriter(Class<T> type) {
@@ -67,7 +72,6 @@ public final class ObjectWriterCreatorASM {
         try {
             return (ObjectWriter<T>) generateWriter(type);
         } catch (Throwable e) {
-            // Fallback to reflection
             return ObjectWriterCreator.createObjectWriter(type);
         }
     }
@@ -188,6 +192,17 @@ public final class ObjectWriterCreatorASM {
         mw.checkcast(beanInternalName);
         mw.astore(7);
 
+        // Pre-compute total estimated capacity: sum of all name bytes + 48 per field + 2 for {}
+        // This allows Compact methods to skip per-field ensureCapacity
+        int totalEstimated = 2; // for { and }
+        for (FieldWriterInfo fi : fields) {
+            int nameEncodedLen = ("\"" + fi.jsonName + "\":").getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            totalEstimated += nameEncodedLen + 48; // name + max value size
+        }
+        mw.aload(1);
+        mw.visitLdcInsn(totalEstimated);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "ensureCapacityPublic", "(I)V");
+
         // generator.startObject()
         mw.aload(1);
         mw.invokevirtual(TYPE_JSON_GENERATOR, "startObject", "()V");
@@ -222,6 +237,10 @@ public final class ObjectWriterCreatorASM {
             case FieldWriter.TYPE_FLOAT -> generateWriteFloat(mw, classInternalName, beanInternalName, fi, namePrefix);
             case FieldWriter.TYPE_BOOL -> generateWriteBool(mw, classInternalName, beanInternalName, fi, namePrefix);
             case FieldWriter.TYPE_STRING -> generateWriteString(mw, classInternalName, beanInternalName, fi, namePrefix);
+            case FieldWriter.TYPE_LONG_ARRAY -> generateWriteTypedArray(mw, classInternalName, beanInternalName, fi, namePrefix, "[J", "writeLongArray", "([J)V");
+            case FieldWriter.TYPE_INT_ARRAY -> generateWriteTypedArray(mw, classInternalName, beanInternalName, fi, namePrefix, "[I", "writeIntArray", "([I)V");
+            case FieldWriter.TYPE_STRING_ARRAY -> generateWriteTypedArray(mw, classInternalName, beanInternalName, fi, namePrefix, "[Ljava/lang/String;", "writeStringArray", "([Ljava/lang/String;)V");
+            case FieldWriter.TYPE_DOUBLE_ARRAY -> generateWriteTypedArray(mw, classInternalName, beanInternalName, fi, namePrefix, "[D", "writeDoubleArray", "([D)V");
             default -> generateWriteGeneric(mw, classInternalName, beanInternalName, fi, namePrefix);
         }
     }
@@ -261,13 +280,9 @@ public final class ObjectWriterCreatorASM {
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        // generator.writePreEncodedNameLongs(...) + generator.writeInt64(bean.field)
+        // generator.writeNameInt64(nl, nn, nb, nc, bean.field)
         mw.aload(1);
-        loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
-                "([JI[C[B)V");
-
-        mw.aload(1); // generator
+        loadNameFields(mw, classInternalName, namePrefix);
         mw.aload(7); // bean
         if (fi.field != null && fi.fieldClass == long.class) {
             mw.getfield(beanInternalName, fi.field.getName(), "J");
@@ -285,7 +300,8 @@ public final class ObjectWriterCreatorASM {
         } else {
             throw new JSONException("no field or getter for long property: " + fi.jsonName);
         }
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeInt64", "(J)V");
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt64",
+                "([JI[B[CJ)V");
     }
 
     private static void generateWriteDouble(
@@ -451,6 +467,37 @@ public final class ObjectWriterCreatorASM {
         mw.aload(8);
         mw.invokevirtual(TYPE_JSON_GENERATOR, "writeAny",
                 "(Ljava/lang/Object;)V");
+
+        mw.visitLabel(end);
+    }
+
+    private static void generateWriteTypedArray(
+            MethodWriter mw, String classInternalName, String beanInternalName,
+            FieldWriterInfo fi, String namePrefix,
+            String arrayDescriptor, String writeMethodName, String writeMethodDesc
+    ) {
+        mw.aload(7);
+        if (fi.getter != null) {
+            mw.invokevirtual(beanInternalName, fi.getter.getName(), "()" + arrayDescriptor);
+        } else {
+            mw.getfield(beanInternalName, fi.field.getName(), arrayDescriptor);
+        }
+        mw.astore(8);
+
+        Label notNull = new Label();
+        mw.aload(8);
+        mw.ifnonnull(notNull);
+        Label end = new Label();
+        mw.goto_(end);
+
+        mw.visitLabel(notNull);
+        mw.aload(1);
+        loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs", "([JI[C[B)V");
+
+        mw.aload(1);
+        mw.aload(8);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, writeMethodName, writeMethodDesc);
 
         mw.visitLabel(end);
     }
@@ -707,6 +754,18 @@ public final class ObjectWriterCreatorASM {
             }
             if (type == boolean.class || type == Boolean.class) {
                 return FieldWriter.TYPE_BOOL;
+            }
+            if (type == long[].class) {
+                return FieldWriter.TYPE_LONG_ARRAY;
+            }
+            if (type == int[].class) {
+                return FieldWriter.TYPE_INT_ARRAY;
+            }
+            if (type == String[].class) {
+                return FieldWriter.TYPE_STRING_ARRAY;
+            }
+            if (type == double[].class) {
+                return FieldWriter.TYPE_DOUBLE_ARRAY;
             }
             return FieldWriter.TYPE_GENERIC;
         }

@@ -16,7 +16,7 @@ class PerformanceOptTest {
     void charBufferPoolReuse() {
         char[] buf1 = BufferPool.borrowCharBuffer();
         assertNotNull(buf1);
-        assertEquals(4096, buf1.length);
+        assertEquals(8192, buf1.length);
 
         BufferPool.returnCharBuffer(buf1);
 
@@ -29,7 +29,7 @@ class PerformanceOptTest {
     void byteBufferPoolReuse() {
         byte[] buf1 = BufferPool.borrowByteBuffer();
         assertNotNull(buf1);
-        assertEquals(4096, buf1.length);
+        assertEquals(8192, buf1.length);
 
         BufferPool.returnByteBuffer(buf1);
 

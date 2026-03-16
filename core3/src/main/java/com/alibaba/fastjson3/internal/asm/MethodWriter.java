@@ -662,6 +662,10 @@ public final class MethodWriter {
         visitInsn(Opcodes.BALOAD);
     }
 
+    public void laload() {
+        visitInsn(Opcodes.LALOAD);
+    }
+
     private void visitJumpInsn(final int opcode, final Label label) {
         lastBytecodeOffset = code.length;
         // Add the instruction to the bytecode of the method.
