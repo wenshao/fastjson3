@@ -42,6 +42,18 @@ import java.util.function.Function;
  * String json = mapper.writeValueAsString(user);
  * </pre>
  *
+ * <h3>Using presets for common configurations:</h3>
+ * <pre>
+ * // Lenient parsing for config files
+ * ObjectMapper lenient = ObjectMapper.builder(Preset.LENIENT).build();
+ *
+ * // Strict validation for APIs
+ * ObjectMapper strict = ObjectMapper.builder(Preset.STRICT).build();
+ *
+ * // Pretty output for logging
+ * ObjectMapper pretty = ObjectMapper.builder(Preset.PRETTY).build();
+ * </pre>
+ *
  * <h3>Custom configuration (immutable builder):</h3>
  * <pre>
  * ObjectMapper mapper = ObjectMapper.builder()
@@ -161,6 +173,110 @@ public final class ObjectMapper {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    /**
+     * Create a builder with a preset configuration.
+     * Presets provide common configurations for typical use cases.
+     *
+     * <pre>
+     * // Lenient: allow comments, single quotes, unquoted fields
+     * ObjectMapper lenient = ObjectMapper.builder(Preset.LENIENT).build();
+     *
+     * // Strict: error on unknown properties, null for primitives
+     * ObjectMapper strict = ObjectMapper.builder(Preset.STRICT).build();
+     *
+     * // Pretty: human-readable output with indentation
+     * ObjectMapper pretty = ObjectMapper.builder(Preset.PRETTY).build();
+     *
+     * // Compat: browser-compatible, pretty format
+     * ObjectMapper compat = ObjectMapper.builder(Preset.COMPAT).build();
+     * </pre>
+     *
+     * @param preset the preset configuration to apply
+     * @return a builder pre-configured with the preset
+     * @see Preset
+     */
+    public static Builder builder(Preset preset) {
+        return preset.applyTo(new Builder());
+    }
+
+    /**
+     * Predefined configurations for common use cases.
+     * These presets provide sensible defaults without requiring
+     * knowledge of individual features.
+     *
+     * <table border="1">
+     * <caption>Presets overview</caption>
+     * <tr><th>Preset</th><th>Description</th></tr>
+     * <tr><td>{@link #DEFAULT}</td><td>Standard JSON parsing (no special features)</td></tr>
+     * <tr><td>{@link #LENIENT}</td><td>Permissive parsing for configs/user input</td></tr>
+     * <tr><td>{@link #STRICT}</td><td>Strict validation for API contracts</td></tr>
+     * <tr><td>{@link #PRETTY}</td><td>Human-readable output</td></tr>
+     * <tr><td>{@link #COMPAT}</td><td>Maximum compatibility (browser + lenient)</td></tr>
+     * </table>
+     */
+    public enum Preset {
+        /**
+         * Standard JSON parsing with default settings.
+         * Suitable for most general-purpose JSON processing.
+         */
+        DEFAULT(b -> b),
+
+        /**
+         * Lenient parsing for configuration files and user input.
+         * Enables: comments, single quotes, unquoted field names.
+         */
+        LENIENT(b -> b
+            .enableRead(
+                ReadFeature.AllowComments,
+                ReadFeature.AllowSingleQuotes,
+                ReadFeature.AllowUnquotedFieldNames,
+                ReadFeature.SupportSmartMatch
+            )),
+
+        /**
+         * Strict validation for API contracts and data exchange.
+         * Enables: error on unknown properties, error on null for primitives.
+         */
+        STRICT(b -> b
+            .enableRead(
+                ReadFeature.ErrorOnUnknownProperties,
+                ReadFeature.ErrorOnNullForPrimitives
+            )),
+
+        /**
+         * Pretty formatted output for logging and debugging.
+         * Enables: pretty format.
+         */
+        PRETTY(b -> b
+            .enableWrite(WriteFeature.PrettyFormat)),
+
+        /**
+         * Maximum compatibility for web browsers and lenient parsing.
+         * Enables: browser compatible, pretty format, escape non-ASCII.
+         */
+        COMPAT(b -> b
+            .enableRead(
+                ReadFeature.AllowComments,
+                ReadFeature.AllowSingleQuotes,
+                ReadFeature.SupportSmartMatch
+            )
+            .enableWrite(
+                WriteFeature.PrettyFormat,
+                WriteFeature.BrowserCompatible,
+                WriteFeature.EscapeNoneAscii
+            ));
+
+        private final java.util.function.Function<Builder, Builder> configurator;
+
+        Preset(java.util.function.Function<Builder, Builder> configurator) {
+            this.configurator = configurator;
+        }
+
+        Builder applyTo(Builder builder) {
+            return configurator.apply(builder);
+        }
     }
 
     /**
@@ -407,10 +523,18 @@ public final class ObjectMapper {
      */
     @SuppressWarnings("unchecked")
     public <T> List<T> readList(String json, Class<T> type) {
+        return readList(json, type, readFeatures);
+    }
+
+    /**
+     * Parse JSON string to typed list with custom features.
+     */
+    @SuppressWarnings("unchecked")
+    public <T> List<T> readList(String json, Class<T> type, long features) {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(json)) {
+        try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
             JSONArray array = parser.readArray();
             if (array == null) {
                 return null;
@@ -426,14 +550,258 @@ public final class ObjectMapper {
                 } else if (item instanceof JSONObject jsonObj && objectReader != null) {
                     // Convert JSONObject to target type via ObjectReader
                     String itemJson = JSON.toJSONString(jsonObj);
-                    try (JSONParser itemParser = JSONParser.of(itemJson)) {
-                        list.add(objectReader.readObject(itemParser, type, null, readFeatures));
+                    try (JSONParser itemParser = JSONParser.of(itemJson, ReadFeature.valuesFrom(features))) {
+                        list.add(objectReader.readObject(itemParser, type, null, features));
                     }
                 } else {
                     list.add((T) item);
                 }
             }
             return list;
+        }
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to typed list.
+     */
+    public <T> List<T> readList(byte[] jsonBytes, Class<T> type) {
+        return readList(jsonBytes, type, readFeatures);
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to typed list with custom features.
+     */
+    @SuppressWarnings("unchecked")
+    public <T> List<T> readList(byte[] jsonBytes, Class<T> type, long features) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+            JSONArray array = parser.readArray();
+            if (array == null) {
+                return null;
+            }
+            ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
+            List<T> list = new ArrayList<>(array.size());
+            for (int i = 0, size = array.size(); i < size; i++) {
+                Object item = array.get(i);
+                if (item == null) {
+                    list.add(null);
+                } else if (type.isInstance(item)) {
+                    list.add(type.cast(item));
+                } else if (item instanceof JSONObject jsonObj && objectReader != null) {
+                    String itemJson = JSON.toJSONString(jsonObj);
+                    try (JSONParser itemParser = JSONParser.of(itemJson, ReadFeature.valuesFrom(features))) {
+                        list.add(objectReader.readObject(itemParser, type, null, features));
+                    }
+                } else {
+                    list.add((T) item);
+                }
+            }
+            return list;
+        }
+    }
+
+    // ==================== Read: typed set ====================
+
+    /**
+     * Parse JSON string to typed set.
+     *
+     * <pre>
+     * Set&lt;User&gt; users = mapper.readSet(json, User.class);
+     * </pre>
+     */
+    public <T> java.util.Set<T> readSet(String json, Class<T> type) {
+        return readSet(json, type, readFeatures);
+    }
+
+    /**
+     * Parse JSON string to typed set with custom features.
+     */
+    public <T> java.util.Set<T> readSet(String json, Class<T> type, long features) {
+        List<T> list = readList(json, type, features);
+        return list == null ? null : new java.util.LinkedHashSet<>(list);
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to typed set.
+     */
+    public <T> java.util.Set<T> readSet(byte[] jsonBytes, Class<T> type) {
+        return readSet(jsonBytes, type, readFeatures);
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to typed set with custom features.
+     */
+    public <T> java.util.Set<T> readSet(byte[] jsonBytes, Class<T> type, long features) {
+        List<T> list = readList(jsonBytes, type, features);
+        return list == null ? null : new java.util.LinkedHashSet<>(list);
+    }
+
+    // ==================== Read: typed map ====================
+
+    /**
+     * Parse JSON string to typed map.
+     * <p>Note: JSON object keys are always strings.</p>
+     *
+     * <pre>
+     * Map&lt;String, User&gt; users = mapper.readMap(json, User.class);
+     * </pre>
+     */
+    @SuppressWarnings("unchecked")
+    public <V> java.util.Map<String, V> readMap(String json, Class<V> valueType) {
+        return readMap(json, valueType, readFeatures);
+    }
+
+    /**
+     * Parse JSON string to typed map with custom features.
+     */
+    @SuppressWarnings("unchecked")
+    public <V> java.util.Map<String, V> readMap(String json, Class<V> valueType, long features) {
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+            JSONObject object = parser.readObject();
+            if (object == null) {
+                return null;
+            }
+            ObjectReader<V> objectReader = (ObjectReader<V>) getObjectReader(valueType);
+            java.util.Map<String, V> map = new java.util.LinkedHashMap<>(object.size());
+            for (String key : object.keySet()) {
+                Object item = object.get(key);
+                if (item == null) {
+                    map.put(key, null);
+                } else if (valueType.isInstance(item)) {
+                    map.put(key, valueType.cast(item));
+                } else if (item instanceof JSONObject jsonObj && objectReader != null) {
+                    String itemJson = JSON.toJSONString(jsonObj);
+                    try (JSONParser itemParser = JSONParser.of(itemJson, ReadFeature.valuesFrom(features))) {
+                        map.put(key, objectReader.readObject(itemParser, valueType, null, features));
+                    }
+                } else {
+                    map.put(key, (V) item);
+                }
+            }
+            return map;
+        }
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to typed map.
+     */
+    public <V> java.util.Map<String, V> readMap(byte[] jsonBytes, Class<V> valueType) {
+        return readMap(jsonBytes, valueType, readFeatures);
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to typed map with custom features.
+     */
+    public <V> java.util.Map<String, V> readMap(byte[] jsonBytes, Class<V> valueType, long features) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+            JSONObject object = parser.readObject();
+            if (object == null) {
+                return null;
+            }
+            ObjectReader<V> objectReader = (ObjectReader<V>) getObjectReader(valueType);
+            java.util.Map<String, V> map = new java.util.LinkedHashMap<>(object.size());
+            for (String key : object.keySet()) {
+                Object item = object.get(key);
+                if (item == null) {
+                    map.put(key, null);
+                } else if (valueType.isInstance(item)) {
+                    map.put(key, valueType.cast(item));
+                } else if (item instanceof JSONObject jsonObj && objectReader != null) {
+                    String itemJson = JSON.toJSONString(jsonObj);
+                    try (JSONParser itemParser = JSONParser.of(itemJson, ReadFeature.valuesFrom(features))) {
+                        map.put(key, objectReader.readObject(itemParser, valueType, null, features));
+                    }
+                } else {
+                    map.put(key, (V) item);
+                }
+            }
+            return map;
+        }
+    }
+
+    // ==================== Read: with custom features ====================
+
+    /**
+     * Parse JSON string to typed Java object with custom features.
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T readValue(String json, Class<T> type, long features) {
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
+        if (objectReader != null) {
+            try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+                return objectReader.readObject(parser, type, null, features);
+            }
+        }
+        try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+            return parser.read(type);
+        }
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to typed Java object with custom features.
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T readValue(byte[] jsonBytes, Class<T> type, long features) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
+        if (objectReader != null) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+                return objectReader.readObject(parser, type, null, features);
+            }
+        }
+        try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+            return parser.read(type);
+        }
+    }
+
+    /**
+     * Parse JSON string to generic type with custom features.
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T readValue(String json, Type type, long features) {
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
+        if (objectReader != null) {
+            try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+                return objectReader.readObject(parser, type, null, features);
+            }
+        }
+        try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+            return parser.read(type);
+        }
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to generic type with custom features.
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T readValue(byte[] jsonBytes, Type type, long features) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
+        if (objectReader != null) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+                return objectReader.readObject(parser, type, null, features);
+            }
+        }
+        try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+            return parser.read(type);
         }
     }
 
@@ -504,14 +872,28 @@ public final class ObjectMapper {
      * Serialize object to JSON string.
      */
     public String writeValueAsString(Object obj) {
+        return writeValueAsString(obj, writeFeatures);
+    }
+
+    /**
+     * Serialize object to JSON string with custom features.
+     */
+    public String writeValueAsString(Object obj, long features) {
         if (obj == null) {
             return "null";
         }
-        try (JSONGenerator generator = createCharGenerator()) {
+        try (JSONGenerator generator = createCharGenerator(features)) {
             applyFilters(generator);
-            writeValue0(generator, obj);
+            writeValue0(generator, obj, features);
             return generator.toString();
         }
+    }
+
+    /**
+     * Create a character generator with the specified features.
+     */
+    private JSONGenerator createCharGenerator(long features) {
+        return JSONGenerator.of(features);  // direct mask, no array allocation
     }
 
     // ==================== Write: byte[] output ====================
@@ -520,13 +902,40 @@ public final class ObjectMapper {
      * Serialize object to UTF-8 JSON byte array.
      */
     public byte[] writeValueAsBytes(Object obj) {
+        return writeValueAsBytes(obj, writeFeatures);
+    }
+
+    /**
+     * Serialize object to UTF-8 JSON byte array with custom features.
+     */
+    public byte[] writeValueAsBytes(Object obj, long features) {
         if (obj == null) {
             return "null".getBytes(StandardCharsets.UTF_8);
         }
-        try (JSONGenerator generator = createUTF8Generator()) {
+        try (JSONGenerator generator = createUTF8Generator(features)) {
             applyFilters(generator);
-            writeValue0(generator, obj);
+            writeValue0(generator, obj, features);
             return generator.toByteArray();
+        }
+    }
+
+    /**
+     * Create a UTF-8 generator with the specified features.
+     */
+    private JSONGenerator createUTF8Generator(long features) {
+        return JSONGenerator.ofUTF8(features);  // direct mask, no array allocation
+    }
+
+    /**
+     * Internal write method with custom features.
+     */
+    @SuppressWarnings("unchecked")
+    private void writeValue0(JSONGenerator generator, Object obj, long features) {
+        ObjectWriter<Object> writer = (ObjectWriter<Object>) getObjectWriter(obj.getClass());
+        if (writer != null) {
+            writer.write(generator, obj, null, null, features);
+        } else {
+            generator.writeAny(obj);
         }
     }
 
@@ -922,20 +1331,6 @@ public final class ObjectMapper {
 
     public NameFilter[] getNameFilters() {
         return nameFilters;
-    }
-
-    private JSONGenerator createCharGenerator() {
-        if (writeFeatures != 0) {
-            return new JSONGenerator.Char(writeFeatures);
-        }
-        return JSONGenerator.of();
-    }
-
-    private JSONGenerator createUTF8Generator() {
-        if (writeFeatures != 0) {
-            return new JSONGenerator.UTF8(writeFeatures);
-        }
-        return JSONGenerator.ofUTF8();
     }
 
     private void applyFilters(JSONGenerator generator) {

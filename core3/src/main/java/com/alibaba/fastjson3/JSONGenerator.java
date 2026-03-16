@@ -212,6 +212,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     }
 
     /**
+     * Create a writer with feature mask (avoid array allocation).
+     * @param features the feature mask
+     * @return a new Char writer
+     */
+    public static JSONGenerator of(long features) {
+        return new Char(features);
+    }
+
+    /**
      * Create a UTF-8 writer (byte-based, optimal for OutputStream/byte[] output).
      */
     public static JSONGenerator ofUTF8() {
@@ -223,6 +232,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
      */
     public static JSONGenerator ofUTF8(WriteFeature... features) {
         return new UTF8(WriteFeature.of(features));
+    }
+
+    /**
+     * Create a UTF-8 writer with feature mask (avoid array allocation).
+     * @param features the feature mask
+     * @return a new UTF8 writer
+     */
+    public static JSONGenerator ofUTF8(long features) {
+        return new UTF8(features);
     }
 
     /**

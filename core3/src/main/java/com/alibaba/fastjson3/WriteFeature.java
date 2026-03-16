@@ -123,7 +123,7 @@ public enum WriteFeature {
      * Convert a bitmask back to a WriteFeature array.
      * Used to pass features to JSONGenerator factory methods.
      */
-    static WriteFeature[] valuesFrom(long mask) {
+    public static WriteFeature[] valuesFrom(long mask) {
         if (mask == 0) {
             return EMPTY;
         }
