@@ -244,4 +244,28 @@ class JSONParserOptimizationTest {
         assertEquals(5678, obj.getIntValue("b"));
         assertEquals(9999, obj.getIntValue("c"));
     }
+
+    @Test
+    void testParseIntOverflowFallback() {
+        // Values that exceed Integer.MAX_VALUE (2147483647) should fall back to long/readNumber
+        // and return a truncated int value via intValue()
+        // 9999999999 = 9 * 10^9 > MAX_INT; readNumber().intValue() wraps as per Number contract
+        byte[] jsonBytes = "{\"a\":9999999999,\"b\":3000000000}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        JSONParser parser = JSONParser.of(jsonBytes);
+        JSONObject obj = parser.readObject();
+        // getLongValue should return the correct long regardless
+        assertEquals(9999999999L, obj.getLongValue("a"));
+        assertEquals(3000000000L, obj.getLongValue("b"));
+    }
+
+    @Test
+    void testParseIntOverflowBoundaryUtf8() {
+        // MAX_INT + 1 = 2147483648 — must not corrupt parser state
+        byte[] jsonBytes = "{\"x\":2147483648,\"y\":42}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        JSONParser parser = JSONParser.of(jsonBytes);
+        JSONObject obj = parser.readObject();
+        // 'y' must still parse correctly (parser state not corrupted by overflow in 'x')
+        assertEquals(42, obj.getIntValue("y"));
+        assertEquals(2147483648L, obj.getLongValue("x"));
+    }
 }
