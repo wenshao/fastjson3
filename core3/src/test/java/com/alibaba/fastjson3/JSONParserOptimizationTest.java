@@ -11,18 +11,18 @@ class JSONParserOptimizationTest {
 
     @Test
     void testDigit2ValidDigits() {
-        // digit2 returns: (low_digit * 10) + high_digit
-        // For "12": low='2'=2, high='1'=1, result = 2*10 + 1 = 21
+        // digit2 returns: (high_digit * 10) + low_digit
+        // For "12": high='1'=1, low='2'=2, result = 1*10 + 2 = 12
         byte[] input = {'1', '2'};
-        assertEquals(21, JSONParser.digit2(input, 0));
+        assertEquals(12, JSONParser.digit2(input, 0));
 
-        // For "99": low='9'=9, high='9'=9, result = 9*10 + 9 = 99
+        // For "99": high='9'=9, low='9'=9, result = 9*10 + 9 = 99
         byte[] input2 = {'9', '9'};
         assertEquals(99, JSONParser.digit2(input2, 0));
 
-        // For "01": low='1'=1, high='0'=0, result = 1*10 + 0 = 10
+        // For "01": high='0'=0, low='1'=1, result = 0*10 + 1 = 1
         byte[] input3 = {'0', '1'};
-        assertEquals(10, JSONParser.digit2(input3, 0));
+        assertEquals(1, JSONParser.digit2(input3, 0));
 
         // For "00": result = 0*10 + 0 = 0
         byte[] input4 = {'0', '0'};
@@ -50,9 +50,9 @@ class JSONParserOptimizationTest {
         for (char d1 = '0'; d1 <= '9'; d1++) {
             for (char d2 = '0'; d2 <= '9'; d2++) {
                 byte[] input = {(byte) d1, (byte) d2};
-                // digit2 returns: (low_digit * 10) + high_digit
-                // where low_digit = bytes[off+1] (d2) and high_digit = bytes[off] (d1)
-                int expected = (d2 - '0') * 10 + (d1 - '0');
+                // digit2 returns: (high_digit * 10) + low_digit
+                // where high_digit = bytes[off] (d1) and low_digit = bytes[off+1] (d2)
+                int expected = (d1 - '0') * 10 + (d2 - '0');
                 int result = JSONParser.digit2(input, 0);
                 if (result != expected) {
                     fail("Failed for " + d1 + d2 + ": expected " + expected + " but got " + result);

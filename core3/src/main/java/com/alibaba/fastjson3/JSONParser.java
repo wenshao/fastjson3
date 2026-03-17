@@ -97,14 +97,15 @@ public abstract sealed class JSONParser implements Closeable
     static int digit2(byte[] bytes, int off) {
         int x = ((bytes[off] & 0xFF) << 8) | (bytes[off + 1] & 0xFF);
         // SWAR check: validate both bytes are '0'-'9'
-        // (x & 0xF0F0) extracts the low nibble of each byte
+        // (x & 0xF0F0) extracts the high nibble of each byte
         // (x & 0xF0F0) - 0x3030 checks if high nibble is 0x30 ('0')
         // ((d & 0x0F0F) + 0x0606) adds 6 to low nibbles to check if they are <= 9
         int d = x & 0x0F0F;
         if ((((x & 0xF0F0) - 0x3030) | ((d + 0x0606) & 0xF0F0)) != 0) {
             return -1;
         }
-        return (d & 0xF) * 10 + (d >> 8);
+        // Return the 2-digit value: high digit (d >> 8) * 10 + low digit (d & 0xF)
+        return (d >> 8) * 10 + (d & 0xF);
     }
 
     static final int MAX_NESTING_DEPTH = 512;
@@ -1635,7 +1636,9 @@ public abstract sealed class JSONParser implements Closeable
                 int d2 = digit2(b, off);
                 if (d2 < 0) break;
                 // Check for overflow before multiplying
-                if (value > 21474836) {  // Integer.MAX_VALUE / 100
+                // Integer.MAX_VALUE = 2147483647, Integer.MIN_VALUE = -2147483648
+                // When value == 21474836: max d2 is 47 for positive, 48 for negative
+                if (value > 21474836 || (value == 21474836 && d2 > (neg ? 48 : 47))) {
                     break;
                 }
                 value = value * 100 + d2;
@@ -1648,11 +1651,14 @@ public abstract sealed class JSONParser implements Closeable
                 if (c < '0' || c > '9') {
                     break;
                 }
+                int digit = c - '0';
                 // Overflow check
-                if (value > 214748364) {  // Integer.MAX_VALUE / 10
+                // Integer.MAX_VALUE = 2147483647, Integer.MIN_VALUE = -2147483648
+                // When value == 214748364: max digit is 7 for positive, 8 for negative
+                if (value > 214748364 || (value == 214748364 && digit > (neg ? 8 : 7))) {
                     break;
                 }
-                value = value * 10 + (c - '0');
+                value = value * 10 + digit;
                 off++;
             }
 

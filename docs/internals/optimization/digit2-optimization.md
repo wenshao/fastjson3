@@ -24,8 +24,8 @@ static int digit2(byte[] bytes, int off) {
         return -1;  // 不是有效数字
     }
 
-    // 4. 计算数值: (d & 0xF) 是第一个数字，(d >> 8) 是第二个数字
-    return (d & 0xF) * 10 + (d >> 8);
+    // 4. 计算数值: (d >> 8) 是第一个数字（十位），(d & 0xF) 是第二个数字（个位）
+    return (d >> 8) * 10 + (d & 0xF);
 }
 ```
 
@@ -47,7 +47,8 @@ public int readIntDirect() {
     while (off + 1 < e) {
         int d2 = digit2(b, off);
         if (d2 < 0) break;
-        if (value > 21474836) break;  // Integer.MAX_VALUE / 100
+        // 溢出检查：处理边界值 (Integer.MAX_VALUE = 2147483647, Integer.MIN_VALUE = -2147483648)
+        if (value > 21474836 || (value == 21474836 && d2 > (neg ? 48 : 47))) break;
         value = value * 100 + d2;
         off += 2;
     }
@@ -56,8 +57,10 @@ public int readIntDirect() {
     while (off < e) {
         c = b[off] & 0xFF;
         if (c < '0' || c > '9') break;
-        if (value > 214748364) break;  // Integer.MAX_VALUE / 10
-        value = value * 10 + (c - '0');
+        int digit = c - '0';
+        // 溢出检查：处理边界值
+        if (value > 214748364 || (value == 214748364 && digit > (neg ? 8 : 7))) break;
+        value = value * 10 + digit;
         off++;
     }
 

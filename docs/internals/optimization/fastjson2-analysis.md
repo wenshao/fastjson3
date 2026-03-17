@@ -21,7 +21,7 @@ public static int digit2(byte[] buf, int off) {
 // 在 readInt32Value 中使用：每次处理2位数字
 while (offset + 1 < end
         && (d = IOUtils.digit2(bytes, offset)) != -1
-        && Integer.MIN_VALUE / 100 <= result & result <= 0) {
+        && Integer.MIN_VALUE / 100 <= result && result <= 0) {
     result = result * 100 - d;
     offset += 2;  // 每次前进2位
 }

@@ -1,8 +1,5 @@
 package com.alibaba.fastjson3.benchmark;
 
-import java.nio.file.Files;
-import java.nio.file.Paths;
-
 /**
  * Simple performance test to compare whitespace detection methods without JMH dependency.
  */

@@ -23,7 +23,7 @@ public class Digit2Benchmark {
 
     // Test data: JSON with many integer values
     static final byte[] JSON_MANY_INTS =
-        ("{\"a\":123,\"b\":456,\"c\":789,\"d\":012,\"e\":345,\"f\":678,\"g\":901,\"h\":234," +
+        ("{\"a\":123,\"b\":456,\"c\":789,\"d\":12,\"e\":345,\"f\":678,\"g\":901,\"h\":234," +
          "\"i\":567,\"j\":890,\"k\":111,\"l\":222,\"m\":333,\"n\":444,\"o\":555,\"p\":666}")
         .getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
