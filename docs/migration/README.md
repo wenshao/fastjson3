@@ -1,92 +1,267 @@
-# 迁移指南
+# 迁移到 fastjson3
 
-本文档帮助你从其他 JSON 库迁移到 fastjson3。
-
-## 📋 快速导航
-
-选择你的来源库：
-
-| 来源库 | 迁移难度 | 兼容性 | 文档 |
-|--------|----------|--------|------|
-| fastjson 1.x | ⭐⭐ 中 | API 相似 | [from-fastjson1.md](from-fastjson1.md) |
-| fastjson2 | ⭐ 低 | 高度兼容 | [from-fastjson2.md](from-fastjson2.md) |
-| Jackson 2.x | ⭐⭐ 中 | 注解兼容 | [from-jackson2.md](from-jackson2.md) |
-| Jackson 3.x | ⭐ 低 | API 相似 | [from-jackson3.md](from-jackson3.md) |
-| Gson | ⭐⭐ 中 | 需要适应 | [from-gson.md](from-gson.md) |
-| org.json | ⭐⭐ 中 | 完全重写 | [from-org-json.md](from-org-json.md) |
+本文档帮助你从其他 JSON 库迁移到 fastjson3。设计为易于人类阅读和大语言模型（LLM）辅助迁移。
 
 ---
 
-## 🔍 Jackson 2.x vs 3.x 迁移
+## 快速开始
 
-不确定你的 Jackson 版本？
+### 1. 选择你的来源库
+
+| 来源库 | 迁移文档 | 难度 | Java 要求 |
+|--------|----------|------|----------|
+| fastjson 1.x | [from-fastjson1.md](from-fastjson1.md) | ⭐⭐ | Java 6 → 17 |
+| fastjson2 | [from-fastjson2.md](from-fastjson2.md) | ⭐ | Java 8 → 17 |
+| Jackson 2.x | [from-jackson2.md](from-jackson2.md) | ⭐⭐ | Java 8 → 17 |
+| Jackson 3.x | [from-jackson3.md](from-jackson3.md) | ⭐ | Java 17 |
+| Gson | [from-gson.md](from-gson.md) | ⭐⭐ | Java 8+ |
+| org.json | [from-org-json.md](from-org-json.md) | ⭐⭐ | Java 8+ |
+
+### 2. 检测你的项目
 
 ```bash
-# Maven 项目检查
-grep -r "jackson-databind" pom.xml
+# 检测 Jackson
+grep -r "jackson" pom.xml build.gradle
 
-# Gradle 项目检查
-grep -r "jackson-databind" build.gradle
+# 检测 fastjson
+grep -r "fastjson" pom.xml build.gradle
+
+# 检测 Gson
+grep -r "gson" pom.xml build.gradle
+
+# 检测 org.json
+grep -r "org.json" pom.xml build.gradle
 ```
 
-| Jackson 版本 | 特点 | 迁移难度 |
-|-------------|------|----------|
-| **2.x** | 可变 ObjectMapper，`new ObjectMapper()` 创建 | ⭐⭐ 配置方式变化较大 |
-| **3.x** | 不可变 ObjectMapper，`JsonMapper.builder()` 创建 | ⭐ API 设计与 fastjson3 相似 |
+### 3. 更新依赖
 
-**注意**：
-- Jackson 2.x 需要 Java 8+
-- Jackson 3.x 需要 Java 17+
-- fastjson3 需要 Java 17+
-
-如果你使用 Jackson 2.x 且无法升级 Java，请继续使用 Jackson 2.x 或考虑 [fastjson2](from-fastjson2.md)。
+```xml
+<dependency>
+    <groupId>com.alibaba.fastjson3</groupId>
+    <artifactId>fastjson3</artifactId>
+    <version>3.0.0</version>
+</dependency>
+```
 
 ---
 
-## 🔍 fastjson 1.x vs 2.x vs 3.x 迁移
+## 代码模式索引
 
-不确定你的 fastjson 版本？
+### 模式：解析 JSON
+
+| 来源库 | 旧代码 | fastjson3 |
+|--------|--------|-----------|
+| Jackson | `mapper.readValue(json, User.class)` | `mapper.readValue(json, User.class)` |
+| Gson | `gson.fromJson(json, User.class)` | `JSON.parseObject(json, User.class)` |
+| fastjson1 | `JSON.parseObject(json, User.class)` | `JSON.parseObject(json, User.class)` |
+
+### 模式：序列化对象
+
+| 来源库 | 旧代码 | fastjson3 |
+|--------|--------|-----------|
+| Jackson | `mapper.writeValueAsString(obj)` | `mapper.writeValueAsString(obj)` |
+| Gson | `gson.toJson(obj)` | `JSON.toJSONString(obj)` |
+| fastjson1 | `JSON.toJSONString(obj)` | `JSON.toJSONString(obj)` |
+
+### 模式：创建 ObjectMapper
+
+| 来源库 | 旧代码 | fastjson3 |
+|--------|--------|-----------|
+| Jackson 2.x | `new ObjectMapper()` | `ObjectMapper.builder().build()` |
+| Jackson 3.x | `JsonMapper.builder().build()` | `ObjectMapper.builder().build()` |
+| fastjson2 | `new JSONObject()` | `ObjectMapper.builder().build()` |
+
+### 模式：泛型处理
+
+| 来源库 | 旧代码 | fastjson3 |
+|--------|--------|-----------|
+| Jackson | `new TypeReference<List<User>>(){}` | `TypeToken.listOf(User.class)` |
+| Gson | `new TypeToken<List<User>>(){}` | `TypeToken.listOf(User.class)` |
+| fastjson1 | `new TypeReference<List<User>>(){}` | `TypeToken.listOf(User.class)` |
+
+### 模式：字段注解
+
+| 来源库 | 旧注解 | fastjson3 |
+|--------|--------|-----------|
+| Jackson | `@JsonProperty("name")` | `@JSONField(name = "name")` 或保留 |
+| Gson | `@SerializedName("name")` | `@JSONField(name = "name")` |
+| fastjson1 | `@JSONField(name = "name")` | `@JSONField(name = "name")` |
+
+**注意**：fastjson3 原生支持 Jackson 和 fastjson 1.x 注解，通常无需修改。
+
+---
+
+## 完整迁移示例
+
+### Jackson 2.x → fastjson3
+
+**原代码：**
+```java
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+ObjectMapper mapper = new ObjectMapper();
+mapper.configure(SerializationFeature.INDENT_OUTPUT, true);
+User user = mapper.readValue(json, User.class);
+String output = mapper.writeValueAsString(user);
+```
+
+**迁移后：**
+```java
+import com.alibaba.fastjson3.ObjectMapper;
+import com.alibaba.fastjson3.WriteFeature;
+
+ObjectMapper mapper = ObjectMapper.builder()
+    .enableWrite(WriteFeature.PrettyFormat)
+    .build();
+User user = mapper.readValue(json, User.class);
+String output = mapper.writeValueAsString(user);
+```
+
+### fastjson 1.x → fastjson3
+
+**原代码：**
+```java
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.serializer.SerializerFeature;
+
+String json = JSON.toJSONString(user,
+    SerializerFeature.WriteMapNullValue,
+    SerializerFeature.PrettyFormat);
+```
+
+**迁移后：**
+```java
+import com.alibaba.fastjson3.JSON;
+import com.alibaba.fastjson3.WriteFeature;
+
+String json = JSON.toJSONString(user,
+    WriteFeature.WriteNulls,
+    WriteFeature.PrettyFormat);
+```
+
+### Gson → fastjson3
+
+**原代码：**
+```java
+import com.google.gson.Gson;
+
+Gson gson = new Gson();
+String json = gson.toJson(user);
+User user = gson.fromJson(json, User.class);
+```
+
+**迁移后：**
+```java
+import com.alibaba.fastjson3.JSON;
+
+String json = JSON.toJSONString(user);
+User user = JSON.parseObject(json, User.class);
+```
+
+---
+
+## Feature 枚举映射
+
+### SerializationFeature → WriteFeature
+
+| Jackson 2.x | fastjson3 |
+|-------------|-----------|
+| `INDENT_OUTPUT` | `PrettyFormat` |
+| `WRITE_NULL_MAP_VALUES` | `WriteNulls` |
+| `WRITE_ENUMS_USING_TO_STRING` | `WriteEnumUsingToString` |
+| `WRITE_DATES_AS_TIMESTAMPS` | `@JSONField(format="millis")` |
+
+### SerializerFeature → WriteFeature
+
+| fastjson 1.x | fastjson3 |
+|--------------|-----------|
+| `WriteMapNullValue` | `WriteNulls` |
+| `PrettyFormat` | `PrettyFormat` |
+| `WriteDateUseDateFormat` | 使用 ObjectMapper.dateFormat() |
+| `DisableCircularReferenceDetect` | 禁用 `ReferenceDetection` |
+
+---
+
+## 注解映射
+
+### 字段注解
+
+| Jackson | fastjson3 | 兼容性 |
+|---------|-----------|--------|
+| `@JsonProperty` | `@JSONField(name)` | ✅ 原生支持 |
+| `@JsonAlias` | `@JSONField(alternateNames)` | ✅ 原生支持 |
+| `@JsonIgnore` | `@JSONField(serialize=false)` | ✅ 原生支持 |
+| `@JsonFormat` | `@JSONField(format)` | ✅ 原生支持 |
+| `@JsonInclude` | `@JSONField(inclusion)` | ✅ 原生支持 |
+| `@JsonUnwrapped` | `@JSONField(unwrapped=true)` | ✅ 原生支持 |
+| `@JsonNaming` | `@JSONType(naming)` | ✅ 原生支持 |
+| `@JsonCreator` | `@JSONCreator` | ✅ 原生支持 |
+
+### 类注解
+
+| Jackson | fastjson3 | 兼容性 |
+|---------|-----------|--------|
+| `@JsonNaming` | `@JSONType(naming)` | ✅ 原生支持 |
+| `@JsonPropertyOrder` | `@JSONType(orders)` | ✅ 原生支持 |
+| `@JsonInclude` | `@JSONType(inclusion)` | ✅ 原生支持 |
+
+---
+
+## 常见问题
+
+### Q: 需要修改 Jackson 注解吗？
+
+A: 不需要。fastjson3 原生支持大部分 Jackson 注解，可以直接使用。
+
+### Q: 需要修改 fastjson 1.x 注解吗？
+
+A: 不需要。fastjson3 的注解与 1.x 完全兼容。
+
+### Q: fastjson3 的 Java 版本要求？
+
+A: Java 17 或更高版本。
+
+### Q: 如何迁移泛型代码？
+
+A: 使用 `TypeToken` 工厂方法替代 `TypeReference`：
+```java
+TypeToken.listOf(User.class)
+TypeToken.mapOf(User.class)
+TypeToken.arrayOf(User.class)
+```
+
+---
+
+## 辅助工具
+
+### 批量替换包名
 
 ```bash
-# Maven 项目检查
-grep -E "fastjson|fastjson2" pom.xml
+# Jackson → fastjson3 (保留注解)
+find . -name "*.java" -exec sed -i 's/import com.fasterxml.jackson.*/import com.alibaba.fastjson3./g' {} +
 
-# Gradle 项目检查
-grep -E "fastjson|fastjson2" build.gradle
+# fastjson1 → fastjson3
+find . -name "*.java" -exec sed -i 's/com\.alibaba\.fastjson\./com.alibaba.fastjson3./g' {} +
+
+# Feature 枚举
+find . -name "*.java" -exec sed -i 's/SerializerFeature/WriteFeature/g' {} +
 ```
 
-| fastjson 版本 | 包名 | Java 要求 | 迁移难度 |
-|--------------|------|-----------|----------|
-| **1.x** | `com.alibaba.fastjson` | Java 6+ | ⭐⭐ Feature 重命名，API 变化 |
-| **2.x** | `com.alibaba.fastjson2` | Java 8+ | ⭐ 包名替换即可 |
-| **3.x** | `com.alibaba.fastjson3` | Java 17+ | - |
+### 验证迁移
 
-### fastjson 版本对比
+```bash
+# 编译检查
+mvn clean compile
 
-| 特性 | fastjson 1.x | fastjson2 | fastjson3 |
-|------|-------------|-----------|-----------|
-| **性能** | 基准 | ~1.5x | ~2x |
-| **Java 版本** | Java 6+ | Java 8+ | Java 17+ |
-| **核心 API** | `JSON.parseObject()` | `JSON.parseObject()` | `JSON.parseObject()` |
-| **ObjectMapper** | ❌ | 部分 | 完整 |
-| **Record 支持** | ❌ | ✅ | ✅ |
-| **sealed class** | ❌ | 部分 | ✅ |
-| **Jackson 注解** | ❌ | ✅ | ✅ |
-
-### 迁移决策
-
-```
-当前使用 fastjson 1.x？
-│
-├─ 能升级到 Java 17？
-│   ├─ 是 → 直接迁移到 fastjson3（推荐）
-│   └─ 否 → 先迁移到 fastjson2（Java 8 兼容）
-│
-当前使用 fastjson2？
-│
-├─ 能升级到 Java 17？
-│   ├─ 是 → 迁移到 fastjson3（包名替换即可）
-│   └─ 否 → 继续使用 fastjson2
+# 运行测试
+mvn test
 ```
 
 ---
+
+## 相关文档
+
+- [迁移检查清单](checklist.md)
+- [常见问题 FAQ](faq.md)
+- [API 参考](../api/)
+- [注解使用指南](../guides/annotations.md)
