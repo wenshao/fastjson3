@@ -63,7 +63,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             }
             return Integer.parseInt(str);
         }
-        throw new JSONException("Can not cast to Integer, value: " + val);
+        throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
+            + val.getClass().getSimpleName() + " to Integer: " + val);
     }
 
     public int getIntValue(String key) {
@@ -89,7 +90,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             }
             return Long.parseLong(str);
         }
-        throw new JSONException("Can not cast to Long, value: " + val);
+        throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
+            + val.getClass().getSimpleName() + " to Long: " + val);
     }
 
     public long getLongValue(String key) {
@@ -115,7 +117,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
         if (val instanceof Number) {
             return ((Number) val).intValue() != 0;
         }
-        throw new JSONException("Can not cast to Boolean, value: " + val);
+        throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
+            + val.getClass().getSimpleName() + " to Boolean: " + val);
     }
 
     public boolean getBooleanValue(String key) {
@@ -144,7 +147,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             }
             return new BigDecimal(str);
         }
-        throw new JSONException("Can not cast to BigDecimal, value: " + val);
+        throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
+            + val.getClass().getSimpleName() + " to BigDecimal: " + val);
     }
 
     public BigInteger getBigInteger(String key) {
@@ -168,7 +172,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             }
             return new BigInteger(str);
         }
-        throw new JSONException("Can not cast to BigInteger, value: " + val);
+        throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
+            + val.getClass().getSimpleName() + " to BigInteger: " + val);
     }
 
     public Double getDouble(String key) {
@@ -189,7 +194,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             }
             return Double.parseDouble(str);
         }
-        throw new JSONException("Can not cast to Double, value: " + val);
+        throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
+            + val.getClass().getSimpleName() + " to Double: " + val);
     }
 
     public double getDoubleValue(String key) {
@@ -215,7 +221,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             }
             return Float.parseFloat(str);
         }
-        throw new JSONException("Can not cast to Float, value: " + val);
+        throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
+            + val.getClass().getSimpleName() + " to Float: " + val);
     }
 
     public float getFloatValue(String key) {
@@ -237,7 +244,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             obj.putAll((Map<String, Object>) val);
             return obj;
         }
-        throw new JSONException("Can not cast to JSONObject, value: " + val);
+        throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
+            + val.getClass().getSimpleName() + " to JSONObject: " + val);
     }
 
     public JSONArray getJSONArray(String key) {
@@ -248,7 +256,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
         if (val instanceof JSONArray) {
             return (JSONArray) val;
         }
-        throw new JSONException("Can not cast to JSONArray, value: " + val);
+        throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
+            + val.getClass().getSimpleName() + " to JSONArray: " + val);
     }
 
     /**

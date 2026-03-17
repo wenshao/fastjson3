@@ -79,6 +79,16 @@ public abstract sealed class JSONParser implements Closeable
         return new Str(json, ReadFeature.of(features));
     }
 
+    /**
+     * Create parser with feature mask directly (avoids array allocation).
+     */
+    public static JSONParser of(String json, long features) {
+        if (json == null || json.isEmpty()) {
+            throw new JSONException("input is null or empty");
+        }
+        return new Str(json, features);
+    }
+
     public static JSONParser of(byte[] jsonBytes) {
         if (jsonBytes == null || jsonBytes.length == 0) {
             throw new JSONException("input is null or empty");
@@ -91,6 +101,16 @@ public abstract sealed class JSONParser implements Closeable
             throw new JSONException("input is null or empty");
         }
         return new UTF8(jsonBytes, 0, jsonBytes.length, ReadFeature.of(features));
+    }
+
+    /**
+     * Create parser with feature mask directly (avoids array allocation).
+     */
+    public static JSONParser of(byte[] jsonBytes, long features) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            throw new JSONException("input is null or empty");
+        }
+        return new UTF8(jsonBytes, 0, jsonBytes.length, features);
     }
 
     public static JSONParser of(char[] chars, int offset, int length) {
@@ -114,6 +134,9 @@ public abstract sealed class JSONParser implements Closeable
 
     /** Read string content after opening quote, handling escapes and encoding. Advance past closing quote. */
     abstract String readStringContent();
+
+    /** Read string content after opening quote with specified quote character. */
+    abstract String readStringContentWithQuote(int quote);
 
     // ==================== Core parsing (shared logic) ====================
 
@@ -146,6 +169,13 @@ public abstract sealed class JSONParser implements Closeable
             case '{' -> readObject();
             case '[' -> readArray();
             case '"' -> readString();
+            case '\'' -> {
+                // Single quote only allowed when AllowSingleQuotes feature is enabled
+                if (!isEnabled(ReadFeature.AllowSingleQuotes)) {
+                    throw new JSONException("unexpected character ''' at offset " + offset);
+                }
+                yield readString();
+            }
             case 't', 'f' -> readBoolean() ? Boolean.TRUE : Boolean.FALSE;
             case 'n' -> {
                 readNullLiteral();
@@ -245,11 +275,15 @@ public abstract sealed class JSONParser implements Closeable
 
     public String readString() {
         skipWhitespace();
-        if (offset >= end() || ch(offset) != '"') {
-            throw new JSONException("expected '\"' at offset " + offset);
+        if (offset >= end()) {
+            throw new JSONException("expected quote at offset " + offset);
         }
-        offset++;
-        return readStringContent();
+        int quote = ch(offset);
+        if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+            offset++;
+            return readStringContentWithQuote(quote);
+        }
+        throw new JSONException("expected quote at offset " + offset);
     }
 
     /**
@@ -412,17 +446,21 @@ public abstract sealed class JSONParser implements Closeable
 
     public String readFieldName() {
         skipWhitespace();
-        if (offset >= end() || ch(offset) != '"') {
-            throw new JSONException("expected '\"' for field name at offset " + offset);
+        if (offset >= end()) {
+            throw new JSONException("expected quote for field name at offset " + offset);
         }
-        offset++;
-        String name = readStringContent();
-        skipWhitespace();
-        if (offset >= end() || ch(offset) != ':') {
-            throw new JSONException("expected ':' at offset " + offset);
+        int quote = ch(offset);
+        if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+            offset++;
+            String name = readStringContentWithQuote(quote);
+            skipWhitespace();
+            if (offset >= end() || ch(offset) != ':') {
+                throw new JSONException("expected ':' at offset " + offset);
+            }
+            offset++;
+            return name;
         }
-        offset++;
-        return name;
+        throw new JSONException("expected quote for field name at offset " + offset);
     }
 
     /**
@@ -438,8 +476,9 @@ public abstract sealed class JSONParser implements Closeable
      */
     public long readFieldNameHash(FieldNameMatcher matcher) {
         skipWhitespace();
-        if (offset >= end() || ch(offset) != '"') {
-            throw new JSONException("expected '\"' for field name at offset " + offset);
+        int quote = ch(offset);
+        if (offset >= end() || (quote != '"' && quote != '\'')) {
+            throw new JSONException("expected quote for field name at offset " + offset);
         }
         offset++;
 
@@ -449,7 +488,7 @@ public abstract sealed class JSONParser implements Closeable
         int start = offset;
         while (offset < e) {
             int c = ch(offset);
-            if (c == '"') {
+            if (c == quote) {
                 offset++;
                 skipWhitespace();
                 if (offset >= e || ch(offset) != ':') {
@@ -461,7 +500,7 @@ public abstract sealed class JSONParser implements Closeable
             if (c == '\\') {
                 // Slow path: has escapes, fall back to reading full string
                 offset = start; // rewind
-                String name = readStringContent();
+                String name = readStringContentWithQuote(quote);
                 skipWhitespace();
                 if (offset >= e || ch(offset) != ':') {
                     throw new JSONException("expected ':' at offset " + offset);
@@ -947,19 +986,37 @@ public abstract sealed class JSONParser implements Closeable
                     return result;
                 }
                 if (c == '\\') {
-                    return readStringEscaped(start);
+                    return readStringEscaped(start, '"');
                 }
                 offset++;
             }
             throw new JSONException("unterminated string");
         }
 
-        private String readStringEscaped(int start) {
+        @Override
+        String readStringContentWithQuote(int quote) {
+            int start = offset;
+            while (offset < length) {
+                char c = json.charAt(offset);
+                if (c == quote) {
+                    String result = json.substring(start, offset);
+                    offset++;
+                    return result;
+                }
+                if (c == '\\') {
+                    return readStringEscaped(start, quote);
+                }
+                offset++;
+            }
+            throw new JSONException("unterminated string");
+        }
+
+        private String readStringEscaped(int start, int quote) {
             StringBuilder sb = new StringBuilder(offset - start + 16);
             sb.append(json, start, offset);
             while (offset < length) {
                 char c = json.charAt(offset++);
-                if (c == '"') {
+                if (c == quote) {
                     return sb.toString();
                 }
                 if (c == '\\') {
@@ -1003,6 +1060,7 @@ public abstract sealed class JSONParser implements Closeable
         // Zero-byte detection formula: hasZero(v) = (v - 0x0101...) & ~v & 0x8080...
         // WARNING: 不可省略 & ~v 项，否则会产生误检。
         private static final long SWAR_QUOTE = 0x2222222222222222L;  // '"' broadcast
+        private static final long SWAR_SINGLE_QUOTE = 0x2727272727272727L; // '\'' broadcast
         private static final long SWAR_ESCAPE = 0x5C5C5C5C5C5C5C5CL; // '\\' broadcast
         private static final long SWAR_LO = 0x0101010101010101L;
         private static final long SWAR_HI = 0x8080808080808080L;
@@ -1133,7 +1191,7 @@ public abstract sealed class JSONParser implements Closeable
          *
          * <p>WARNING: 性能敏感方法，修改前务必做 benchmark 验证。关键设计约束：
          * <ul>
-         *   <li>此方法省略了边界检查，前提是输入为合法 JSON（保证有 '"' 和 ':'）</li>
+         *   <li>此方法省略了边界检查，前提是输入为合法 JSON（保证有 quote 和 ':'）</li>
          *   <li>2-byte 展开的 for(;;) 循环是刻意设计，不可改回 while(off&lt;e) 单字节循环</li>
          *   <li>方法体必须保持小于 ~325 字节码以确保 JIT 内联</li>
          * </ul>
@@ -1145,26 +1203,34 @@ public abstract sealed class JSONParser implements Closeable
             while (off < end && b[off] <= ' ') {
                 off++;
             }
-            if (off >= end || b[off] != '"') {
-                throw new JSONException("expected '\"' for field name at offset " + off);
+            // Boundary check BEFORE accessing b[off]
+            if (off >= end) {
+                throw new JSONException("expected quote for field name at offset " + off);
+            }
+            final byte quote = b[off];
+            // Single quote only allowed when AllowSingleQuotes feature is enabled
+            if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+                // valid quote
+            } else {
+                throw new JSONException("expected quote for field name at offset " + off);
             }
             off++;
 
-            // 2-byte unrolled hash loop, no bounds check (closing '"' guaranteed)
+            // 2-byte unrolled hash loop, no bounds check (closing quote guaranteed)
             long hash = 0;
             for (;;) {
                 int c1 = b[off] & 0xFF;
-                if (c1 == '"') {
+                if (c1 == quote) {
                     off++;
                     break;
                 }
                 if (c1 == '\\' || c1 >= 0x80) {
                     // Non-ASCII or escape: fall through to slow path for correct char-based hashing
                     this.offset = off;
-                    return readFieldNameHashEscape(off);
+                    return readFieldNameHashEscape(off, quote);
                 }
                 int c2 = b[off + 1] & 0xFF;
-                if (c2 == '"') {
+                if (c2 == quote) {
                     hash += c1;
                     off += 2;
                     break;
@@ -1172,7 +1238,7 @@ public abstract sealed class JSONParser implements Closeable
                 if (c2 == '\\' || c2 >= 0x80) {
                     hash += c1;
                     this.offset = off + 1;
-                    return readFieldNameHashEscape(off + 1);
+                    return readFieldNameHashEscape(off + 1, quote);
                 }
                 hash += c1 + c2;
                 off += 2;
@@ -1190,12 +1256,12 @@ public abstract sealed class JSONParser implements Closeable
             return hash;
         }
 
-        private long readFieldNameHashEscape(int nameStart) {
+        private long readFieldNameHashEscape(int nameStart, int quote) {
             // offset is already set before the escape
             this.offset = nameStart;
             // Find the start (after opening quote which is at nameStart - (nameStart - start of field))
             // Actually we need to re-read from the opening quote. Let's just use the slow path.
-            String name = readStringContent();
+            String name = readStringContentWithQuote(quote);
             final byte[] b = this.bytes;
             final int e = this.end;
             skipWhitespace();
@@ -1227,8 +1293,14 @@ public abstract sealed class JSONParser implements Closeable
             while (off < e && b[off] <= ' ') {
                 off++;
             }
-            if (off >= e || b[off] != '"') {
-                throw new JSONException("expected '\"' for field name at offset " + off);
+            // Boundary check BEFORE accessing b[off]
+            if (off >= e) {
+                throw new JSONException("expected quote for field name at offset " + off);
+            }
+            final byte quote = b[off];
+            // Single quote only allowed when AllowSingleQuotes feature is enabled
+            if (quote != '"' && !(quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+                throw new JSONException("expected quote for field name at offset " + off);
             }
             off++;
 
@@ -1238,7 +1310,7 @@ public abstract sealed class JSONParser implements Closeable
 
             while (off < e) {
                 byte c = b[off];
-                if (c == '"') {
+                if (c == quote) {
                     off++;
                     while (off < e && b[off] <= ' ') {
                         off++;
@@ -1255,7 +1327,7 @@ public abstract sealed class JSONParser implements Closeable
                 }
                 if (c == '\\') {
                     this.offset = start;
-                    String name = readStringContent();
+                    String name = readStringContentWithQuote(quote);
                     skipWhitespace();
                     if (this.offset >= e || b[this.offset] != ':') {
                         throw new JSONException("expected ':' at offset " + this.offset);
@@ -1386,8 +1458,12 @@ public abstract sealed class JSONParser implements Closeable
             while (off < e && b[off] <= ' ') {
                 off++;
             }
-            if (off >= e || b[off] != '"') {
-                throw new JSONException("expected '\"' at offset " + off);
+            if (off >= e) {
+                throw new JSONException("expected quote at offset " + off);
+            }
+            byte quote = b[off];
+            if (quote != '"' && quote != '\'') {
+                throw new JSONException("expected quote at offset " + off);
             }
             off++; // skip opening quote
             // Inline readStringContent fast path for ASCII
@@ -1400,7 +1476,7 @@ public abstract sealed class JSONParser implements Closeable
 
             while (off < e) {
                 byte c = b[off];
-                if (c == '"') {
+                if (c == quote) {
                     int len = off - start;
                     this.offset = off + 1;
                     if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
@@ -1410,11 +1486,11 @@ public abstract sealed class JSONParser implements Closeable
                 }
                 if (c == '\\') {
                     this.offset = off;
-                    return readStringEscaped(start);
+                    return readStringEscaped(start, quote);
                 }
                 if (c < 0) {
                     this.offset = off;
-                    return readStringUTF8(start);
+                    return readStringUTF8(start, quote);
                 }
                 off++;
             }
@@ -1429,9 +1505,13 @@ public abstract sealed class JSONParser implements Closeable
             final byte[] b = this.bytes;
             int off = this.offset;
             final int e = this.end;
-            // Expect '"' (skipWS already done by caller)
-            if (off >= e || b[off] != '"') {
-                throw new JSONException("expected '\"' at offset " + off);
+            // Expect '"' or '\'' (skipWS already done by caller)
+            if (off >= e) {
+                throw new JSONException("expected quote at offset " + off);
+            }
+            byte quote = b[off];
+            if (quote != '"' && quote != '\'') {
+                throw new JSONException("expected quote at offset " + off);
             }
             off++;
             int start = off;
@@ -1440,10 +1520,11 @@ public abstract sealed class JSONParser implements Closeable
             if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
                 off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
             } else {
-                // SWAR fallback: scan 8 bytes at a time for '"', '\\', or non-ASCII (>= 0x80)
+                // SWAR fallback: scan 8 bytes at a time for quote, '\\', or non-ASCII (>= 0x80)
+                final long SWAR_QUOTE_OR_SINGLE = (quote == '"') ? SWAR_QUOTE : SWAR_SINGLE_QUOTE;
                 while (off + 8 <= e) {
                     long word = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
-                    long v1 = word ^ SWAR_QUOTE;
+                    long v1 = word ^ SWAR_QUOTE_OR_SINGLE;
                     long v2 = word ^ SWAR_ESCAPE;
                     long detect = ((v1 - SWAR_LO) & ~v1)
                             | ((v2 - SWAR_LO) & ~v2)
@@ -1459,7 +1540,7 @@ public abstract sealed class JSONParser implements Closeable
             // Per-byte scan for the found/remaining bytes
             while (off < e) {
                 byte c = b[off];
-                if (c == '"') {
+                if (c == quote) {
                     int len = off - start;
                     this.offset = off + 1;
                     if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
@@ -1469,11 +1550,11 @@ public abstract sealed class JSONParser implements Closeable
                 }
                 if (c == '\\') {
                     this.offset = off;
-                    return readStringEscaped(start);
+                    return readStringEscaped(start, quote);
                 }
                 if (c < 0) {
                     this.offset = off;
-                    return readStringUTF8(start);
+                    return readStringUTF8(start, quote);
                 }
                 off++;
             }
@@ -1694,12 +1775,12 @@ public abstract sealed class JSONParser implements Closeable
             while (off < end && b[off] != '"') {
                 if (b[off] == '\\') {
                     this.offset = off;
-                    reader.setObjectValue(bean, readStringEscaped(start));
+                    reader.setObjectValue(bean, readStringEscaped(start, '"'));
                     return this.offset;
                 }
                 if (b[off] < 0) {
                     this.offset = off;
-                    reader.setObjectValue(bean, readStringUTF8(start));
+                    reader.setObjectValue(bean, readStringUTF8(start, '"'));
                     return this.offset;
                 }
                 off++;
@@ -2022,12 +2103,12 @@ public abstract sealed class JSONParser implements Closeable
             while (off < end && b[off] != '"') {
                 if (b[off] == '\\') {
                     this.offset = off;
-                    com.alibaba.fastjson3.util.JDKUtils.putObject(bean, fieldOffset, readStringEscaped(start));
+                    com.alibaba.fastjson3.util.JDKUtils.putObject(bean, fieldOffset, readStringEscaped(start, '"'));
                     return this.offset;
                 }
                 if (b[off] < 0) {
                     this.offset = off;
-                    com.alibaba.fastjson3.util.JDKUtils.putObject(bean, fieldOffset, readStringUTF8(start));
+                    com.alibaba.fastjson3.util.JDKUtils.putObject(bean, fieldOffset, readStringUTF8(start, '"'));
                     return this.offset;
                 }
                 off++;
@@ -2094,14 +2175,14 @@ public abstract sealed class JSONParser implements Closeable
                     while (off < end && b[off] != '"') {
                         if (b[off] == '\\') {
                             this.offset = off;
-                            list.add(readStringEscaped(start));
+                            list.add(readStringEscaped(start, '"'));
                             off = this.offset;
                             special = true;
                             break;
                         }
                         if (b[off] < 0) {
                             this.offset = off;
-                            list.add(readStringUTF8(start));
+                            list.add(readStringUTF8(start, '"'));
                             off = this.offset;
                             special = true;
                             break;
@@ -2187,14 +2268,14 @@ public abstract sealed class JSONParser implements Closeable
                     while (off < end && b[off] != '"') {
                         if (b[off] == '\\') {
                             this.offset = off;
-                            arr[size++] = readStringEscaped(start);
+                            arr[size++] = readStringEscaped(start, '"');
                             off = this.offset;
                             special = true;
                             break;
                         }
                         if (b[off] < 0) {
                             this.offset = off;
-                            arr[size++] = readStringUTF8(start);
+                            arr[size++] = readStringUTF8(start, '"');
                             off = this.offset;
                             special = true;
                             break;
@@ -2496,12 +2577,43 @@ public abstract sealed class JSONParser implements Closeable
                 }
                 if (c == '\\') {
                     offset = off;
-                    return readStringEscaped(start);
+                    return readStringEscaped(start, '"');
                 }
                 if (c < 0) {
                     // Non-ASCII byte: need full UTF-8 decode
                     offset = off;
-                    return readStringUTF8(start);
+                    return readStringUTF8(start, '"');
+                }
+                off++;
+            }
+            throw new JSONException("unterminated string");
+        }
+
+        @Override
+        String readStringContentWithQuote(int quote) {
+            int start = offset;
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = start;
+            // Fast scan for closing quote (no escape, ASCII-only)
+            while (off < e) {
+                byte c = b[off];
+                if (c == quote) {
+                    int len = off - start;
+                    offset = off + 1;
+                    if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+                        return com.alibaba.fastjson3.util.JDKUtils.createLatin1String(b, start, len);
+                    }
+                    return new String(b, start, len, StandardCharsets.ISO_8859_1);
+                }
+                if (c == '\\') {
+                    offset = off;
+                    return readStringEscaped(start, quote);
+                }
+                if (c < 0) {
+                    // Non-ASCII byte: need full UTF-8 decode
+                    offset = off;
+                    return readStringUTF8(start, quote);
                 }
                 off++;
             }
@@ -2512,34 +2624,34 @@ public abstract sealed class JSONParser implements Closeable
          * Read string that contains non-ASCII (multi-byte UTF-8) characters.
          * Falls back to new String(bytes, start, len, UTF_8).
          */
-        private String readStringUTF8(int start) {
+        private String readStringUTF8(int start, int quote) {
             final byte[] b = this.bytes;
             final int e = this.end;
             int off = offset;
             while (off < e) {
                 byte c = b[off];
-                if (c == '"') {
+                if (c == quote) {
                     String result = new String(b, start, off - start, StandardCharsets.UTF_8);
                     offset = off + 1;
                     return result;
                 }
                 if (c == '\\') {
                     offset = off;
-                    return readStringEscaped(start);
+                    return readStringEscaped(start, quote);
                 }
                 off++;
             }
             throw new JSONException("unterminated string");
         }
 
-        private String readStringEscaped(int start) {
+        private String readStringEscaped(int start, int quote) {
             StringBuilder sb = new StringBuilder(offset - start + 16);
             if (offset > start) {
                 sb.append(new String(bytes, start, offset - start, StandardCharsets.UTF_8));
             }
             while (offset < end) {
                 int b = bytes[offset++] & 0xFF;
-                if (b == '"') {
+                if (b == quote) {
                     return sb.toString();
                 }
                 if (b == '\\') {
@@ -2631,19 +2743,37 @@ public abstract sealed class JSONParser implements Closeable
                     return result;
                 }
                 if (c == '\\') {
-                    return readStringEscaped(start);
+                    return readStringEscaped(start, '"');
                 }
                 offset++;
             }
             throw new JSONException("unterminated string");
         }
 
-        private String readStringEscaped(int start) {
+        @Override
+        String readStringContentWithQuote(int quote) {
+            int start = offset;
+            while (offset < end) {
+                char c = chars[offset];
+                if (c == quote) {
+                    String result = new String(chars, start, offset - start);
+                    offset++;
+                    return result;
+                }
+                if (c == '\\') {
+                    return readStringEscaped(start, quote);
+                }
+                offset++;
+            }
+            throw new JSONException("unterminated string");
+        }
+
+        private String readStringEscaped(int start, int quote) {
             StringBuilder sb = new StringBuilder(offset - start + 16);
             sb.append(chars, start, offset - start);
             while (offset < end) {
                 char c = chars[offset++];
-                if (c == '"') {
+                if (c == quote) {
                     return sb.toString();
                 }
                 if (c == '\\') {

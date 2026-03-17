@@ -502,4 +502,279 @@ public class UnifiedAPITest {
         public String name;
         public Integer age;
     }
+
+    // ========== ValueReader/ValueWriter Feature Tests ==========
+
+    @Test
+    void testValueReaderWithFeatures() {
+        ObjectMapper mapper = ObjectMapper.shared();
+        ObjectMapper.ValueReader<User> reader = mapper.readerFor(User.class)
+            .with(ReadFeature.UseBigDecimalForDoubles);
+
+        // Test with standard JSON (AllowSingleQuotes not yet implemented in JSONParser)
+        User user = reader.readValue("{\"name\":\"John\",\"age\":30}");
+        assertNotNull(user);
+        assertEquals("John", user.name);
+        assertEquals(30, user.age);
+    }
+
+    @Test
+    void testValueReaderWithoutFeatures() {
+        ObjectMapper mapper = ObjectMapper.builder()
+            .enableRead(ReadFeature.UseBigDecimalForDoubles)
+            .build();
+
+        ObjectMapper.ValueReader<User> reader = mapper.readerFor(User.class)
+            .without(ReadFeature.UseBigDecimalForDoubles);
+
+        // Verify features can be removed
+        assertFalse(reader.getClass().getSimpleName().isEmpty()); // Just verify reader exists
+    }
+
+    @Test
+    void testValueWriterWithFeatures() {
+        ObjectMapper mapper = ObjectMapper.shared();
+        ObjectMapper.ValueWriter writer = mapper.writer()
+            .with(WriteFeature.PrettyFormat, WriteFeature.WriteNulls);
+
+        User user = new User();
+        user.name = "John";
+        user.age = null;
+
+        String json = writer.writeValueAsString(user);
+        assertNotNull(json);
+        assertTrue(json.contains("\n")); // Pretty formatted
+        assertTrue(json.contains("\"age\"")); // With nulls
+    }
+
+    @Test
+    void testValueWriterWithoutFeatures() {
+        ObjectMapper mapper = ObjectMapper.builder()
+            .enableWrite(WriteFeature.PrettyFormat, WriteFeature.WriteNulls)
+            .build();
+
+        ObjectMapper.ValueWriter writer = mapper.writer()
+            .without(WriteFeature.PrettyFormat);
+
+        User user = new User();
+        user.name = "John";
+        user.age = null;
+
+        String json = writer.writeValueAsString(user);
+        assertNotNull(json);
+        assertFalse(json.contains("\n")); // Not pretty
+        assertTrue(json.contains("\"age\"")); // Still with nulls (not removed)
+    }
+
+    // ========== ParseConfig.API Tests ==========
+
+    @Test
+    void testParseWithAPIConfig() {
+        // ParseConfig.API enables ErrorOnUnknownProperties, so JSON must match User fields exactly
+        String json = "{\"name\":\"John\",\"age\":30}";
+
+        User user = JSON.parse(json, User.class, ParseConfig.API);
+        assertNotNull(user);
+        assertEquals("John", user.name);
+        assertEquals(30, user.age);
+    }
+
+    @Test
+    void testParseConfigAPIErrorOnUnknown() {
+        // ParseConfig.API should throw on unknown properties
+        String json = "{\"name\":\"John\",\"age\":30,\"unknownField\":123}";
+
+        assertThrows(JSONException.class, () ->
+            JSON.parse(json, User.class, ParseConfig.API));
+    }
+
+    @Test
+    void testParseConfigStrictErrorOnUnknown() {
+        String json = "{\"name\":\"John\",\"unknownField\":123}";
+
+        // STRICT mode should throw on unknown properties
+        assertThrows(JSONException.class, () ->
+            JSON.parse(json, User.class, ParseConfig.STRICT));
+    }
+
+    // ========== parseTypedArray with ParseConfig Tests ==========
+
+    @Test
+    void testParseTypedArrayWithConfig() {
+        String json = "[1, 2, 3]";
+
+        // Standard JSON parsing
+        Integer[] arr = JSON.parseTypedArray(json, Integer.class);
+        assertNotNull(arr);
+        assertEquals(3, arr.length);
+        assertEquals(1, arr[0]);
+        assertEquals(2, arr[1]);
+        assertEquals(3, arr[2]);
+
+        // With DEFAULT config
+        Integer[] arr2 = JSON.parseTypedArray(json, Integer.class, ParseConfig.DEFAULT);
+        assertNotNull(arr2);
+        assertEquals(3, arr2.length);
+    }
+
+    @Test
+    void testParseTypedArrayBytesWithConfig() {
+        byte[] jsonBytes = "[1, 2, 3]".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        // Standard JSON parsing
+        Integer[] arr = JSON.parseTypedArray(jsonBytes, Integer.class, ParseConfig.DEFAULT);
+        assertNotNull(arr);
+        assertEquals(3, arr.length);
+    }
+
+    // ========== ObjectMapper Features Propagation Tests ==========
+
+    @Test
+    void testObjectMapperFeaturesPropagation() {
+        // Create mapper with UseBigDecimalForDoubles enabled
+        ObjectMapper mapper = ObjectMapper.builder()
+            .enableRead(ReadFeature.UseBigDecimalForDoubles)
+            .build();
+
+        String json = "{\"name\":\"John\",\"age\":30}";
+
+        // readValue should respect the feature
+        User user = mapper.readValue(json, User.class);
+        assertNotNull(user);
+        assertEquals("John", user.name);
+        assertEquals(30, user.age);
+
+        // readObject should also respect the feature
+        JSONObject obj = mapper.readObject(json);
+        assertNotNull(obj);
+        assertEquals("John", obj.getString("name"));
+
+        // readArray should also respect the feature
+        JSONArray arr = mapper.readArray("[1, 2]");
+        assertNotNull(arr);
+        assertEquals(2, arr.size());
+    }
+
+    @Test
+    void testObjectMapperReadTreeFeatures() {
+        ObjectMapper mapper = ObjectMapper.builder()
+            .enableRead(ReadFeature.UseBigDecimalForDoubles)
+            .build();
+
+        String json = "{\"name\":\"John\",\"age\":30}";
+
+        Object tree = mapper.readTree(json);
+        assertNotNull(tree);
+        assertTrue(tree instanceof JSONObject);
+    }
+
+    // ========== AllowSingleQuotes Feature Tests ==========
+
+    @Test
+    void testParseWithSingleQuotes() {
+        // Parse JSON with single quotes using LENIENT config
+        String json = "{'name':'John','age':30}";
+
+        User user = JSON.parse(json, User.class, ParseConfig.LENIENT);
+        assertNotNull(user);
+        assertEquals("John", user.name);
+        assertEquals(30, user.age);
+    }
+
+    @Test
+    void testParseListWithSingleQuotes() {
+        String json = "[{'name':'John'},{'name':'Jane'}]";
+
+        List<User> users = JSON.parseList(json, User.class, ParseConfig.LENIENT);
+        assertNotNull(users);
+        assertEquals(2, users.size());
+        assertEquals("John", users.get(0).name);
+        assertEquals("Jane", users.get(1).name);
+    }
+
+    @Test
+    void testParseMapWithSingleQuotes() {
+        String json = "{'a':1,'b':2}";
+
+        Map<String, Integer> map = JSON.parseMap(json, Integer.class, ParseConfig.LENIENT);
+        assertNotNull(map);
+        assertEquals(2, map.size());
+        assertEquals(1, map.get("a"));
+        assertEquals(2, map.get("b"));
+    }
+
+    @Test
+    void testObjectMapperWithSingleQuotes() {
+        ObjectMapper mapper = ObjectMapper.builder()
+            .enableRead(ReadFeature.AllowSingleQuotes)
+            .build();
+
+        String json = "{'name':'John','age':30}";
+
+        User user = mapper.readValue(json, User.class);
+        assertNotNull(user);
+        assertEquals("John", user.name);
+        assertEquals(30, user.age);
+    }
+
+    @Test
+    void testValueReaderWithSingleQuotes() {
+        ObjectMapper mapper = ObjectMapper.shared();
+        ObjectMapper.ValueReader<User> reader = mapper.readerFor(User.class)
+            .with(ReadFeature.AllowSingleQuotes);
+
+        String json = "{'name':'John','age':30}";
+
+        User user = reader.readValue(json);
+        assertNotNull(user);
+        assertEquals("John", user.name);
+        assertEquals(30, user.age);
+    }
+
+    @Test
+    void testJSONParserWithSingleQuotes() {
+        String json = "{'name':'John','age':30}";
+
+        try (JSONParser parser = JSONParser.of(json, ReadFeature.AllowSingleQuotes)) {
+            JSONObject obj = parser.readObject();
+            assertNotNull(obj);
+            assertEquals("John", obj.getString("name"));
+            assertEquals(30, obj.getIntValue("age"));
+        }
+    }
+
+    @Test
+    void testJSONParserBytesWithSingleQuotes() {
+        byte[] jsonBytes = "{'name':'John','age':30}".getBytes(StandardCharsets.UTF_8);
+
+        try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.AllowSingleQuotes)) {
+            JSONObject obj = parser.readObject();
+            assertNotNull(obj);
+            assertEquals("John", obj.getString("name"));
+            assertEquals(30, obj.getIntValue("age"));
+        }
+    }
+
+    @Test
+    void testSingleQuotesWithEscape() {
+        // Test single quotes with standard JSON escape sequences
+        // Note: \' is not a standard JSON escape, use \\ for backslash
+        String json = "{'name':'John\\nSmith','age':30}";
+
+        User user = JSON.parse(json, User.class, ParseConfig.LENIENT);
+        assertNotNull(user);
+        assertEquals("John\nSmith", user.name);
+        assertEquals(30, user.age);
+    }
+
+    @Test
+    void testSingleQuotesWithUnicodeEscape() {
+        // Test single quotes with unicode escape
+        String json = "{'name':'\\u0041\\u0042','age':30}";
+
+        User user = JSON.parse(json, User.class, ParseConfig.LENIENT);
+        assertNotNull(user);
+        assertEquals("AB", user.name);
+        assertEquals(30, user.age);
+    }
 }

@@ -361,7 +361,7 @@ public final class ObjectMapper {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(json)) {
+        try (JSONParser parser = JSONParser.of(json, readFeatures)) {
             return parser.readAny();
         }
     }
@@ -376,11 +376,11 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(json)) {
+            try (JSONParser parser = JSONParser.of(json, readFeatures)) {
                 return objectReader.readObject(parser, type, null, readFeatures);
             }
         }
-        try (JSONParser parser = JSONParser.of(json)) {
+        try (JSONParser parser = JSONParser.of(json, readFeatures)) {
             return parser.read(type);
         }
     }
@@ -399,11 +399,11 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(json)) {
+            try (JSONParser parser = JSONParser.of(json, readFeatures)) {
                 return objectReader.readObject(parser, type, null, readFeatures);
             }
         }
-        try (JSONParser parser = JSONParser.of(json)) {
+        try (JSONParser parser = JSONParser.of(json, readFeatures)) {
             return parser.read(type);
         }
     }
@@ -431,11 +431,11 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(jsonBytes)) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
                 return objectReader.readObject(parser, type, null, readFeatures);
             }
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes)) {
+        try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
             return parser.read(type);
         }
     }
@@ -450,11 +450,11 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(jsonBytes)) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
                 return objectReader.readObject(parser, type, null, readFeatures);
             }
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes)) {
+        try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
             return parser.read(type);
         }
     }
@@ -523,7 +523,7 @@ public final class ObjectMapper {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(json)) {
+        try (JSONParser parser = JSONParser.of(json, readFeatures)) {
             return parser.readObject();
         }
     }
@@ -535,7 +535,7 @@ public final class ObjectMapper {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes)) {
+        try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
             return parser.readObject();
         }
     }
@@ -547,7 +547,7 @@ public final class ObjectMapper {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(json)) {
+        try (JSONParser parser = JSONParser.of(json, readFeatures)) {
             return parser.readArray();
         }
     }
@@ -559,7 +559,7 @@ public final class ObjectMapper {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes)) {
+        try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
             return parser.readArray();
         }
     }
@@ -586,7 +586,7 @@ public final class ObjectMapper {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+        try (JSONParser parser = JSONParser.of(json, features)) {
             JSONArray array = parser.readArray();
             if (array == null) {
                 return null;
@@ -602,7 +602,7 @@ public final class ObjectMapper {
                 } else if (item instanceof JSONObject jsonObj && objectReader != null) {
                     // Convert JSONObject to target type via ObjectReader
                     String itemJson = JSON.toJSONString(jsonObj);
-                    try (JSONParser itemParser = JSONParser.of(itemJson, ReadFeature.valuesFrom(features))) {
+                    try (JSONParser itemParser = JSONParser.of(itemJson, features)) {
                         list.add(objectReader.readObject(itemParser, type, null, features));
                     }
                 } else {
@@ -628,7 +628,7 @@ public final class ObjectMapper {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+        try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
             JSONArray array = parser.readArray();
             if (array == null) {
                 return null;
@@ -643,7 +643,7 @@ public final class ObjectMapper {
                     list.add(type.cast(item));
                 } else if (item instanceof JSONObject jsonObj && objectReader != null) {
                     String itemJson = JSON.toJSONString(jsonObj);
-                    try (JSONParser itemParser = JSONParser.of(itemJson, ReadFeature.valuesFrom(features))) {
+                    try (JSONParser itemParser = JSONParser.of(itemJson, features)) {
                         list.add(objectReader.readObject(itemParser, type, null, features));
                     }
                 } else {
@@ -713,7 +713,7 @@ public final class ObjectMapper {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+        try (JSONParser parser = JSONParser.of(json, features)) {
             JSONObject object = parser.readObject();
             if (object == null) {
                 return null;
@@ -728,7 +728,7 @@ public final class ObjectMapper {
                     map.put(key, valueType.cast(item));
                 } else if (item instanceof JSONObject jsonObj && objectReader != null) {
                     String itemJson = JSON.toJSONString(jsonObj);
-                    try (JSONParser itemParser = JSONParser.of(itemJson, ReadFeature.valuesFrom(features))) {
+                    try (JSONParser itemParser = JSONParser.of(itemJson, features)) {
                         map.put(key, objectReader.readObject(itemParser, valueType, null, features));
                     }
                 } else {
@@ -753,7 +753,7 @@ public final class ObjectMapper {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+        try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
             JSONObject object = parser.readObject();
             if (object == null) {
                 return null;
@@ -768,7 +768,7 @@ public final class ObjectMapper {
                     map.put(key, valueType.cast(item));
                 } else if (item instanceof JSONObject jsonObj && objectReader != null) {
                     String itemJson = JSON.toJSONString(jsonObj);
-                    try (JSONParser itemParser = JSONParser.of(itemJson, ReadFeature.valuesFrom(features))) {
+                    try (JSONParser itemParser = JSONParser.of(itemJson, features)) {
                         map.put(key, objectReader.readObject(itemParser, valueType, null, features));
                     }
                 } else {
@@ -791,11 +791,11 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+            try (JSONParser parser = JSONParser.of(json, features)) {
                 return objectReader.readObject(parser, type, null, features);
             }
         }
-        try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+        try (JSONParser parser = JSONParser.of(json, features)) {
             return parser.read(type);
         }
     }
@@ -810,11 +810,11 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
                 return objectReader.readObject(parser, type, null, features);
             }
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+        try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
             return parser.read(type);
         }
     }
@@ -829,11 +829,11 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+            try (JSONParser parser = JSONParser.of(json, features)) {
                 return objectReader.readObject(parser, type, null, features);
             }
         }
-        try (JSONParser parser = JSONParser.of(json, ReadFeature.valuesFrom(features))) {
+        try (JSONParser parser = JSONParser.of(json, features)) {
             return parser.read(type);
         }
     }
@@ -848,11 +848,11 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
                 return objectReader.readObject(parser, type, null, features);
             }
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes, ReadFeature.valuesFrom(features))) {
+        try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
             return parser.read(type);
         }
     }
@@ -906,7 +906,7 @@ public final class ObjectMapper {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes)) {
+        try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
             return parser.readAny();
         }
     }
@@ -1453,11 +1453,11 @@ public final class ObjectMapper {
             }
             ObjectReader<T> reader = (ObjectReader<T>) mapper.getObjectReader(type);
             if (reader != null) {
-                try (JSONParser jr = JSONParser.of(json)) {
+                try (JSONParser jr = JSONParser.of(json, features)) {
                     return reader.readObject(jr, type, null, features);
                 }
             }
-            try (JSONParser jr = JSONParser.of(json)) {
+            try (JSONParser jr = JSONParser.of(json, features)) {
                 return jr.read(type);
             }
         }
@@ -1472,11 +1472,11 @@ public final class ObjectMapper {
             }
             ObjectReader<T> reader = (ObjectReader<T>) mapper.getObjectReader(type);
             if (reader != null) {
-                try (JSONParser jr = JSONParser.of(jsonBytes)) {
+                try (JSONParser jr = JSONParser.of(jsonBytes, features)) {
                     return reader.readObject(jr, type, null, features);
                 }
             }
-            try (JSONParser jr = JSONParser.of(jsonBytes)) {
+            try (JSONParser jr = JSONParser.of(jsonBytes, features)) {
                 return jr.read(type);
             }
         }
