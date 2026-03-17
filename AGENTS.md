@@ -21,7 +21,7 @@ fastjson3 core3 is a high-performance JSON library for Java 17+, targeting JVM, 
 ## Build
 
 ```bash
-mvn test -pl core3                     # Run all tests (92 tests)
+mvn test -pl core3                     # Run all tests (1327 tests)
 mvn package -pl core3                  # Full JAR (JVM, 62 classes)
 mvn package -pl core3 -Pandroid        # Android JAR (45 classes, 35% smaller)
 mvn package -pl core3 -DskipTests      # Skip tests for faster builds
