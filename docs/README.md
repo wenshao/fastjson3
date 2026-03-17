@@ -66,7 +66,6 @@
 |------|------|
 | [architecture.md](internals/architecture.md) | 整体架构设计 |
 | [optimization.md](internals/optimization.md) | 性能优化技术 |
-| [parser.md](internals/parser.md) | 解析器实现原理 |
 
 ### 📦 其他 | Others
 
@@ -74,7 +73,7 @@
 |------|------|
 | [cheat-sheet.md](cheat-sheet.md) | 速查表 - 一页纸常用代码 |
 | [best-practices.md](best-practices.md) | 最佳实践 & 避坑指南 |
-| [migration.md](migration.md) | 从其他库迁移（含分库指南）|
+| [migration/](migration/) | 迁移指南 |
 | [faq.md](faq.md) | 常见问题解答 |
 
 ### 💡 示例代码 | Samples
@@ -109,6 +108,10 @@ run.bat               # Windows
 | 自定义序列化 | [advanced/custom-serializer.md](advanced/custom-serializer.md) |
 | 提升性能 | [guides/performance.md](guides/performance.md) |
 | 安全配置 | [advanced/security.md](advanced/security.md) |
+| 从 fastjson2 迁移 | [migration/from-fastjson2.md](migration/from-fastjson2.md) |
+| 从 Jackson 迁移 | [migration/from-jackson.md](migration/from-jackson.md) |
+| 从 Gson 迁移 | [migration/from-gson.md](migration/from-gson.md) |
+| 从 org.json 迁移 | [migration/from-org-json.md](migration/from-org-json.md) |
 
 ---
 

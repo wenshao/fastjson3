@@ -5,6 +5,8 @@ import com.alibaba.fastjson3.JSONArray;
 import com.alibaba.fastjson3.JSONObject;
 import com.alibaba.fastjson3.JSONPath;
 
+import java.util.List;
+
 /**
  * JSONPath 示例：演示 JSONPath 查询功能
  */
@@ -31,8 +33,8 @@ public class JSONPathExample {
         // 1. 获取根节点
         System.out.println("1. 获取根节点 $");
         JSONPath rootPath = JSONPath.of("$");
-        JSONObject root = rootPath.eval(json, JSONObject.class);
-        System.out.println("  根节点类型: " + root.getClass().getSimpleName());
+        JSONObject rootObj = rootPath.eval(json, JSONObject.class);
+        System.out.println("  根节点类型: " + rootObj.getClass().getSimpleName());
 
         // 2. 获取嵌套属性
         System.out.println("\n2. 获取嵌套属性 $.store.bicycle.color");
@@ -44,13 +46,13 @@ public class JSONPathExample {
         System.out.println("\n3. 数组索引 $.store.book[0]");
         JSONPath firstBookPath = JSONPath.of("$.store.book[0]");
         JSONObject firstBook = firstBookPath.eval(json, JSONObject.class);
-        System.out.println("  第一本书: " + firstBook.get("title"));
+        System.out.println("  第一本书: " + firstBook.getString("title"));
 
         // 4. 获取最后一本书
         System.out.println("\n4. 获取最后一本书 $.store.book[-1]");
         JSONPath lastBookPath = JSONPath.of("$.store.book[-1]");
         JSONObject lastBook = lastBookPath.eval(json, JSONObject.class);
-        System.out.println("  最后一本书: " + lastBook.get("title"));
+        System.out.println("  最后一本书: " + lastBook.getString("title"));
 
         // 5. 通配符 - 所有作者
         System.out.println("\n5. 获取所有作者 $.store.book[*].author");
@@ -67,7 +69,7 @@ public class JSONPathExample {
         System.out.println("  便宜的书: " + cheapBooks.size() + " 本");
         for (int i = 0; i < cheapBooks.size(); i++) {
             JSONObject book = cheapBooks.getJSONObject(i);
-            System.out.println("    - " + book.get("title") + ": $" + book.get("price"));
+            System.out.println("    - " + book.getString("title") + ": $" + book.getDouble("price"));
         }
 
         // 7. 过滤 - fiction 类别
@@ -92,28 +94,29 @@ public class JSONPathExample {
 
         // 10. 预编译并复用（性能推荐）
         System.out.println("\n10. 预编译 JSONPath");
-        JSONPath compiledPath = JSONPath.compile("$.store.book[*].price");
+        JSONPath compiledPath = JSONPath.of("$.store.book[*].price");
         List<Double> prices = compiledPath.extract(json, List.class);
         System.out.println("  所有价格: " + prices);
-        double total = prices.stream().mapToDouble(Double::doubleValue).sum();
+        double total = 0;
+        for (Double price : prices) {
+            total += price;
+        }
         System.out.println("  总价: $" + total);
 
-        // 11. 类型化多路径提取
-        System.out.println("\n11. 类型化多路径提取");
-        JSONPath.TypedMultiPath multi = JSONPath.typedMulti()
-            .path("$.store.bicycle.color", String.class)
-            .path("$.store.bicycle.price", Double.class)
-            .path("$.expensive", Integer.class)
-            .build();
-        Object[] multiValues = multi.extract(json);
-        System.out.println("  自行车颜色: " + multiValues[0]);
-        System.out.println("  自行车价格: " + multiValues[1]);
-        System.out.println("  阈值: " + multiValues[2]);
-
-        // 12. 使用已解析对象
-        System.out.println("\n12. 使用已解析对象");
-        JSONObject root = JSON.parseObject(json);
-        String bikeColor = root.eval("$.store.bicycle.color", String.class);
+        // 11. 使用已解析对象 + JSONPath.eval
+        System.out.println("\n11. 使用已解析对象");
+        JSONObject parsed = JSON.parseObject(json);
+        String bikeColor = JSONPath.eval(parsed, "$.store.bicycle.color", String.class);
         System.out.println("  自行车颜色: " + bikeColor);
+
+        // 12. 多路径提取 - 使用多次查询
+        System.out.println("\n12. 多路径提取（性能优化）");
+        JSONObject data = JSON.parseObject(json);
+        String bikeColor2 = JSONPath.eval(data, "$.store.bicycle.color", String.class);
+        Double bikePrice = JSONPath.eval(data, "$.store.bicycle.price", Double.class);
+        Integer expensive = JSONPath.eval(data, "$.expensive", Integer.class);
+        System.out.println("  自行车颜色: " + bikeColor2);
+        System.out.println("  自行车价格: " + bikePrice);
+        System.out.println("  阈值: " + expensive);
     }
 }

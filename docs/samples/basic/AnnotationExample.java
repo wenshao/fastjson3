@@ -1,4 +1,4 @@
-package com.example.fastjson3.basic;
+package com.alibaba.fastjson3.samples.basic;
 
 import com.alibaba.fastjson3.JSON;
 import com.alibaba.fastjson3.TypeToken;

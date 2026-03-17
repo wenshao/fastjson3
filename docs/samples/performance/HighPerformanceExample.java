@@ -2,6 +2,7 @@ package com.alibaba.fastjson3.samples.performance;
 
 import com.alibaba.fastjson3.JSON;
 import com.alibaba.fastjson3.ObjectMapper;
+import com.alibaba.fastjson3.TypeToken;
 import com.alibaba.fastjson3.annotation.JSONField;
 import com.alibaba.fastjson3.annotation.JSONType;
 
@@ -33,7 +34,7 @@ public class HighPerformanceExample {
         public void setUserId(Long id) { userId = id; }
         public String getUserName() { return userName; }
         public void setUserName(String name) { userName = name; }
-        public Integer getUserAge() { return age; }
+        public Integer getUserAge() { return userAge; }
         public void setUserAge(Integer age) { userAge = age; }
     }
 
@@ -89,7 +90,7 @@ public class HighPerformanceExample {
 
         // 编译一次，重复使用
         com.alibaba.fastjson3.JSONPath path =
-            com.alibaba.fastjson3.JSONPath.compile("$.users[*].name");
+            com.alibaba.fastjson3.JSONPath.of("$.users[*].name");
 
         // 多次使用
         for (int i = 0; i < 100; i++) {
@@ -135,21 +136,20 @@ public class HighPerformanceExample {
 
         // ❌ 不好：每次创建新的 TypeToken
         // for (int i = 0; i < 1000; i++) {
-        //     new TypeToken<List<User>>() {};
+        //     TypeToken.listOf(User.class);
         // }
 
         // ✅ 好：缓存 TypeToken
-        com.alibaba.fastjson3.TypeToken<java.util.List<User>> userType =
-            new com.alibaba.fastjson3.TypeToken<java.util.List<User>>() {};
+        TypeToken<java.util.List<User>> userType = TypeToken.listOf(User.class);
 
         String json = "[{\"id\":1,\"name\":\"张三\",\"age\":25}]";
 
         // 多次复用
         for (int i = 0; i < 100; i++) {
-            java.util.List<User> users = JSON.parseObject(json, userType);
+            java.util.List<User> users = JSON.parse(json, userType);
         }
 
-        System.out.println("  缓存 TypeToken: " + userType.getType());
+        System.out.println("  缓存 TypeToken: " + userType.typeName());
         System.out.println("  优势: 避免重复创建 TypeToken 对象");
         System.out.println();
     }
@@ -171,17 +171,15 @@ public class HighPerformanceExample {
         // String name = JSONPath.of("$.name").eval(json, String.class);
         // String age = JSONPath.of("$.age").eval(json, Integer.class);
 
-        // ✅ 好：多路径一次性提取
-        com.alibaba.fastjson3.JSONPath.TypedMultiPath multi =
-            com.alibaba.fastjson3.JSONPath.typedMulti()
-                .path("$.name", String.class)
-                .path("$.age", Integer.class)
-                .path("$.email", String.class)
-                .path("$.vip", Boolean.class)
-                .build();
+        // ✅ 好：使用已解析对象进行多次查询
+        com.alibaba.fastjson3.JSONObject obj = JSON.parseObject(json);
+        String name = com.alibaba.fastjson3.JSONPath.of("$.name").eval(obj, String.class);
+        Integer age = com.alibaba.fastjson3.JSONPath.of("$.age").eval(obj, Integer.class);
+        String email = com.alibaba.fastjson3.JSONPath.of("$.email").eval(obj, String.class);
+        Boolean vip = com.alibaba.fastjson3.JSONPath.of("$.vip").eval(obj, Boolean.class);
 
-        Object[] values = multi.extract(json);
-        System.out.println("  一次性提取: " + java.util.Arrays.toString(values));
+        System.out.println("  一次性提取: name=" + name + ", age=" + age +
+                          ", email=" + email + ", vip=" + vip);
         System.out.println("  优势: 减少 JSON 解析次数");
         System.out.println();
     }

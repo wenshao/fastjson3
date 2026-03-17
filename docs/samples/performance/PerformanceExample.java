@@ -1,6 +1,7 @@
 package com.alibaba.fastjson3.samples.performance;
 
 import com.alibaba.fastjson3.JSON;
+import com.alibaba.fastjson3.JSONPath;
 import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.util.JDKUtils;
 
@@ -58,7 +59,7 @@ public class PerformanceExample {
         // ❌ 不好：每次创建新实例
         long start1 = System.nanoTime();
         for (int i = 0; i < 10000; i++) {
-            ObjectMapper mapper = new ObjectMapper();  // 每次创建
+            ObjectMapper mapper = ObjectMapper.builder().build();  // 每次创建
             mapper.writeValueAsString(new User("User" + i, 25));
         }
         long time1 = System.nanoTime() - start1;
@@ -125,8 +126,8 @@ public class PerformanceExample {
         }
         long time1 = System.nanoTime() - start1;
 
-        // ✅ 好：预编译
-        JSONPath path = JSONPath.compile("$.store.book[*].price");
+        // ✅ 好：预编译（复用同一个 JSONPath 实例）
+        JSONPath path = JSONPath.of("$.store.book[*].price");
         long start2 = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
             path.eval(json, Object.class);

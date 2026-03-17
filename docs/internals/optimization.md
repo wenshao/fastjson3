@@ -416,6 +416,203 @@ void writeNameInt(long[] nameLongs, int nameLen, int value) {
 
 ---
 
+## 8. 转移计算（Shift Computation）
+
+### 问题
+
+运行时重复计算相同内容：
+
+```java
+// ❌ 每次序列化都要计算
+public void writeUser(JSONGenerator gen, User user) {
+    gen.writeFieldName("userName");        // 每次写入字符串
+    gen.writeString(user.getUserName());
+
+    gen.writeFieldName("userAge");         // 每次写入字符串
+    gen.writeInt(user.getUserAge());
+
+    gen.writeFieldName("userEmail");       // 每次写入字符串
+    gen.writeString(user.getUserEmail());
+}
+```
+
+**开销**：
+- 字段名字符串每次都写入
+- 字段类型判断每次都执行
+- 格式化模式每次都解析
+
+### 解决方案：CodeGen 阶段预计算
+
+将计算转移到**类定义阶段**或**代码生成阶段**：
+
+```java
+// ✅ CodeGen 阶段生成的专用代码
+public final class UserWriter implements ObjectWriter<User> {
+    // 定义阶段：预编码字段名
+    private static final long[] NAME_USER_NAME = encodeFieldName("userName");
+    private static final long[] NAME_USER_AGE = encodeFieldName("userAge");
+    private static final long[] NAME_USER_EMAIL = encodeFieldName("userEmail");
+    private static final int NAME_USER_NAME_LEN = "userName\":".length();
+    private static final int NAME_USER_AGE_LEN = "userAge\":".length();
+
+    // 运行时：直接使用预计算结果
+    public void write(JSONGenerator gen, Object object) {
+        User user = (User) object;
+
+        // 直接写入预编码的 long[]，无字符串处理
+        gen.writeNameLongs(NAME_USER_NAME, NAME_USER_NAME_LEN);
+        gen.writeString(user.name);
+
+        gen.writeNameLongs(NAME_USER_AGE, NAME_USER_AGE_LEN);
+        gen.writeInt(user.age);
+
+        gen.writeNameLongs(NAME_USER_EMAIL, NAME_USER_EMAIL_LEN);
+        gen.writeString(user.email);
+    }
+}
+```
+
+### 转移计算的层次
+
+| 计算时机 | 示例 | 性能提升 |
+|----------|------|----------|
+| **运行时每次** | `gen.writeFieldName("name")` | 基准（最慢） |
+| **类加载时一次** | `static final long[] NAME = encode("name")` | ~30% |
+| **代码生成时** | ASM 生成专用 Writer 类 | ~50% |
+
+### 实际示例
+
+#### 1. 字段名预编码（类加载时）
+
+```java
+// ❌ 运行时：每次都转码写字符串
+gen.writeFieldName("user_name");  // "user_name" -> UTF-8 bytes -> write
+
+// ✅ 定义时：预编码为 long[]
+static final long[] NAME_USER_NAME = {
+    0x225f757365725f6eL,  // "\"user_n"
+    0x616d65223a000000L  // "ame\":\0\0\0"
+};
+static final int NAME_LEN = 11;  // "\"user_name\":"
+
+// 运行时：直接 putLong
+gen.writeNameLongs(NAME_USER_NAME, NAME_LEN);
+```
+
+#### 2. 类型判断预计算（代码生成时）
+
+```java
+// ❌ 运行时：每次判断类型
+public void writeField(Object value) {
+    if (value instanceof String) {
+        writeString((String) value);
+    } else if (value instanceof Integer) {
+        writeInt((Integer) value);
+    } else if (value instanceof Long) {
+        writeLong((Long) value);
+    }
+    // ...
+}
+
+// ✅ 代码生成时：为每种类型生成专门方法
+// ASM 生成的 StringFieldWriter
+public void writeField(JSONGenerator gen, Object bean) {
+    gen.writeString(((User) bean).name);  // 无类型判断
+}
+
+// ASM 生成的 IntFieldWriter
+public void writeField(JSONGenerator gen, Object bean) {
+    gen.writeInt(((User) bean).age);  // 无类型判断
+}
+```
+
+#### 3. 格式化模式预解析（定义时）
+
+```java
+// ❌ 运行时：每次解析格式字符串
+@JSONField(format = "yyyy-MM-dd HH:mm:ss")
+private Date createTime;
+// 每次序列化都要解析 "yyyy-MM-dd HH:mm:ss"
+
+// ✅ 定义时：预解析为格式化对象
+static class DateFormatter {
+    static final DateTimeFormatter FORMATTER =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");  // 类加载时解析一次
+}
+// 运行时直接使用 FORMATTER.format()
+```
+
+#### 4. JSONPath 预编译（使用时）
+
+```java
+// ❌ 每次都编译路径
+for (int i = 0; i < 10000; i++) {
+    Object result = JSONPath.of("$.store.book[*].price").eval(json);
+}
+
+// ✅ 编译一次，复用多次
+JSONPath path = JSONPath.of("$.store.book[*].price");  // 编译一次
+for (int i = 0; i < 10000; i++) {
+    Object result = path.eval(json);  // 直接求值
+}
+```
+
+### 性能对比
+
+| 操作 | 运行时计算 | 预计算 | 提升 |
+|------|-----------|--------|------|
+| 写字段名 | 字符串转码 | long[] 写入 | **~30%** |
+| 类型判断 | instanceof 分支 | 直接调用 | **~20%** |
+| 格式解析 | 每次解析 | 预解析 | **~15%** |
+| 路径编译 | 每次编译 | 编译一次 | **~100x** |
+
+### 你可以学到什么
+
+1. **定义阶段计算** - 类加载时计算一次，运行时直接用
+2. **代码生成优化** - ASM 生成专用代码，消除分支
+3. **预编译复用** - 编译一次，复用多次
+4. **常量提取** - 固定内容预计算
+
+### 应用到你的项目
+
+```java
+// 1. 字符串常量预编码
+public class Constants {
+    public static final byte[] HEADER = ("HTTP/1.1 200 OK\r\n").getBytes(StandardCharsets.UTF_8);
+    public static final long[] HEADER_LONG = toLongArray(HEADER);
+}
+
+// 2. 格式化器预创建
+private static final DateTimeFormatter DATE_FORMATTER =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+// 3. 正则表达式预编译
+private static final Pattern EMAIL_PATTERN =
+    Pattern.compile("^[A-Za-z0-9+_.-]+@(.+)$");
+
+// 4. 配置预解析
+private static final Config CONFIG = Config.load();  // 启动时加载
+
+// 5. 使用 AnnotationProcessor 或 APT 在编译时生成代码
+@Generated("UserProcessor")
+public class UserWriter {
+    // 编译时生成的代码，零运行时开销
+}
+```
+
+### 最佳实践
+
+| 场景 | 预计算方式 | 时机 |
+|------|-----------|------|
+| 字符串常量 | 预编码为 byte[] | 类加载时 |
+| 格式化模式 | 预解析为 Formatter | 类加载时 |
+| 正则表达式 | 预编译为 Pattern | 类加载时 |
+| 配置文件 | 预解析为对象 | 应用启动时 |
+| 模板 | 预编译为代码 | 编译时（APT） |
+| SQL/JSONPath | 预编译 | 定义时或首次使用时 |
+
+---
+
 ## 优化设计原则
 
 总结 fastjson3 的优化思路：
@@ -426,6 +623,7 @@ void writeNameInt(long[] nameLongs, int nameLen, int value) {
 4. **避免反射** - ASM 字节码生成
 5. **内存复用** - 缓冲区池化
 6. **快速路径** - 常见情况特殊处理
+7. **转移计算** - 将计算从运行时转移到定义/CodeGen 阶段
 
 ## 参考资料
 

@@ -1,4 +1,4 @@
-package com.example.fastjson3.basic;
+package com.alibaba.fastjson3.samples.basic;
 
 import com.alibaba.fastjson3.JSON;
 import com.alibaba.fastjson3.JSONObject;
@@ -66,7 +66,7 @@ public class BasicExample {
 
         // 4. 解析数组为对象列表
         System.out.println("\n=== 数组转列表 ===");
-        User[] users = JSON.parseArray(jsonArray, User[].class);
+        java.util.List<User> users = JSON.parseArray(jsonArray, User.class);
         for (User u : users) {
             System.out.println("  " + u);
         }

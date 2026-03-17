@@ -23,14 +23,38 @@
     <dependencies>
         <!-- fastjson3 核心库 -->
         <dependency>
-            <groupId>com.alibaba</groupId>
+            <groupId>com.alibaba.fastjson3</groupId>
             <artifactId>fastjson3</artifactId>
-            <version>${fastjson3.version}</version>
+            <version>3.0.0-SNAPSHOT</version>
         </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!-- 添加源码目录 -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>add-source</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>basic</source>
+                                <source>jsonpath</source>
+                                <source>performance</source>
+                                <source>advanced</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- 编译插件 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
