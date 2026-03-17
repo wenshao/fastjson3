@@ -6,17 +6,14 @@
 
 ## 类型化提取
 
-### TypedMultiPath - 一次提取多个值
+### 多路径提取 - 一次提取多个值
 
 ```java
-JSONPath.TypedMultiPath multi = JSONPath.typedMulti()
-    .path("$.store.book[0].author", String.class)
-    .path("$.store.book[0].price", Double.class)
-    .path("$.store.book[0].category", String.class)
-    .path("$.store.bicycle.color", String.class)
-    .build();
+String[] paths = {"$.store.book[0].author", "$.store.book[0].price", "$.store.book[0].category", "$.store.bicycle.color"};
+Type[] types = {String.class, Double.class, String.class, String.class};
+JSONPath multi = JSONPath.of(paths, types);
 
-Object[] values = multi.extract(json);
+Object[] values = multi.eval(json);
 // values[0] = "Nigel Rees" (String)
 // values[1] = 8.95 (Double)
 // values[2] = "reference" (String)
@@ -68,13 +65,11 @@ String author = path.eval(root, String.class);
 
 ```java
 // ✅ 一次提取多个值
-JSONPath.TypedMultiPath multi = JSONPath.typedMulti()
-    .path("$.name", String.class)
-    .path("$.age", Integer.class)
-    .path("$.email", String.class)
-    .build();
+String[] paths = {"$.name", "$.age", "$.email"};
+Type[] types = {String.class, Integer.class, String.class};
+JSONPath multi = JSONPath.of(paths, types);
 
-Object[] values = multi.extract(json);
+Object[] values = multi.eval(json);
 
 // ⚠️ 多次查询
 String name = JSONPath.of("$.name").eval(json, String.class);

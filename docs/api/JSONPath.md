@@ -143,12 +143,9 @@ path.set(root, 29.99);
 ### 创建
 
 ```java
-JSONPath.TypedMultiPath multi = JSONPath.typedMulti()
-    .path("$.name", String.class)
-    .path("$.age", Integer.class)
-    .path("$.vip", Boolean.class)
-    .path("$.balance", Double.class)
-    .build();
+String[] paths = {"$.name", "$.age", "$.vip", "$.balance"};
+Type[] types = {String.class, Integer.class, Boolean.class, Double.class};
+JSONPath multi = JSONPath.of(paths, types);
 ```
 
 ### 提取
@@ -248,11 +245,10 @@ String title = path.eval(root, String.class);
 
 ```java
 // ✅ 好：一次提取多个值
-TypedMultiPath multi = JSONPath.typedMulti()
-    .path("$.name", String.class)
-    .path("$.age", Integer.class)
-    .build();
-Object[] values = multi.extract(json);
+String[] paths = {"$.name", "$.age"};
+Type[] types = {String.class, Integer.class};
+JSONPath multi = JSONPath.of(paths, types);
+Object[] values = multi.eval(json);
 
 // ⚠️ 较慢：多次查询
 String name = JSONPath.of("$.name").eval(json, String.class);
@@ -362,12 +358,10 @@ public class JSONPathDemo {
         System.out.println(cheapBooks.toJSONString());
 
         // 4. 多路径提取
-        JSONPath.TypedMultiPath multi = JSONPath.typedMulti()
-            .path("$.store.book[0].author", String.class)
-            .path("$.store.book[0].price", Double.class)
-            .path("$.store.bicycle.color", String.class)
-            .build();
-        Object[] values = multi.extract(json);
+        String[] paths = {"$.store.book[0].author", "$.store.book[0].price", "$.store.bicycle.color"};
+        Type[] types = {String.class, Double.class, String.class};
+        JSONPath multi = JSONPath.of(paths, types);
+        Object[] values = multi.eval(json);
         System.out.println(Arrays.toString(values));
     }
 }
