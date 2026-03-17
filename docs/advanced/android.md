@@ -211,10 +211,10 @@ String json = obj.toJSONString();
 ### 使用预编译 JSONPath
 
 ```java
-// ✅ 好：预编译
-private static final JSONPath PATH = JSONPath.compile("$.user.name");
+// ✅ 好：预编译并复用
+private static final JSONPath PATH = JSONPath.of("$.user.name");
 
-// ❌ 不好：每次编译
+// ❌ 不好：每次创建新实例
 JSONPath path = JSONPath.of("$.user.name");
 ```
 

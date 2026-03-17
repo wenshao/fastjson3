@@ -203,12 +203,12 @@ JSONPath.of("$.store.book[*]['author', 'price']")
 
 ## 使用方式
 
-### 方式1: 编译后重用（推荐）
+### 方式1: 预编译后重用（推荐）
 
 ```java
-// 编译一次
+// 预编译一次
 private static final JSONPath AUTHOR_PATH =
-    JSONPath.compile("$.store.book[*].author");
+    JSONPath.of("$.store.book[*].author");
 
 // 多次使用
 List<String> authors1 = AUTHOR_PATH.extract(json1, List.class);

@@ -1,5 +1,7 @@
 # fastjson3 速查表
 
+**版本**：fastjson3 3.0.0 | **Java 要求**：JDK 21+
+
 快速参考常用操作。
 
 ## 基础操作
@@ -73,19 +75,18 @@ ObjectMapper mapper = ObjectMapper.builder()
 ## JSONPath
 
 ```java
-// 编译（推荐）
-JSONPath path = JSONPath.compile("$.store.book[*].author");
+// 预编译（推荐）
+JSONPath path = JSONPath.of("$.store.book[*].author");
 List<String> authors = path.extract(json, List.class);
 
 // 直接使用
 String title = JSONPath.of("$.store.book[0].title").eval(json, String.class);
 
 // 多路径提取
-JSONPath.TypedMultiPath multi = JSONPath.typedMulti()
-    .path("$.name", String.class)
-    .path("$.age", Integer.class)
-    .build();
-Object[] values = multi.extract(json);
+String[] paths = {"$.name", "$.age"};
+Type[] types = {String.class, Integer.class};
+JSONPath multiPath = JSONPath.of(paths, types);
+Object[] values = multiPath.eval(json);
 ```
 
 ## 常见问题快速解决

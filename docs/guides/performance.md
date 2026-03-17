@@ -68,7 +68,7 @@ public List<String> getAuthors(String json) {
 
 // ✅ 好：预编译
 private static final JSONPath AUTHOR_PATH =
-    JSONPath.compile("$.store.book[*].author");
+    JSONPath.of("$.store.book[*].author");
 
 public List<String> getAuthors(String json) {
     return AUTHOR_PATH.extract(json, List.class);
@@ -148,14 +148,12 @@ try (Reader reader = new FileReader("data.json")) {
 ### 批量操作
 
 ```java
-// ✅ 好：批量提取
-JSONPath.TypedMultiPath multi = JSONPath.typedMulti()
-    .path("$.name", String.class)
-    .path("$.age", Integer.class)
-    .path("$.email", String.class)
-    .build();
+// ✅ 好：批量提取（使用多路径 API）
+String[] paths = {"$.name", "$.age", "$.email"};
+Type[] types = {String.class, Integer.class, String.class};
+JSONPath multiPath = JSONPath.of(paths, types);
 
-Object[] values = multi.extract(json);
+Object[] values = multiPath.eval(json);
 
 // ⚠️ 较慢：多次解析
 String name = JSONPath.of("$.name").eval(json, String.class);

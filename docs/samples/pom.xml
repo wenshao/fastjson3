@@ -91,9 +91,10 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <!-- TODO: 如需打包可执行 jar，请创建主类或修改 mainClass -->
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.alibaba.fastjson3.samples.AllExamples</mainClass>
+                                    <!-- <mainClass>com.alibaba.fastjson3.samples.AllExamples</mainClass> -->
                                 </transformer>
                             </transformers>
                             <filters>

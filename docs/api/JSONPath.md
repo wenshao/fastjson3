@@ -11,18 +11,18 @@ JSONPath 是一种强大的 JSON 查询语言，fastjson3 实现了 [RFC 9535](h
 JSONPath path = JSONPath.of("$.store.book[0].title");
 ```
 
-### 编译创建（推荐）
+### 预编译创建（推荐）
 
 ```java
-// 编译一次，重复使用
-JSONPath path = JSONPath.compile("$.store.book[*].author");
+// 预编译一次，重复使用
+JSONPath path = JSONPath.of("$.store.book[*].author");
 ```
 
 ### 从表达式创建
 
 ```java
 String expression = "$.store.book[*].author";
-JSONPath path = new JSONPath(expression);
+JSONPath path = JSONPath.of(expression);
 ```
 
 ---
@@ -55,11 +55,11 @@ JSONPath path = JSONPath.of("$.store.book[0].title");
 String title = path.extract(json, String.class);
 ```
 
-### evalList - 提取列表
+### extract - 提取列表
 
 ```java
 JSONPath path = JSONPath.of("$.store.book[*].title");
-List<String> titles = path.evalList(json);
+List<String> titles = path.extract(json, List.class);
 ```
 
 ### set - 设置值
@@ -219,17 +219,17 @@ List<Double> prices = path.eval(json, List.class);
 
 ## 性能建议
 
-### 1. 编译并复用
+### 1. 预编译并复用
 
 ```java
-// ✅ 好：编译一次
+// ✅ 好：预编译一次，重复使用
 private static final JSONPath PRICE_PATH =
-    JSONPath.compile("$.store.book[*].price");
+    JSONPath.of("$.store.book[*].price");
 
 // 每次复用
 List<Double> prices = PRICE_PATH.extract(json, List.class);
 
-// ❌ 不好：每次编译
+// ❌ 不好：每次创建新实例
 JSONPath path = JSONPath.of("$.store.book[*].price");
 ```
 

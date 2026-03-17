@@ -185,8 +185,8 @@ JSON.toJSONString(obj, WriteFeature.PrettyFormat)
 try {
     mapper.readValue(json, User.class);
 } catch (JSONException e) {
-    System.err.println("错误: " + e.getMessage());
-    System.err.println("位置: " + e.getErrorOffset());
+    System.err.println("错误：" + e.getMessage());
+    System.err.println("位置：" + e.getErrorOffset());
 }
 ```
 

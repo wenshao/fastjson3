@@ -124,7 +124,7 @@ run.bat               # Windows
 | `JSON` | [start/00-5-minutes.md](start/00-5-minutes.md) | [api/JSON.md](api/JSON.md) | [samples/basic/](samples/basic/) |
 | `ObjectMapper` | [start/02-basic-serialize.md](start/02-basic-serialize.md) | [api/ObjectMapper.md](api/ObjectMapper.md) | [samples/basic/](samples/basic/) |
 | `JSONObject` | [start/01-basic-parse.md](start/01-basic-parse.md) | [api/JSONObject.md](api/JSONObject.md) | [samples/basic/](samples/basic/) |
-| `JSONPath` | [guides/jsonpath.md](guides/jsonpath.md) | [api/JSONPath.md](api/JSONPath.md) | [samples/advanced/](samples/advanced/) |
+| `JSONPath` | [guides/jsonpath.md](guides/jsonpath.md) | [api/JSONPath.md](api/JSONPath.md) | [samples/jsonpath/](samples/jsonpath/) |
 
 ### 概念文档位置
 

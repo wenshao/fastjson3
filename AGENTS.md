@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-fastjson3 core3 is a high-performance JSON library for Java 17+, targeting JVM, GraalVM native-image, and Android 8+.
+fastjson3 core3 is a high-performance JSON library for Java 21+, targeting JVM, GraalVM native-image, and Android 8+.
 
 ## Architecture Rules
 
@@ -48,11 +48,9 @@ mvn package -pl core3 -DskipTests      # Skip tests for faster builds
 ## User Documentation
 
 - `docs/README.md` — Documentation index
-- `docs/getting-started.md` — Getting started guide (中文)
-- `docs/getting-started-en.md` — Getting started guide (English)
-- `docs/api-reference.md` — API reference (中文)
-- `docs/api-reference-en.md` — API reference (English)
-- `docs/advanced.md` — Advanced topics (中文)
-- `docs/advanced-en.md` — Advanced topics (English)
-- `docs/migration.md` — Migration guide (中文)
-- `docs/migration-en.md` — Migration guide (English)
+- `docs/start/` — Getting started tutorials
+- `docs/api/` — API reference
+- `docs/guides/` — Topic guides (JSONPath, validation, performance, etc.)
+- `docs/advanced/` — Advanced topics
+- `docs/migration/` — Migration guides
+- `docs/samples/` — Runnable code samples

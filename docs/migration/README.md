@@ -10,12 +10,12 @@
 
 | 来源库 | 迁移文档 | 难度 | Java 要求 |
 |--------|----------|------|----------|
-| fastjson 1.x | [from-fastjson1.md](from-fastjson1.md) | ⭐⭐ | Java 6 → 17 |
-| fastjson2 | [from-fastjson2.md](from-fastjson2.md) | ⭐ | Java 8 → 17 |
-| Jackson 2.x | [from-jackson2.md](from-jackson2.md) | ⭐⭐ | Java 8 → 17 |
-| Jackson 3.x | [from-jackson3.md](from-jackson3.md) | ⭐ | Java 17 |
-| Gson | [from-gson.md](from-gson.md) | ⭐⭐ | Java 8+ |
-| org.json | [from-org-json.md](from-org-json.md) | ⭐⭐ | Java 8+ |
+| fastjson 1.x | [from-fastjson1.md](from-fastjson1.md) | ⭐⭐ | Java 6 → 21 |
+| fastjson2 | [from-fastjson2.md](from-fastjson2.md) | ⭐ | Java 8 → 21 |
+| Jackson 2.x | [from-jackson2.md](from-jackson2.md) | ⭐⭐ | Java 8 → 21 |
+| Jackson 3.x | [from-jackson3.md](from-jackson3.md) | ⭐ | Java 17 → 21 |
+| Gson | [from-gson.md](from-gson.md) | ⭐⭐ | Java 8 → 21 |
+| org.json | [from-org-json.md](from-org-json.md) | ⭐⭐ | Java 8 → 21 |
 
 ### 2. 检测你的项目
 
@@ -219,7 +219,7 @@ A: 不需要。fastjson3 的注解与 1.x 完全兼容。
 
 ### Q: fastjson3 的 Java 版本要求？
 
-A: Java 17 或更高版本。
+A: Java 21 或更高版本。
 
 ### Q: 如何迁移泛型代码？
 

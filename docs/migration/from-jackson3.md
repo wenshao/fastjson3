@@ -13,7 +13,7 @@ fastjson3 的 API 设计与 Jackson 3.x 高度一致，都采用了不可变 Obj
 | **设计理念** | 不可变 builder 模式 | 不可变 builder 模式 |
 | **共享实例** | `JsonMapper.shared()` | `ObjectMapper.shared()` |
 | **配置方式** | `builder().enable()` | `builder().enableXxx()` |
-| **Java 版本** | Java 17+ | Java 17+ |
+| **Java 版本** | Java 21+ | Java 21+ |
 | **sealed class** | 支持 | 支持 |
 | **Record** | 原生支持 | 原生支持 |
 
@@ -36,7 +36,7 @@ Jackson 3.x 相比 2.x 的主要变化在 fastjson3 中也有对应实现：
 | ObjectMapper | 不可变 | 不可变 | **设计一致** |
 | 构建方式 | `JsonMapper.builder()` | `ObjectMapper.builder()` | API 相似 |
 | 线程安全 | 是 | 是 | 完全线程安全 |
-| Java 基线 | Java 17 | Java 17+ | 目标一致 |
+| Java 基线 | Java 17 | Java 21+ | 目标一致 |
 | sealed class | 支持 | 支持 | JIT 优化 |
 
 ---

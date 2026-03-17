@@ -4,7 +4,7 @@ fastjson3 是 fastjson2 的下一代版本。
 
 ## 目标
 
-- **Java 17+ baseline** - sealed class、pattern matching、switch expression
+- **Java 21+ baseline** - sealed class、pattern matching、switch expression、record patterns
 - **性能超越** - 比 wast、fastjson2 更快
 - **API 对标 Jackson 3** - 不可变 ObjectMapper、Builder 模式
 - **多平台支持** - GraalVM Native Image、Android 8+
@@ -13,7 +13,7 @@ fastjson3 是 fastjson2 的下一代版本。
 
 ### 1. 现代 Java 特性
 
-使用 Java 17+ 的新特性：
+使用 Java 21+ 的新特性：
 
 ```java
 // sealed class：类型安全的层次结构
@@ -74,7 +74,7 @@ class ObjectReaderCreatorASM {
 
 ### 最适合
 
-- **现代 Java 项目**（Java 17+）
+- **现代 Java 项目**（Java 21+）
 - **高性能场景**（需要极致性能）
 - **微服务**（低延迟、高吞吐）
 - **Android 应用**（需要独立构建）

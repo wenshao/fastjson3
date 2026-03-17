@@ -81,7 +81,7 @@ class FieldWriter {
 
 ## 实现方式
 
-### 方式 1：switch（Java 17+ 语法）
+### 方式 1：switch（Java 21+ 语法）
 
 ```java
 public final class FieldWriter {

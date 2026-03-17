@@ -75,11 +75,11 @@ ObjectMapper mapper = ObjectMapper.builder()
 ### 6. 使用预编译 JSONPath
 
 ```java
-// ✅ 好：预编译
+// ✅ 好：预编译并复用
 private static final JSONPath AUTHOR_PATH =
-    JSONPath.compile("$.store.book[*].author");
+    JSONPath.of("$.store.book[*].author");
 
-// ❌ 不好：每次编译
+// ❌ 不好：每次创建新实例
 JSONPath path = JSONPath.of("$.store.book[*].author");
 ```
 

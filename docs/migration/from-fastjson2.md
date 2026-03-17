@@ -15,7 +15,7 @@ fastjson3 与 fastjson2 **高度兼容**，大部分代码无需修改。
 | **Feature 枚举** | `WriteFeature`, `ReadFeature` | `WriteFeature`, `ReadFeature` | ✅ 相同 |
 | **JSONPath** | `JSONPath.of()` | `JSONPath.of()` | ✅ 相同 |
 | **包名** | `com.alibaba.fastjson2` | `com.alibaba.fastjson3` | ⚠️ 需要修改 |
-| **Java 版本** | Java 8+ | Java 17+ | ⚠️ 需要升级 |
+| **Java 版本** | Java 8+ | Java 21+ | ⚠️ 需要升级 |
 
 ### fastjson2 vs fastjson3 对比
 
@@ -31,7 +31,7 @@ fastjson3 与 fastjson2 **高度兼容**，大部分代码无需修改。
 ### 迁移决策
 
 ```
-是否能升级到 Java 17？
+是否能升级到 Java 21？
 │
 ├─ 是 → 直接迁移到 fastjson3（推荐）
 │       - 包名替换
@@ -231,7 +231,7 @@ find . -name "*.java" -type f -exec sed -i 's/com\.alibaba\.fastjson2\./com.alib
 
 - [ ] 采用 `ObjectMapper.shared()` 替代静态方法
 - [ ] 使用 `JSONReader.Feature` / `JSONWriter.Feature`
-- [ ] 利用 Java 17+ 新特性（Record、sealed class）
+- [ ] 利用 Java 21+ 新特性（Record、sealed class）
 
 ---
 

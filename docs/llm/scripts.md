@@ -382,7 +382,7 @@ echo "验证完成！"
 2. 使用 ObjectMapper.builder() 创建配置
 3. 保留原注解（fastjson3 原生支持 {来源库} 注解）
 4. 使用 TypeToken 处理泛型：TypeToken.listOf(Class)
-5. 确保代码符合 Java 17+ 规范
+5. 确保代码符合 Java 21+ 规范
 
 参考资料：
 - API 映射表：docs/llm/api-mapping.md

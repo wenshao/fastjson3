@@ -133,8 +133,8 @@ echo [INFO] 编译完成
 goto :eof
 
 :run
-echo [INFO] 运行 %~2...
-call mvn exec:java -Dexec.mainClass="%~2"
+echo [INFO] 运行 %~1...
+call mvn exec:java -Dexec.mainClass="%~1"
 if errorlevel 1 goto error
 echo.
 goto :eof

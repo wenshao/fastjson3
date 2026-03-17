@@ -34,19 +34,19 @@ Book book = path.eval(json, Book.class);
 
 ## 性能优化
 
-### 1. 编译并复用
+### 1. 预编译并复用
 
 ```java
-// ✅ 好：编译一次，重复使用
+// ✅ 好：预编译一次，重复使用
 private static final JSONPath PRICE_PATH =
-    JSONPath.compile("$.store.book[*].price");
+    JSONPath.of("$.store.book[*].price");
 
 public double getTotalPrice(String json) {
     List<Double> prices = PRICE_PATH.extract(json, List.class);
     return prices.stream().mapToDouble(Double::doubleValue).sum();
 }
 
-// ❌ 不好：每次编译
+// ❌ 不好：每次创建新实例
 public double getTotalPrice(String json) {
     JSONPath path = JSONPath.of("$.store.book[*].price");
     // ...
@@ -186,19 +186,17 @@ Double avgPrice = path.eval(json, Double.class);
 public class ApiClient {
     // 预编译路径
     private static final JSONPath DATA_PATH =
-        JSONPath.compile("$.data.items[*]");
+        JSONPath.of("$.data.items[*]");
     private static final JSONPath ERROR_PATH =
-        JSONPath.compile("$.error.message");
+        JSONPath.of("$.error.message");
     private static final JSONPath TOTAL_PATH =
-        JSONPath.compile("$.data.total");
+        JSONPath.of("$.data.total");
 
     public Result parseResponse(String jsonResponse) {
         // 批量提取
-        JSONPath.TypedMultiPath multi = JSONPath.typedMulti()
-            .path("$.data.total", Integer.class)
-            .path("$.data.page", Integer.class)
-            .path("$.error.code", String.class)
-            .build();
+        String[] paths = {"$.data.total", "$.data.page", "$.error.code"};
+        Type[] types = {Integer.class, Integer.class, String.class};
+        JSONPath multi = JSONPath.of(paths, types);
 
         Object[] values = multi.extract(jsonResponse);
         Integer total = (Integer) values[0];

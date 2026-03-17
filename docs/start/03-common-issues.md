@@ -113,13 +113,14 @@ byte[] json = mapper.writeValueAsBytes(largeObj);
 ### 频繁创建 ObjectMapper
 
 ```java
-// ❌ 不好
+// ❌ 不好：fastjson3 不支持 new ObjectMapper()
+// 以下代码无法编译，仅作反面示例
 public String toJSON(Object obj) {
-    ObjectMapper mapper = new ObjectMapper();  // 每次创建
+    ObjectMapper mapper = new ObjectMapper();  // 编译错误！
     return mapper.writeValueAsString(obj);
 }
 
-// ✅ 好
+// ✅ 好：使用共享实例
 private static final ObjectMapper MAPPER = ObjectMapper.shared();
 
 public String toJSON(Object obj) {

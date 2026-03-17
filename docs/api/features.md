@@ -26,43 +26,32 @@ public enum ReadFeature {
     // 类型支持
     SupportArrayToBean,
     SupportAutoType,
-    SupportClassForName,
-    SupportJacksonAnnotation,  // 支持 Jackson 注解
 
     // 字段名匹配
     SupportSmartMatch,
-    SupportSmartMatchPrefix,
-    IgnoreCase,
 
     // 宽松格式
     AllowSingleQuotes,
     AllowUnquotedFieldNames,
     AllowComments,
-    AllowNonQuotes,
+
+    // 数值处理
+    UseBigDecimalForFloats,
+    UseBigDecimalForDoubles,
 
     // 错误处理
     ErrorOnUnknownProperties,
-    ErrorOnNotMatchForEnum,
-    IgnoreError,
-    UnSafe,
+    ErrorOnNullForPrimitives,
+    NullOnError,
 
-    // null 处理
+    // null/字符串处理
     EmptyStringAsNull,
-    IgnoreSetNullValueForBean,
-
-    // 字符串处理
     TrimString,
-    TrimStringValue,
     InitStringFieldAsEmpty,
 
-    // 集合处理
-    InitCollectionFieldAsEmpty,
-    NotReadEmptyArray,
-
     // 其他
-    IgnoreAutoTypeNotMatch,
-    IgnoreAutoTypeForNotExistsClass,
-    // ... 更多特性
+    DuplicateKeyValueAsArray,
+    Base64StringAsByteArray,
 }
 ```
 
@@ -93,23 +82,21 @@ public enum WriteFeature {
     WriteNulls,
     WriteNullListAsEmpty,
     WriteNullStringAsEmpty,
+    WriteNullNumberAsZero,
     WriteNullBooleanAsFalse,
-    NullAsDefaultValue,
 
     // 枚举
+    WriteEnumsUsingName,
     WriteEnumUsingToString,
-    WriteEnumUsingOrdinal,
-    WriteEnumUsingName,
 
     // 格式化
     PrettyFormat,
     BrowserCompatible,
-    WriteNameAsUpperCase,
-    WriteTrimString,
+    EscapeNoneAscii,
 
     // 数字
     WriteLongAsString,
-    WriteBooleanAsNumber,
+    WriteNonStringValueAsString,
     WriteBigDecimalAsPlain,
 
     // 性能
@@ -118,14 +105,12 @@ public enum WriteFeature {
 
     // Map
     SortMapEntriesByKeys,
-    WriteMapNullOrEmptyValueType,
 
     // 其他
-    IgnoreError,
-    NotWriteDefaultValue,
-    NotWriteEmptyArray,
-    SkipWriteNullOrEmpty,
-    // ... 更多特性
+    FieldBased,
+    WriteClassName,
+    BeanToArray,
+    ReferenceDetection,
 }
 ```
 

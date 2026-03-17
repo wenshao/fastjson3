@@ -569,7 +569,7 @@ ObjectMapper mapper = ObjectMapper.builder()
 ### 给 LLM 的上下文
 
 ```
-fastjson3 是 Java 17+ JSON 库，具有以下特性：
+fastjson3 是 Java 21+ JSON 库，具有以下特性：
 - API 设计类似 Jackson 3.x（不可变 ObjectMapper）
 - 原生支持 Jackson 和 fastjson 1.x 注解
 - 高性能，约 fastjson 1.x 的 2 倍性能

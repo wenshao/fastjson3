@@ -73,7 +73,7 @@ schema.validate(dataJson);
 | Draft 2020-12 | ✅ | ❌ (仅 Draft 7) |
 | 性能 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
 | 维护状态 | ✅ 活跃 | ⚠️ 不活跃 |
-| Java 版本 | Java 17+ | Java 8+ |
+| Java 版本 | Java 21+ | Java 8+ |
 
 ### 迁移示例
 

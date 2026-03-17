@@ -6,7 +6,7 @@ fastjson3 的多平台支持架构设计。
 
 | 平台 | 状态 | 用户文档 |
 |------|------|----------|
-| JVM (Java 17+) | ✅ 完全支持 | - |
+| JVM (Java 21+) | ✅ 完全支持 | - |
 | Android 8+ | ✅ 独立构建 | [📘 Android 指南 →](../../advanced/android.md) |
 | GraalVM Native Image | ✅ 支持 | [📘 GraalVM 指南 →](../../advanced/graalvm.md) |
 

@@ -19,10 +19,13 @@ fastjson3 adopts a [Jackson 3](https://github.com/FasterXML/jackson-core) style 
 
 ## Documentation
 
-- **[Getting Started Guide](docs/getting-started.md)** - 快速入门 | [English](docs/getting-started-en.md)
-- **[API Reference](docs/api-reference.md)** - API 参考 | [English](docs/api-reference-en.md)
-- **[Advanced Tips](docs/advanced.md)** - 高级技巧 | [English](docs/advanced-en.md)
-- **[Design Docs](docs/design/)** - 设计文档 | [English](core3/docs/design.md)
+**[Documentation Index](docs/README.md)** — Complete documentation with tutorials, guides, API references, and samples.
+
+Quick links:
+- [Getting Started](docs/start/00-5-minutes.md) — 5-minute quick start
+- [API Reference](docs/api/) — Core API documentation
+- [Guides](docs/guides/) — JSONPath, validation, performance, etc.
+- [Migration](docs/migration/) — From fastjson2, Jackson, Gson, org.json
 
 ## Highlights
 

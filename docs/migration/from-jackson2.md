@@ -14,7 +14,7 @@ fastjson3 的 API 设计与 Jackson 高度相似，原生支持大部分 Jackson
 | **配置方法** | `mapper.configure(feature, true)` | `builder().enableXxx()` | ⚠️ 配置方式改变 |
 | **线程安全** | 可变但线程安全 | 完全不可变，天然线程安全 | ✅ 无需担心并发 |
 | **共享实例** | 需要单例模式管理 | 提供 `ObjectMapper.shared()` | ✅ 简化使用 |
-| **Java 版本** | Java 8+ | Java 17+ | ⚠️ 需要升级 JDK |
+| **Java 版本** | Java 8+ | Java 21+ | ⚠️ 需要升级 JDK |
 
 ### 迁移路径
 
@@ -336,9 +336,9 @@ ObjectMapper mapper = ObjectMapper.builder()
 |------|-----------|
 | Jackson 2.x | Java 8+ |
 | Jackson 3.x | Java 17+ |
-| fastjson3 | Java 17+ |
+| fastjson3 | Java 21+ |
 
-**结论**：如果你需要升级到 Java 17，直接迁移到 fastjson3 可能比先升级到 Jackson 3.x 更简单。
+**结论**：如果你需要升级到 Java 21，直接迁移到 fastjson3 可能比先升级到 Jackson 3.x 更简单。
 
 ---
 

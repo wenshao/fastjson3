@@ -10,7 +10,7 @@ fastjson3 的架构文档已按主题拆分为独立文件。
 
 fastjson3 是 fastjson2 的下一代版本，目标：
 
-- **Java 17+ baseline** - sealed class、pattern matching、switch expression
+- **Java 21+ baseline** - sealed class、pattern matching、switch expression、record patterns
 - **性能超越** - 比 wast、fastjson2 更快
 - **API 对标 Jackson 3** - 不可变 ObjectMapper、Builder 模式
 - **多平台支持** - GraalVM Native Image、Android 8+
