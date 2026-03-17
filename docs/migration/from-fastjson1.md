@@ -2,7 +2,39 @@
 
 fastjson3 是 fastjson 1.x 的全面重写版本，提供了更好的性能和更现代的 API。
 
-## 快速对照
+## fastjson 1.x 用户注意
+
+如果你使用的是 fastjson 1.x，迁移到 fastjson3 会遇到以下主要变化：
+
+### 核心差异
+
+| 方面 | fastjson 1.x | fastjson3 | 影响 |
+|------|--------------|-----------|------|
+| **包名** | `com.alibaba.fastjson` | `com.alibaba.fastjson3` | ⚠️ 需要修改导入 |
+| **Java 版本** | Java 6+ | Java 17+ | ⚠️ 需要升级 JDK |
+| **Feature 枚举** | `SerializerFeature` | `WriteFeature` | ⚠️ 需要重命名 |
+| **Feature 枚举** | `Feature` | `ReadFeature` | ⚠️ 需要重命名 |
+| **泛型处理** | `TypeReference` | `TypeToken` | ⚠️ API 变化 |
+| **核心 API** | `JSON.parseObject()` | `JSON.parseObject()` | ✅ 保持兼容 |
+
+### 迁移路径建议
+
+你有两种选择：
+
+1. **直接迁移** - fastjson 1.x → fastjson3（推荐，如果你能升级到 Java 17）
+2. **分步迁移** - fastjson 1.x → fastjson2 → fastjson3
+
+> 💡 **提示**：fastjson2 是一个过渡版本，兼容 Java 8+。如果你暂时无法升级到 Java 17，可以先迁移到 fastjson2。
+
+### fastjson 版本对比
+
+| 版本 | Java 要求 | 包名 | 主要特点 |
+|------|-----------|------|----------|
+| **fastjson 1.x** | Java 6+ | `com.alibaba.fastjson` | 经典版本，API 稳定 |
+| **fastjson2** | Java 8+ | `com.alibaba.fastjson2` | 性能优化，API 兼容 1.x |
+| **fastjson3** | Java 17+ | `com.alibaba.fastjson3` | 现代 API，Jackson 风格，性能最优 |
+
+---
 
 | fastjson 1.x | fastjson3 | 变化 |
 |--------------|-----------|------|
@@ -155,7 +187,76 @@ List<User> users = JSON.parseObject(json,
 
 ---
 
-## 注解变化
+## fastjson 1.x 特有配置
+
+fastjson 1.x 有一些特殊的配置方式，在 fastjson3 中已改变：
+
+### 全局配置变更
+
+```java
+// ===== fastjson 1.x =====
+// 静态配置（全局生效）
+JSON.DEFAULT_GENERATE_FEATURE |= SerializerFeature.WriteMapNullValue.getMask();
+JSON.DEFAULT_PARSER_FEATURE |= Feature.AllowComment.getMask();
+JSON.DEFFAULT_DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
+
+// 动态配置
+SerializerFeature.config(SerializerFeature.WriteDateUseDateFormat, true);
+
+// ===== fastjson3 =====
+// 使用 ObjectMapper（推荐）
+ObjectMapper mapper = ObjectMapper.builder()
+    .enableWrite(WriteFeature.WriteNulls)
+    .enableRead(ReadFeature.AllowComment)
+    .dateFormat("yyyy-MM-dd HH:mm:ss")
+    .build();
+
+// 或使用静态方式（不推荐，避免全局状态）
+String json = JSON.toJSONString(obj,
+    WriteFeature.WriteNulls,
+    WriteFeature.PrettyFormat);
+```
+
+### SerializeConfig / ParserConfig 变更
+
+```java
+// ===== fastjson 1.x =====
+SerializeConfig globalConfig = SerializeConfig.getGlobalInstance();
+globalConfig.put(BigDecimal.class, new MoneySerializer());
+
+ParserConfig parserConfig = ParserConfig.getGlobalInstance();
+parserConfig.putDeserializer(User.class, new UserDeserializer());
+
+// ===== fastjson3 =====
+// 使用 ObjectMapper 注册自定义序列化器
+ObjectMapper mapper = ObjectMapper.builder()
+    .writer(BigDecimal.class, new MoneyWriter())
+    .reader(User.class, new UserReader())
+    .build();
+```
+
+### Filter 注册变化
+
+```java
+// ===== fastjson 1.x =====
+// 使用 SerializeFilter
+SerializeFilter filter = new ValueFilter() {
+    @Override
+    public Object process(Object object, String name, Object value) {
+        return value;
+    }
+};
+String json = JSON.toJSONString(obj, filter);
+
+// ===== fastjson3 =====
+// 接口保持兼容，方法名改为 apply
+ValueFilter filter = (obj, name, value) -> {
+    return value;
+};
+String json = JSON.toJSONString(obj, filter);
+```
+
+---
 
 ### @JSONField
 

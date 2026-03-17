@@ -2,6 +2,48 @@
 
 fastjson3 与 fastjson2 **高度兼容**，大部分代码无需修改。
 
+## fastjson2 用户注意
+
+如果你使用的是 fastjson2，迁移到 fastjson3 会非常简单：
+
+### 为什么迁移更简单？
+
+| 方面 | fastjson2 | fastjson3 |
+|------|-----------|-----------|
+| **核心 API** | `JSON.parseObject()` | `JSON.parseObject()` | ✅ 相同 |
+| **注解** | `@JSONField`, `@JSONType` | `@JSONField`, `@JSONType` | ✅ 相同 |
+| **Feature 枚举** | `WriteFeature`, `ReadFeature` | `WriteFeature`, `ReadFeature` | ✅ 相同 |
+| **JSONPath** | `JSONPath.of()` | `JSONPath.of()` | ✅ 相同 |
+| **包名** | `com.alibaba.fastjson2` | `com.alibaba.fastjson3` | ⚠️ 需要修改 |
+| **Java 版本** | Java 8+ | Java 17+ | ⚠️ 需要升级 |
+
+### fastjson2 vs fastjson3 对比
+
+| 特性 | fastjson2 | fastjson3 |
+|------|-----------|-----------|
+| **性能** | 高 | 更高 |
+| **Jackson 风格 API** | 部分 | 完整 (`ObjectMapper`) |
+| **Record 支持** | 有 | 更好 |
+| **sealed class** | 部分 | 完整 |
+| **Kotlin 支持** | 好 | 更好 |
+| **GraalVM** | 支持 | 原生支持 |
+
+### 迁移决策
+
+```
+是否能升级到 Java 17？
+│
+├─ 是 → 直接迁移到 fastjson3（推荐）
+│       - 包名替换
+│       - 增量采用新 API
+│
+└─ 否 → 继续使用 fastjson2
+        - fastjson2 仍在维护
+        - API 与 fastjson3 几乎相同
+```
+
+---
+
 ## API 兼容性
 
 ### 完全兼容的 API
@@ -34,7 +76,47 @@ User user = mapper.readValue(json, User.class);
 String json = mapper.writeValueAsString(user);
 ```
 
-## 迁移步骤
+### fastjson2 特有功能对比
+
+fastjson2 和 fastjson3 在以下方面有所不同：
+
+| 功能 | fastjson2 | fastjson3 |
+|------|-----------|-----------|
+| **ObjectMapper** | 基础支持 | 完整 Jackson 风格 |
+| **JSONReader.Feature** | ✅ | ✅（相同） |
+| **JSONWriter.Feature** | ✅ | ✅（相同） |
+| **直接使用 ASM** | 内部 | 内部（更优化） |
+| **Kotlin 数据类** | 支持 | 更好支持 |
+| **Record** | 支持 | 原生支持 |
+
+### JSONReader / JSONWriter（完全相同）
+
+```java
+// ===== fastjson2 =====
+JSONReader reader = JSONReader.of(json);
+User user = reader.read(User.class);
+
+JSONWriter writer = JSONWriter.of(JSONWriter.Feature.PrettyFormat);
+writer.writeObject(user);
+
+// ===== fastjson3 =====
+// API 完全相同
+JSONReader reader = JSONReader.of(json);
+User user = reader.read(User.class);
+
+JSONWriter writer = JSONWriter.of(JSONWriter.Feature.PrettyFormat);
+writer.writeObject(user);
+```
+
+### JSONPath（完全相同）
+
+```java
+// fastjson2 和 fastjson3 完全相同
+JSONPath path = JSONPath.of("$.store.book[*].author");
+List<String> authors = path.extract(json);
+```
+
+---
 
 ### 1. 替换依赖
 
@@ -126,6 +208,53 @@ A: 是的，`@JSONField`、`@JSONType` 等注解完全兼容。
 ### Q: Kotlin 支持如何？
 
 A: fastjson3 对 Kotlin 数据类的支持与 fastjson2 相同。
+
+---
+
+## 迁移检查清单
+
+### 代码修改
+
+- [ ] 更新 Maven/Gradle 依赖
+- [ ] 批量替换包名 `fastjson2` → `fastjson3`
+- [ ] 运行测试验证兼容性
+- [ ] （可选）采用 `ObjectMapper` 新 API
+
+### 最小改动迁移
+
+```bash
+# 批量替换包名
+find . -name "*.java" -type f -exec sed -i 's/com\.alibaba\.fastjson2\./com.alibaba.fastjson3./g' {} +
+```
+
+### 可选优化
+
+- [ ] 采用 `ObjectMapper.shared()` 替代静态方法
+- [ ] 使用 `JSONReader.Feature` / `JSONWriter.Feature`
+- [ ] 利用 Java 17+ 新特性（Record、sealed class）
+
+---
+
+## 快速参考
+
+### 包名映射
+
+| fastjson2 | fastjson3 |
+|-----------|-----------|
+| `com.alibaba.fastjson2.JSON` | `com.alibaba.fastjson3.JSON` |
+| `com.alibaba.fastjson2.JSONObject` | `com.alibaba.fastjson3.JSONObject` |
+| `com.alibaba.fastjson2.annotation.JSONField` | `com.alibaba.fastjson3.annotation.JSONField` |
+
+### 完全相同的 API
+
+```java
+// 这些 API 在 fastjson2 和 fastjson3 中完全相同
+JSON.parseObject(json)
+JSON.toJSONString(obj)
+JSONPath.of(path)
+WriteFeature.PrettyFormat
+ReadFeature.SupportAutoType
+```
 
 ## 相关文档
 

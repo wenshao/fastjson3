@@ -42,3 +42,51 @@ grep -r "jackson-databind" build.gradle
 如果你使用 Jackson 2.x 且无法升级 Java，请继续使用 Jackson 2.x 或考虑 [fastjson2](from-fastjson2.md)。
 
 ---
+
+## 🔍 fastjson 1.x vs 2.x vs 3.x 迁移
+
+不确定你的 fastjson 版本？
+
+```bash
+# Maven 项目检查
+grep -E "fastjson|fastjson2" pom.xml
+
+# Gradle 项目检查
+grep -E "fastjson|fastjson2" build.gradle
+```
+
+| fastjson 版本 | 包名 | Java 要求 | 迁移难度 |
+|--------------|------|-----------|----------|
+| **1.x** | `com.alibaba.fastjson` | Java 6+ | ⭐⭐ Feature 重命名，API 变化 |
+| **2.x** | `com.alibaba.fastjson2` | Java 8+ | ⭐ 包名替换即可 |
+| **3.x** | `com.alibaba.fastjson3` | Java 17+ | - |
+
+### fastjson 版本对比
+
+| 特性 | fastjson 1.x | fastjson2 | fastjson3 |
+|------|-------------|-----------|-----------|
+| **性能** | 基准 | ~1.5x | ~2x |
+| **Java 版本** | Java 6+ | Java 8+ | Java 17+ |
+| **核心 API** | `JSON.parseObject()` | `JSON.parseObject()` | `JSON.parseObject()` |
+| **ObjectMapper** | ❌ | 部分 | 完整 |
+| **Record 支持** | ❌ | ✅ | ✅ |
+| **sealed class** | ❌ | 部分 | ✅ |
+| **Jackson 注解** | ❌ | ✅ | ✅ |
+
+### 迁移决策
+
+```
+当前使用 fastjson 1.x？
+│
+├─ 能升级到 Java 17？
+│   ├─ 是 → 直接迁移到 fastjson3（推荐）
+│   └─ 否 → 先迁移到 fastjson2（Java 8 兼容）
+│
+当前使用 fastjson2？
+│
+├─ 能升级到 Java 17？
+│   ├─ 是 → 迁移到 fastjson3（包名替换即可）
+│   └─ 否 → 继续使用 fastjson2
+```
+
+---
