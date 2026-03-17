@@ -2,7 +2,34 @@
 
 fastjson3 的 API 设计与 Jackson 3.x 高度一致，都采用了不可变 ObjectMapper 模式。
 
-## Jackson 3.x vs fastjson3
+## Jackson 3.x 用户注意
+
+如果你使用的是 Jackson 3.x，迁移到 fastjson3 会非常平滑：
+
+### 为什么迁移更简单？
+
+| 方面 | Jackson 3.x | fastjson3 |
+|------|-------------|-----------|
+| **设计理念** | 不可变 builder 模式 | 不可变 builder 模式 |
+| **共享实例** | `JsonMapper.shared()` | `ObjectMapper.shared()` |
+| **配置方式** | `builder().enable()` | `builder().enableXxx()` |
+| **Java 版本** | Java 17+ | Java 17+ |
+| **sealed class** | 支持 | 支持 |
+| **Record** | 原生支持 | 原生支持 |
+
+### Jackson 3.x 新特性对比
+
+Jackson 3.x 相比 2.x 的主要变化在 fastjson3 中也有对应实现：
+
+| Jackson 3.x 变化 | fastjson3 对应 |
+|------------------|---------------|
+| `JsonMapper` 替代 `ObjectMapper` | 保持 `ObjectMapper` 名称 |
+| 不可变配置 | 不可变配置 |
+| `JsonMapper.shared()` | `ObjectMapper.shared()` |
+| Record 支持 | Record 支持 |
+| sealed class 支持 | sealed class 支持 |
+
+---
 
 | 特性 | Jackson 3.x | fastjson3 | 说明 |
 |------|-------------|-----------|------|
@@ -212,6 +239,58 @@ ObjectWriter<BigDecimal> moneyWriter = (gen, object, features) -> {
 // 注册 Module
 ObjectMapper mapper = ObjectMapper.builder()
     .writer(BigDecimal.class, moneyWriter)
+    .build();
+```
+
+---
+
+## Jackson 3.x 特有 API
+
+Jackson 3.x 引入了一些 2.x 中没有的新 API，这些在 fastjson3 中有对应实现：
+
+### JsonMapper vs ObjectMapper
+
+```java
+// ===== Jackson 3.x =====
+// Jackson 3.x 将 ObjectMapper 重命名为 JsonMapper
+JsonMapper mapper = JsonMapper.builder()
+    .enable(SerializationFeature.INDENT_OUTPUT)
+    .build();
+
+// ===== fastjson3 =====
+// fastjson3 保持使用 ObjectMapper 名称
+ObjectMapper mapper = ObjectMapper.builder()
+    .enableWrite(WriteFeature.PrettyFormat)
+    .build();
+```
+
+### 共享实例
+
+```java
+// ===== Jackson 3.x =====
+// 3.0 新增 shared() 方法
+JsonMapper shared = JsonMapper.shared();
+
+// ===== fastjson3 =====
+// 从一开始就支持
+ObjectMapper shared = ObjectMapper.shared();
+```
+
+### 不可变配置
+
+```java
+// ===== Jackson 3.x =====
+// 配置不可变，每次修改返回新实例
+JsonMapper base = JsonMapper.builder().build();
+JsonMapper customized = base.rebuild()
+    .enable(SerializationFeature.INDENT_OUTPUT)
+    .build();
+
+// ===== fastjson3 =====
+// 同样的不可变设计
+ObjectMapper base = ObjectMapper.builder().build();
+ObjectMapper customized = ObjectMapper.builder()
+    .enableWrite(WriteFeature.PrettyFormat)
     .build();
 ```
 
@@ -502,6 +581,52 @@ A: 不需要，fastjson3 原生支持 Jackson 注解。
 ### Q: 性能如何？
 
 A: fastjson3 通常比 Jackson 3.x 快 10-20%。
+
+---
+
+## 迁移检查清单
+
+### 代码修改
+
+- [ ] 将 `JsonMapper.builder()` 改为 `ObjectMapper.builder()`
+- [ ] 将 `JsonMapper.shared()` 改为 `ObjectMapper.shared()`
+- [ ] 替换 `SerializationFeature` 为 `WriteFeature`
+- [ ] 替换 `DeserializationFeature` 为 `ReadFeature`
+- [ ] 更新 `JsonParser` → `JSONParser`（如果使用流式 API）
+
+### 测试验证
+
+- [ ] Record 序列化/反序列化正常
+- [ ] sealed class 处理正确
+- [ ] 泛型类型正确
+- [ ] 不可变集合处理正常
+
+### 可选优化
+
+- [ ] 考虑将 Jackson 注解替换为 fastjson3 注解（非必须）
+- [ ] 评估是否需要自定义 Module
+- [ ] 性能对比测试
+
+---
+
+## 快速参考
+
+### 类名映射
+
+| Jackson 3.x | fastjson3 |
+|-------------|-----------|
+| `JsonMapper` | `ObjectMapper` |
+| `JsonParser` | `JSONParser` |
+| `JsonGenerator` | `JSONGenerator` |
+| `JsonNode` | `JSONObject`/`JSONArray` |
+
+### Feature 映射
+
+| Jackson 3.x | fastjson3 |
+|-------------|-----------|
+| `SerializationFeature.INDENT_OUTPUT` | `WriteFeature.PrettyFormat` |
+| `DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES` | `ReadFeature.ErrorOnUnknownProperties` |
+| `JsonParser.Feature.ALLOW_COMMENTS` | `JSONReader.Feature.AllowComment` |
 
 ## 相关文档
 

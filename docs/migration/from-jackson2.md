@@ -2,7 +2,30 @@
 
 fastjson3 的 API 设计与 Jackson 高度相似，原生支持大部分 Jackson 2.x 注解。
 
-## 快速对照
+## Jackson 2.x 用户注意
+
+如果你使用的是 Jackson 2.x，迁移到 fastjson3 会遇到以下主要变化：
+
+### 核心差异
+
+| 方面 | Jackson 2.x | fastjson3 | 影响 |
+|------|-------------|-----------|------|
+| **ObjectMapper** | 可变对象，用 `new` 创建 | 不可变对象，用 `builder()` 创建 | ⚠️ 需要修改初始化代码 |
+| **配置方法** | `mapper.configure(feature, true)` | `builder().enableXxx()` | ⚠️ 配置方式改变 |
+| **线程安全** | 可变但线程安全 | 完全不可变，天然线程安全 | ✅ 无需担心并发 |
+| **共享实例** | 需要单例模式管理 | 提供 `ObjectMapper.shared()` | ✅ 简化使用 |
+| **Java 版本** | Java 8+ | Java 17+ | ⚠️ 需要升级 JDK |
+
+### 迁移路径
+
+你有两种选择：
+
+1. **直接迁移** - Jackson 2.x → fastjson3（推荐）
+2. **分步迁移** - Jackson 2.x → Jackson 3.x → fastjson3
+
+> 💡 **提示**：Jackson 3.x 的 API 设计与 fastjson3 更相似（都使用不可变 builder 模式），但直接迁移到 fastjson3 通常更简单，因为 fastjson3 原生支持 Jackson 2.x 注解。
+
+---
 
 | Jackson 2.x | fastjson3 | 兼容性 |
 |-------------|-----------|--------|
@@ -270,6 +293,52 @@ public class Point {
     }
 }
 ```
+
+---
+
+## Jackson 2.x vs Jackson 3.x 差异
+
+在迁移前，了解 Jackson 2.x 和 3.x 的主要差异：
+
+### API 变化
+
+```java
+// ===== Jackson 2.x =====
+ObjectMapper mapper = new ObjectMapper();
+mapper.configure(SerializationFeature.INDENT_OUTPUT, true);
+mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+
+// ===== Jackson 3.x =====
+JsonMapper mapper = JsonMapper.builder()
+    .enable(SerializationFeature.INDENT_OUTPUT)
+    .defaultPropertyInclusion(JsonInclude.Include.NON_NULL)
+    .build();
+
+// ===== fastjson3 =====
+ObjectMapper mapper = ObjectMapper.builder()
+    .enableWrite(WriteFeature.PrettyFormat)
+    .inclusion(Inclusion.NON_NULL)
+    .build();
+```
+
+### 类名变化
+
+| Jackson 2.x | Jackson 3.x | fastjson3 |
+|-------------|-------------|-----------|
+| `ObjectMapper` | `JsonMapper` | `ObjectMapper` |
+| `ObjectReader` | `ObjectReader` | `ObjectReader` |
+| `ObjectWriter` | `ObjectWriter` | `ObjectWriter` |
+| `TypeReference` | `TypeReference` | `TypeReference` / `TypeToken` |
+
+### Java 版本要求
+
+| 版本 | Java 要求 |
+|------|-----------|
+| Jackson 2.x | Java 8+ |
+| Jackson 3.x | Java 17+ |
+| fastjson3 | Java 17+ |
+
+**结论**：如果你需要升级到 Java 17，直接迁移到 fastjson3 可能比先升级到 Jackson 3.x 更简单。
 
 ---
 
@@ -692,6 +761,65 @@ public class UserRequest {
     @JSONField(unwrapped = true)
     private UserProfile profile;
 }
+```
+
+---
+
+## 迁移检查清单
+
+使用此清单确保迁移完整：
+
+### 代码修改
+
+- [ ] 替换 `new ObjectMapper()` 为 `ObjectMapper.shared()` 或 `ObjectMapper.builder()`
+- [ ] 将 `mapper.configure()` 改为 builder 模式配置
+- [ ] 替换 `SerializationFeature` 为 `WriteFeature`
+- [ ] 替换 `DeserializationFeature` 为 `ReadFeature`
+- [ ] 评估是否需要修改泛型处理（`TypeReference` → `TypeToken`）
+
+### 测试验证
+
+- [ ] 序列化测试通过
+- [ ] 反序列化测试通过
+- [ ] 泛型类型处理正确
+- [ ] 日期格式正确
+- [ ] null 值处理符合预期
+
+### 可选优化
+
+- [ ] 考虑将 Jackson 注解替换为 fastjson3 注解（非必须）
+- [ ] 配置 ObjectMapper 单例
+- [ ] 优化性能关键路径
+
+---
+
+## 快速参考
+
+### 最小改动迁移（保留 Jackson 注解）
+
+```java
+// 原代码
+ObjectMapper mapper = new ObjectMapper();
+mapper.configure(SerializationFeature.INDENT_OUTPUT, true);
+
+// 最小改动
+ObjectMapper mapper = ObjectMapper.builder()
+    .enableWrite(WriteFeature.PrettyFormat)
+    .build();
+// 实体类注解保持不变！
+```
+
+### 完全迁移（替换为 fastjson3 注解）
+
+```java
+// 原代码
+@JsonProperty("user_name")
+@JsonFormat(pattern = "yyyy-MM-dd")
+private String userName;
+
+// 完全替换
+@JSONField(name = "user_name", format = "yyyy-MM-dd")
+private String userName;
 ```
 
 ## 相关文档

@@ -15,16 +15,30 @@
 | Gson | ⭐⭐ 中 | 需要适应 | [from-gson.md](from-gson.md) |
 | org.json | ⭐⭐ 中 | 完全重写 | [from-org-json.md](from-org-json.md) |
 
-## 🚀 快速开始
+---
 
-1. 选择你的来源库，阅读对应的迁移文档
-2. 按照 API 对照表修改代码
-3. 运行测试验证
-4. 参考 [checklist.md](checklist.md) 确保完整迁移
+## 🔍 Jackson 2.x vs 3.x 迁移
 
-## 📚 相关文档
+不确定你的 Jackson 版本？
 
-- [迁移检查清单](checklist.md)
-- [常见问题](faq.md)
-- [API 参考](../api/)
-- [注解参考](../api/annotations.md)
+```bash
+# Maven 项目检查
+grep -r "jackson-databind" pom.xml
+
+# Gradle 项目检查
+grep -r "jackson-databind" build.gradle
+```
+
+| Jackson 版本 | 特点 | 迁移难度 |
+|-------------|------|----------|
+| **2.x** | 可变 ObjectMapper，`new ObjectMapper()` 创建 | ⭐⭐ 配置方式变化较大 |
+| **3.x** | 不可变 ObjectMapper，`JsonMapper.builder()` 创建 | ⭐ API 设计与 fastjson3 相似 |
+
+**注意**：
+- Jackson 2.x 需要 Java 8+
+- Jackson 3.x 需要 Java 17+
+- fastjson3 需要 Java 17+
+
+如果你使用 Jackson 2.x 且无法升级 Java，请继续使用 Jackson 2.x 或考虑 [fastjson2](from-fastjson2.md)。
+
+---
