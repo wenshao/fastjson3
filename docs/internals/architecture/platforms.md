@@ -1,116 +1,34 @@
 # 平台支持
 
-fastjson3 对 GraalVM Native Image 和 Android 的支持。
+fastjson3 对多平台的支持。
 
-## GraalVM Native Image
+## 支持的平台
 
-### 检测
+| 平台 | 状态 | 文档 |
+|------|------|------|
+| JVM (Java 17+) | ✅ 完全支持 | - |
+| Android 8+ | ✅ 独立构建 | [android.md](android.md) |
+| GraalVM Native Image | ✅ 支持 | [graalvm.md](graalvm.md) |
 
-```java
-// static final boolean，JIT 常量折叠
-public static final boolean NATIVE_IMAGE =
-    System.getProperty("org.graalvm.nativeimage.imagecode") != null;
-```
+## 平台文档
 
-### 降级策略
+### Android
 
-| 组件 | JVM | Native Image |
-|------|-----|--------------|
-| ASM Creator | 使用 | 回退到反射 |
-| Unsafe 操作 | 使用 | 使用（GraalVM 支持） |
-| String 内部操作 | 使用 | 回退到标准 API |
+- [Android 平台支持 →](android.md)
+- @JVMOnly 注解
+- Maven profile 配置
+- ProGuard 配置
+- 性能特点
 
-### 配置
+### GraalVM Native Image
 
-需要提供反射元数据：
-
-```json
-{
-  "reflect": [
-    {
-      "name": "com.alibaba.fastjson3.JSON",
-      "allDeclaredFields": true,
-      "allPublicMethods": true
-    }
-  ],
-  "resources": {
-    "includes": [
-      {
-        "pattern": "\\.json$"
-      }
-    ]
-  }
-}
-```
-
-## Android
-
-### @JVMOnly 注解
-
-```java
-@Retention(SOURCE)
-@Target(TYPE)
-@Documented
-public @interface JVMOnly {
-}
-```
-
-### 自动排除
-
-所有标记为 `@JVMOnly` 的类在 Android 构建时自动排除：
-
-```java
-@JVMOnly
-class ObjectReaderCreatorASM {
-    // Android 构建时自动排除
-}
-
-@JVMOnly
-class DynamicClassLoader {
-    // Android 构建时自动排除
-}
-```
-
-### 构建对比
-
-```bash
-# 构建 JVM 版本
-mvn package
-# → fastjson3-3.0.0.jar (172KB, 62 classes)
-
-# 构建 Android 版本
-mvn package -Pandroid
-# → fastjson3-3.0.0-android.jar (111KB, 45 classes)
-```
-
-### Android Maven Profile
-
-```xml
-<profile>
-    <id>android</id>
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <!-- 排除 @JVMOnly 类 -->
-                        <exclude>**/internal/asm/**</exclude>
-                        <exclude>**/ObjectReaderCreatorASM.java</exclude>
-                        <exclude>**/ObjectWriterCreatorASM.java</exclude>
-                        <exclude>**/DynamicClassLoader.java</exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
-</profile>
-```
+- [GraalVM 支持 →](graalvm.md)
+- 反射配置
+- 资源配置
+- Tracing Agent 使用
+- 构建命令
 
 ## 平台检测
-
-### JDKUtils
 
 ```java
 public final class JDKUtils {
@@ -132,21 +50,17 @@ public final class JDKUtils {
 }
 ```
 
-### 条件启用
+## 降级策略
 
-```java
-// 根据平台选择 Creator
-Function<Class<?>, ObjectReader<?>> readerCreator;
-if (JDKUtils.ANDROID || JDKUtils.NATIVE_IMAGE) {
-    readerCreator = new ObjectReaderCreatorReflective();
-} else {
-    readerCreator = new ObjectReaderCreatorASM();
-}
-```
+| 组件 | JVM | Android | Native Image |
+|------|-----|---------|--------------|
+| ASM Creator | 使用 | 回退到反射 | 回退到反射 |
+| Unsafe 操作 | 使用 | 使用 | 使用 |
+| String 内部 | 直接 | 标准 | 标准 |
 
 ## 相关文档
 
-- [ASM 字节码生成](../optimization/asm-bytecode.md)
 - [模块结构](modules.md)
+- [设计决策](design-decisions.md)
 
 [← 返回索引](README.md)
