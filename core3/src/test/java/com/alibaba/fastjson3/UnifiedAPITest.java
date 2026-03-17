@@ -754,4 +754,27 @@ public class UnifiedAPITest {
             assertEquals(30, obj.getIntValue("age"));
         }
     }
+
+    @Test
+    void testSingleQuotesWithEscape() {
+        // Test single quotes with standard JSON escape sequences
+        // Note: \' is not a standard JSON escape, use \\ for backslash
+        String json = "{'name':'John\\nSmith','age':30}";
+
+        User user = JSON.parse(json, User.class, ParseConfig.LENIENT);
+        assertNotNull(user);
+        assertEquals("John\nSmith", user.name);
+        assertEquals(30, user.age);
+    }
+
+    @Test
+    void testSingleQuotesWithUnicodeEscape() {
+        // Test single quotes with unicode escape
+        String json = "{'name':'\\u0041\\u0042','age':30}";
+
+        User user = JSON.parse(json, User.class, ParseConfig.LENIENT);
+        assertNotNull(user);
+        assertEquals("AB", user.name);
+        assertEquals(30, user.age);
+    }
 }

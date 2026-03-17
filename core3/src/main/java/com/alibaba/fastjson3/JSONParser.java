@@ -487,7 +487,7 @@ public abstract sealed class JSONParser implements Closeable
             if (c == '\\') {
                 // Slow path: has escapes, fall back to reading full string
                 offset = start; // rewind
-                String name = readStringContent();
+                String name = readStringContentWithQuote(quote);
                 skipWhitespace();
                 if (offset >= e || ch(offset) != ':') {
                     throw new JSONException("expected ':' at offset " + offset);
@@ -1047,6 +1047,7 @@ public abstract sealed class JSONParser implements Closeable
         // Zero-byte detection formula: hasZero(v) = (v - 0x0101...) & ~v & 0x8080...
         // WARNING: 不可省略 & ~v 项，否则会产生误检。
         private static final long SWAR_QUOTE = 0x2222222222222222L;  // '"' broadcast
+        private static final long SWAR_SINGLE_QUOTE = 0x2727272727272727L; // '\'' broadcast
         private static final long SWAR_ESCAPE = 0x5C5C5C5C5C5C5C5CL; // '\\' broadcast
         private static final long SWAR_LO = 0x0101010101010101L;
         private static final long SWAR_HI = 0x8080808080808080L;
@@ -1495,7 +1496,7 @@ public abstract sealed class JSONParser implements Closeable
                 off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
             } else {
                 // SWAR fallback: scan 8 bytes at a time for quote, '\\', or non-ASCII (>= 0x80)
-                final long SWAR_QUOTE_OR_SINGLE = quote == '"' ? SWAR_QUOTE : 0x2727272727272727L; // '\'' broadcast
+                final long SWAR_QUOTE_OR_SINGLE = (quote == '"') ? SWAR_QUOTE : SWAR_SINGLE_QUOTE;
                 while (off + 8 <= e) {
                     long word = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
                     long v1 = word ^ SWAR_QUOTE_OR_SINGLE;
