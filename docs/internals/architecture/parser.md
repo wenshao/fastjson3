@@ -118,18 +118,24 @@ if (ch == '{') {
 }
 ```
 
-### 3. 预查找表
+### 3. 位掩码空白字符检测
+
+使用位运算代替数组查找，更快的空白字符检测：
 
 ```java
-// 跳过空白字符
-static final boolean[] WHITESPACE = new boolean[256];
-static {
-    WHITESPACE[' '] = true;
-    WHITESPACE['\t'] = true;
-    WHITESPACE['\n'] = true;
-    WHITESPACE['\r'] = true;
+// 使用 long 作为位掩码，占用 8 字节（vs 数组的 256 字节）
+static final long SPACE = 1L | (1L << ' ') | (1L << '\n') | (1L << '\r') | (1L << '\f') | (1L << '\t') | (1L << '\b');
+
+// 快速空白字符检查：先筛选再位运算
+static boolean isWhitespace(int ch) {
+    return ch <= ' ' && ((1L << ch) & SPACE) != 0;
 }
 ```
+
+优势：
+- **内存占用小**：8 bytes vs 256 bytes，CPU 缓存更友好
+- **CPU 指令少**：位运算 vs 数组访问+边界检查
+- **分支预测友好**：`ch <= ' '` 先过滤大多数非空白字符
 
 ## 相关文档
 
