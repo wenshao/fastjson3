@@ -1207,7 +1207,7 @@ public abstract sealed class JSONParser implements Closeable
                 if (c1 == '\\' || c1 >= 0x80) {
                     // Non-ASCII or escape: fall through to slow path for correct char-based hashing
                     this.offset = off;
-                    return readFieldNameHashEscape(off);
+                    return readFieldNameHashEscape(off, quote);
                 }
                 int c2 = b[off + 1] & 0xFF;
                 if (c2 == quote) {
@@ -1218,7 +1218,7 @@ public abstract sealed class JSONParser implements Closeable
                 if (c2 == '\\' || c2 >= 0x80) {
                     hash += c1;
                     this.offset = off + 1;
-                    return readFieldNameHashEscape(off + 1);
+                    return readFieldNameHashEscape(off + 1, quote);
                 }
                 hash += c1 + c2;
                 off += 2;
@@ -1236,12 +1236,12 @@ public abstract sealed class JSONParser implements Closeable
             return hash;
         }
 
-        private long readFieldNameHashEscape(int nameStart) {
+        private long readFieldNameHashEscape(int nameStart, int quote) {
             // offset is already set before the escape
             this.offset = nameStart;
             // Find the start (after opening quote which is at nameStart - (nameStart - start of field))
             // Actually we need to re-read from the opening quote. Let's just use the slow path.
-            String name = readStringContent();
+            String name = readStringContentWithQuote(quote);
             final byte[] b = this.bytes;
             final int e = this.end;
             skipWhitespace();
@@ -1302,7 +1302,7 @@ public abstract sealed class JSONParser implements Closeable
                 }
                 if (c == '\\') {
                     this.offset = start;
-                    String name = readStringContent();
+                    String name = readStringContentWithQuote(quote);
                     skipWhitespace();
                     if (this.offset >= e || b[this.offset] != ':') {
                         throw new JSONException("expected ':' at offset " + this.offset);
