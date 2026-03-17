@@ -118,24 +118,33 @@ if (ch == '{') {
 }
 ```
 
-### 3. 位掩码空白字符检测
+### 3. 空白字符检测
 
-使用位运算代替数组查找，更快的空白字符检测：
+当前实现使用 boolean 数组查找表：
 
 ```java
-// 使用 long 作为位掩码，占用 8 字节（vs 数组的 256 字节）
-static final long SPACE = 1L | (1L << ' ') | (1L << '\n') | (1L << '\r') | (1L << '\f') | (1L << '\t') | (1L << '\b');
+static final boolean[] WHITESPACE = new boolean[256];
+static {
+    WHITESPACE[' ']  = true;
+    WHITESPACE['\t'] = true;
+    WHITESPACE['\n'] = true;
+    WHITESPACE['\r'] = true;
+}
 
-// 快速空白字符检查：先筛选再位运算
+// skipWhitespace 中使用：
+if (c > ' ' || !WHITESPACE[c]) break;
+```
+
+潜在改进方向（尚未实现）：使用 long 位掩码替代数组查找，
+可以减少内存占用（8 bytes vs 256 bytes），提升缓存局部性：
+
+```java
+// 未来可考虑：位掩码方案
+static final long SPACE = 1L | (1L << ' ') | (1L << '\n') | (1L << '\r') | (1L << '\f') | (1L << '\t') | (1L << '\b');
 static boolean isWhitespace(int ch) {
     return ch <= ' ' && ((1L << ch) & SPACE) != 0;
 }
 ```
-
-优势：
-- **内存占用小**：8 bytes vs 256 bytes，CPU 缓存更友好
-- **CPU 指令少**：位运算 vs 数组访问+边界检查
-- **分支预测友好**：`ch <= ' '` 先过滤大多数非空白字符
 
 ## 相关文档
 

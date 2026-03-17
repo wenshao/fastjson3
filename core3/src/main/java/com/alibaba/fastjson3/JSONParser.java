@@ -1663,10 +1663,16 @@ public abstract sealed class JSONParser implements Closeable
                 off++;
             }
 
+            // If we exited the loops early due to overflow (remaining digits unconsumed),
+            // fall back to readNumber() to correctly handle out-of-range values.
+            if (off < e) {
+                int nc = b[off] & 0xFF;
+                if (nc >= '0' && nc <= '9') {
+                    this.offset = start - (neg ? 1 : 0);
+                    return readNumber().intValue();
+                }
+            }
             // Overflow guard: int has at most 10 digits
-            // Changed from >= to >: a 10-digit number like "2147483647" is valid and should be parsed directly.
-            // The overflow checks above (value > 21474836 and value > 214748364) already prevent overflow.
-            // Only need fallback for numbers with MORE than 10 digits (which won't fit in int).
             if (off - start > 10) {
                 this.offset = start - (neg ? 1 : 0);
                 return readNumber().intValue();

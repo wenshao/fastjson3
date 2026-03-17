@@ -214,7 +214,7 @@ if (mapped >= 0) {
 
 ## 6. 空白字符位掩码
 
-### fastjson2 和 fastjson3 都已实现 ✅
+### fastjson2 实现 ✅
 ```java
 static final long SPACE = 1L | (1L << ' ') | (1L << '\n') | (1L << '\r')
                        | (1L << '\f') | (1L << '\t') | (1L << '\b');
@@ -223,6 +223,17 @@ if (ch <= ' ' && ((1L << ch) & SPACE) != 0) {
     // 跳过空白
 }
 ```
+
+### fastjson3 当前实现
+fastjson3 当前使用 `boolean[]` 查找表而非位掩码：
+```java
+static final boolean[] WHITESPACE = new boolean[256];
+// ... 初始化 ' ', '\t', '\n', '\r'
+
+if (c > ' ' || !WHITESPACE[c]) break;
+```
+
+**待实现**：可参考 fastjson2 的位掩码方案，减少内存占用（8 bytes vs 256 bytes）。
 
 ---
 
@@ -236,7 +247,7 @@ if (ch <= ' ' && ((1L << ch) & SPACE) != 0) {
 | INT_VALUE_END 查找表 | ✅ | ❌ | 待实现 | ⭐⭐ 中 |
 | 单字符转义查找表 | ✅ | ✅ | 已实现 | ⭐⭐ |
 | Vector API 扫描 | ❌ | ✅ | 已有 | - |
-| 空白字符位掩码 | ✅ | ✅ | 已有 | - |
+| 空白字符位掩码 | ✅ | ❌ | 待实现 | ⭐ 低 |
 
 ---
 
