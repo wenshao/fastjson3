@@ -633,13 +633,8 @@ public class FilterModules {
         };
     }
 
-    // 命名模块
-    public static Filter[] naming(NamingStrategy strategy) {
-        return new Filter[]{
-            (NameFilter) (obj, name, val) ->
-                strategy.translate(name)
-        };
-    }
+    // 命名模块（使用 @JSONType 注解更高效）
+    // 命名转换建议使用类级别的 @JSONType(naming) 注解
 }
 
 // 使用

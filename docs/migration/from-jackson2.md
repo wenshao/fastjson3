@@ -282,7 +282,6 @@ public class Point {
 | `INDENT_OUTPUT` | `WriteFeature.PrettyFormat` | 格式化输出 |
 | `WRITE_NULL_MAP_VALUES` | `WriteFeature.WriteNulls` | 输出 null 值 |
 | `WRITE_ENUMS_USING_TO_STRING` | `WriteFeature.WriteEnumUsingToString` | 枚举用 toString |
-| `WRITE_SINGLE_ELEM_ARRAYS_UNWRAPPED` | `WriteFeature.WriteSingleElementArrayUnwrapped` | 单元素数组展开 |
 | `WRITE_DATES_AS_TIMESTAMPS` | `@JSONField(format="millis")` | 日期用时间戳 |
 
 ### DeserializationFeature 映射
@@ -522,10 +521,6 @@ Map<String, List<User>> data = mapper.readValue(json, complexTypeRef);
 // 方式1：TypeToken 工厂方法（推荐）
 TypeToken<List<User>> userListType = TypeToken.listOf(User.class);
 List<User> users = JSON.parse(json, userListType);
-
-TypeToken<Map<String, List<User>>> complexType =
-    TypeToken.mapOfKeys(String.class, User.class);
-Map<String, List<User>> data = JSON.parse(json, complexType);
 
 // 方式2：TypeReference（保留兼容性）
 TypeReference<List<User>> typeRef = new TypeReference<>() {};

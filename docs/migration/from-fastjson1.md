@@ -71,10 +71,9 @@ import com.alibaba.fastjson3.util.*;
 | `WriteNullStringAsEmpty` | `WriteNullStringAsEmpty` | null 字符串转空 |
 | `WriteNullBooleanAsFalse` | `WriteNullBooleanAsFalse` | null 布尔转 false |
 | `WriteNullListAsEmpty` | `WriteNullListAsEmpty` | null 列表转空 |
-| `WriteDateUseDateFormat` | `WriteDateUseDateFormat` | 使用日期格式 |
 | `PrettyFormat` | `PrettyFormat` | 格式化输出 |
 | `WriteClassName` | `WriteClassName` | 写入类名 |
-| `DisableCircularReferenceDetect` | `IgnoreCircularReference` | 循环引用 |
+| `DisableCircularReferenceDetect` | `ReferenceDetection` | 循环引用检测 |
 | `WriteEnumUsingToString` | `WriteEnumUsingToString` | 枚举用 toString |
 | `BrowserCompatible` | (默认行为) | 浏览器兼容 |
 | `WriteNonStringValueAsString` | (默认行为) | 非 String 值转字符串 |
@@ -108,17 +107,17 @@ User user = JSON.parseObject(json,
 // 方式1：使用 writeFeatures/readFeatures
 String json = JSON.toJSONString(obj,
     WriteFeature.WriteNulls,
-    WriteFeature.PrettyFormat,
-    WriteFeature.WriteDateUseDateFormat);
+    WriteFeature.PrettyFormat);
 
 User user = JSON.parseObject(json,
     ReadFeature.AllowComment,
     ReadFeature.AllowSingleQuotes);
 
-// 方式2：使用 JSONWriter/JSONReader
-String json = JSON.toJSONString(obj,
-    JSONWriter.Feature.WriteNulls,
-    JSONWriter.Feature.PrettyFormat);
+// 方式2：使用 ObjectMapper 配置日期格式
+ObjectMapper mapper = ObjectMapper.builder()
+    .dateFormat("yyyy-MM-dd HH:mm:ss")
+    .build();
+String json = mapper.writeValueAsString(obj);
 
 User user = JSON.parseObject(json,
     JSONReader.Feature.AllowComment,
@@ -143,9 +142,8 @@ Map<String, List<User>> map = JSON.parseObject(json, mapType);
 TypeToken<List<User>> userListType = TypeToken.listOf(User.class);
 List<User> users = JSON.parse(json, userListType);
 
-TypeToken<Map<String, List<User>>> mapType =
-    TypeToken.mapOfKeys(String.class, User.class);
-Map<String, List<User>> map = JSON.parse(json, mapType);
+TypeToken<Map<String, User>> mapType = TypeToken.mapOf(User.class);
+Map<String, User> map = JSON.parse(json, mapType);
 
 // 方式2：直接使用 parse
 List<User> users = JSON.parse(json, TypeToken.listOf(User.class));
@@ -302,8 +300,6 @@ ValueFilter valueFilter = (obj, name, value) -> {
 JSON.DEFAULT_GENERATE_FEATURE |= SerializerFeature.WriteMapNullValue.getMask();
 JSON.DEFAULT_PARSER_FEATURE |= Feature.AllowComment.getMask();
 
-SerializerFeature.config(SerializerFeature.WriteDateUseDateFormat, true);
-
 // ===== fastjson3 =====
 // 推荐：使用 ObjectMapper
 ObjectMapper mapper = ObjectMapper.builder()
@@ -385,12 +381,14 @@ String json = JSON.toJSONString(node,
     SerializerFeature.DisableCircularReferenceDetect);
 
 // ===== fastjson3 =====
-// 默认忽略循环引用
+// 默认启用循环引用检测
 String json = JSON.toJSONString(node);
 
-// 显式控制
-String json = JSON.toJSONString(node,
-    WriteFeature.IgnoreCircularReference);
+// 禁用循环引用检测（通过 ObjectMapper）
+ObjectMapper mapper = ObjectMapper.builder()
+    .disableWrite(WriteFeature.ReferenceDetection)
+    .build();
+String json = mapper.writeValueAsString(node);
 ```
 
 ---

@@ -144,18 +144,15 @@ public class User {
 
     @JSONField(inclusion = Inclusion.NON_EMPTY)  // 非空时包含
     private String notes;
-
-    @JSONField(inclusion = Inclusion.NON_DEFAULT)  // 非默认值时包含
-    private int status;
 }
 ```
 
 | 策略 | 说明 |
 |------|------|
-| `ALWAYS` | 总是包含 |
+| `ALWAYS` | 总是包含（包括 null） |
+| `DEFAULT` | 默认行为（等同于 NON_NULL） |
 | `NON_NULL` | 值非 null 时包含 |
-| `NON_EMPTY` | 值非空时包含（String 不为 ""，Collection 不为空） |
-| `NON_DEFAULT` | 值不等于默认值时包含 |
+| `NON_EMPTY` | 值非空时包含（null、空字符串、空集合、空数组） |
 
 #### 9. 自定义序列化器
 
@@ -182,7 +179,7 @@ public class Product {
     @JSONField(schema = "{\"minimum\": 0, \"maximum\": 100}")
     private int price;
 
-    @JSONField(schema = "{\"pattern\": "^[A-Za-z0-9]+$\"}")
+    @JSONField(schema = "{\"pattern\": \"^[A-Za-z0-9]+$\"}")
     private String productCode;
 }
 ```
@@ -313,7 +310,7 @@ public class ApiResponse<T> {
     @JSONField(ordinal = 3)
     private T data;
 
-    @JSONField(include = Inclusion.NON_NULL)
+    @JSONField(inclusion = Inclusion.NON_NULL)
     private String debugInfo;
 }
 ```

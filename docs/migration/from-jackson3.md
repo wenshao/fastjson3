@@ -88,7 +88,6 @@ Jackson 3.x 引入了一些新注解，fastjson3 提供等价功能：
 JsonMapper mapper = JsonMapper.builder()
     // SerializationFeature
     .enable(SerializationFeature.INDENT_OUTPUT)
-    .enable(SerializationFeature.WRITE_SINGLE_ELEM_ARRAYS_UNWRAPPED)
     // DeserializationFeature
     .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
@@ -101,7 +100,6 @@ JsonMapper mapper = JsonMapper.builder()
 ObjectMapper mapper = ObjectMapper.builder()
     // WriteFeature
     .enableWrite(WriteFeature.PrettyFormat)
-    .enableWrite(WriteFeature.WriteSingleElementArrayUnwrapped)
     // ReadFeature
     .disableRead(ReadFeature.ErrorOnUnknownProperties)
     .enableRead(ReadFeature.SupportArrayToBean)
@@ -119,8 +117,8 @@ ObjectMapper mapper = ObjectMapper.builder()
 | `FAIL_ON_UNKNOWN_PROPERTIES` | `ErrorOnUnknownProperties` | 未知属性报错 |
 | `ALLOW_COMMENTS` | `AllowComment` | 允许注释 |
 | `ALLOW_UNQUOTED_FIELD_NAMES` | `AllowUnQuotedFieldNames` | 允许无引号字段 |
-| `WRITE_DATES_AS_TIMESTAMPS` | `@JSONField(format="millis")` | 日期时间戳 |
 | `ACCEPT_SINGLE_VALUE_AS_ARRAY` | `SupportArrayToBean` | 单值转数组 |
+| `WRITE_DATES_AS_TIMESTAMPS` | `@JSONField(format="millis")` | 日期用时间戳 |
 
 ---
 
@@ -340,11 +338,8 @@ public class Config {
     private Map<String, String> properties;
 }
 
-// 或使用 @JSONField
-public class Config {
-    @JSONField(deserializeUsing = ImmutableSetDeserializer.class)
-    private Set<String> tags;
-}
+// Guava 不可变集合支持需要 GuavaSupport 模块
+// 对于 Guava ImmutableSet，fastjson3 会自动检测并处理
 ```
 
 ---
