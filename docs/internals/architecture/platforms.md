@@ -1,38 +1,33 @@
-# 平台支持
+# 平台支持架构
 
-fastjson3 对多平台的支持。
+fastjson3 的多平台支持架构设计。
 
 ## 支持的平台
 
-| 平台 | 状态 | 文档 |
-|------|------|------|
+| 平台 | 状态 | 用户文档 |
+|------|------|----------|
 | JVM (Java 17+) | ✅ 完全支持 | - |
-| Android 8+ | ✅ 独立构建 | [android.md](android.md) |
-| GraalVM Native Image | ✅ 支持 | [graalvm.md](graalvm.md) |
+| Android 8+ | ✅ 独立构建 | [📘 Android 指南 →](../../advanced/android.md) |
+| GraalVM Native Image | ✅ 支持 | [📘 GraalVM 指南 →](../../advanced/graalvm.md) |
 
-## 平台文档
+## 架构设计
 
-### Android
+### @JVMOnly 注解
 
-- [Android 平台支持 →](android.md)
-- @JVMOnly 注解
-- Maven profile 配置
-- ProGuard 配置
-- 性能特点
+```java
+@Retention(SOURCE)
+@Target(TYPE)
+@Documented
+public @interface JVMOnly {
+}
+```
 
-### GraalVM Native Image
+标记为 `@JVMOnly` 的类在非 JVM 平台自动排除。
 
-- [GraalVM 支持 →](graalvm.md)
-- 反射配置
-- 资源配置
-- Tracing Agent 使用
-- 构建命令
-
-## 平台检测
+### 平台检测
 
 ```java
 public final class JDKUtils {
-    // 平台检测常量
     public static final boolean ANDROID;
     public static final boolean NATIVE_IMAGE;
     public static final boolean UNSAFE_AVAILABLE;
@@ -50,17 +45,39 @@ public final class JDKUtils {
 }
 ```
 
-## 降级策略
+### 降级策略矩阵
 
 | 组件 | JVM | Android | Native Image |
 |------|-----|---------|--------------|
-| ASM Creator | 使用 | 回退到反射 | 回退到反射 |
+| ASM Creator | 使用 | 排除 | 回退到反射 |
 | Unsafe 操作 | 使用 | 使用 | 使用 |
-| String 内部 | 直接 | 标准 | 标准 |
+| 直接内存访问 | 使用 | 回退 | 回退 |
+
+## 构建产物
+
+### JVM 版本
+
+```bash
+mvn package
+# → fastjson3-3.0.0.jar (172KB, 62 classes)
+```
+
+### Android 版本
+
+```bash
+mvn package -Pandroid
+# → fastjson3-3.0.0-android.jar (111KB, 45 classes)
+# 节省 ~35% 体积
+```
 
 ## 相关文档
 
-- [模块结构](modules.md)
-- [设计决策](design-decisions.md)
+### 平台特定文档
+- [Android 完整指南 →](../../advanced/android.md)
+- [GraalVM Native Image 指南 →](../../advanced/graalvm.md)
+
+### 架构相关
+- [模块结构 →](modules.md)
+- [设计决策 →](design-decisions.md)
 
 [← 返回索引](README.md)
