@@ -33,25 +33,25 @@ public class JSONPathExample {
         // 1. 获取根节点
         System.out.println("1. 获取根节点 $");
         JSONPath rootPath = JSONPath.of("$");
-        JSONObject rootObj = rootPath.eval(json, JSONObject.class);
+        JSONObject rootObj = rootPath.extract(json, JSONObject.class);
         System.out.println("  根节点类型: " + rootObj.getClass().getSimpleName());
 
         // 2. 获取嵌套属性
         System.out.println("\n2. 获取嵌套属性 $.store.bicycle.color");
         JSONPath colorPath = JSONPath.of("$.store.bicycle.color");
-        String color = colorPath.eval(json, String.class);
+        String color = colorPath.extract(json, String.class);
         System.out.println("  自行车颜色: " + color);
 
         // 3. 数组索引
         System.out.println("\n3. 数组索引 $.store.book[0]");
         JSONPath firstBookPath = JSONPath.of("$.store.book[0]");
-        JSONObject firstBook = firstBookPath.eval(json, JSONObject.class);
+        JSONObject firstBook = firstBookPath.extract(json, JSONObject.class);
         System.out.println("  第一本书: " + firstBook.getString("title"));
 
         // 4. 获取最后一本书
         System.out.println("\n4. 获取最后一本书 $.store.book[-1]");
         JSONPath lastBookPath = JSONPath.of("$.store.book[-1]");
-        JSONObject lastBook = lastBookPath.eval(json, JSONObject.class);
+        JSONObject lastBook = lastBookPath.extract(json, JSONObject.class);
         System.out.println("  最后一本书: " + lastBook.getString("title"));
 
         // 5. 通配符 - 所有作者
@@ -65,7 +65,7 @@ public class JSONPathExample {
         // 6. 过滤 - 价格小于 10 的书
         System.out.println("\n6. 价格小于 10 的书 $.store.book[?(@.price < 10)]");
         JSONPath cheapBooksPath = JSONPath.of("$.store.book[?(@.price < 10)]");
-        JSONArray cheapBooks = cheapBooksPath.eval(json, JSONArray.class);
+        JSONArray cheapBooks = cheapBooksPath.extract(json, JSONArray.class);
         System.out.println("  便宜的书: " + cheapBooks.size() + " 本");
         for (int i = 0; i < cheapBooks.size(); i++) {
             JSONObject book = cheapBooks.getJSONObject(i);
@@ -75,19 +75,19 @@ public class JSONPathExample {
         // 7. 过滤 - fiction 类别
         System.out.println("\n7. fiction 类别的书 $.store.book[?(@.category == 'fiction')]");
         JSONPath fictionBooksPath = JSONPath.of("$.store.book[?(@.category == 'fiction')]");
-        JSONArray fictionBooks = fictionBooksPath.eval(json, JSONArray.class);
+        JSONArray fictionBooks = fictionBooksPath.extract(json, JSONArray.class);
         System.out.println("  小说: " + fictionBooks.size() + " 本");
 
         // 8. 数组切片
         System.out.println("\n8. 前两本书 $.store.book[0:2]");
         JSONPath slicePath = JSONPath.of("$.store.book[0:2]");
-        JSONArray slice = slicePath.eval(json, JSONArray.class);
+        JSONArray slice = slicePath.extract(json, JSONArray.class);
         System.out.println("  前2本: " + slice.size() + " 本");
 
         // 9. 多值查询
         System.out.println("\n9. 多值查询 $.store.book[0].[author, price, title]");
         JSONPath multiPath = JSONPath.of("$.store.book[0].[author, price, title]");
-        Object[] values = multiPath.eval(json, Object[].class);
+        Object[] values = multiPath.extract(json, Object[].class);
         System.out.println("  作者: " + values[0]);
         System.out.println("  价格: " + values[1]);
         System.out.println("  标题: " + values[2]);

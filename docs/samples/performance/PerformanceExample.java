@@ -122,7 +122,7 @@ public class PerformanceExample {
         long start1 = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
             JSONPath path = JSONPath.of("$.store.book[*].price");
-            path.eval(json, Object.class);
+            path.extract(json, Object.class);
         }
         long time1 = System.nanoTime() - start1;
 
@@ -130,7 +130,7 @@ public class PerformanceExample {
         JSONPath path = JSONPath.of("$.store.book[*].price");
         long start2 = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            path.eval(json, Object.class);
+            path.extract(json, Object.class);
         }
         long time2 = System.nanoTime() - start2;
 

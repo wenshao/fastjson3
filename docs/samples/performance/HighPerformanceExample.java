@@ -167,9 +167,9 @@ public class HighPerformanceExample {
             }
             """;
 
-        // ❌ 不好：多次 JSONPath 查询
-        // String name = JSONPath.of("$.name").eval(json, String.class);
-        // String age = JSONPath.of("$.age").eval(json, Integer.class);
+        // ❌ 不好：多次 JSONPath 查询（每次都解析 JSON）
+        // String name = JSONPath.of("$.name").extract(json, String.class);
+        // String age = JSONPath.of("$.age").extract(json, Integer.class);
 
         // ✅ 好：使用已解析对象进行多次查询
         com.alibaba.fastjson3.JSONObject obj = JSON.parseObject(json);
