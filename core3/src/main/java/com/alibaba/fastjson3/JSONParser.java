@@ -168,7 +168,14 @@ public abstract sealed class JSONParser implements Closeable
         return switch (c) {
             case '{' -> readObject();
             case '[' -> readArray();
-            case '"', '\'' -> readString();
+            case '"' -> readString();
+            case '\'' -> {
+                // Single quote only allowed when AllowSingleQuotes feature is enabled
+                if (!isEnabled(ReadFeature.AllowSingleQuotes)) {
+                    throw new JSONException("unexpected character ''' at offset " + offset);
+                }
+                yield readString();
+            }
             case 't', 'f' -> readBoolean() ? Boolean.TRUE : Boolean.FALSE;
             case 'n' -> {
                 readNullLiteral();
@@ -268,12 +275,15 @@ public abstract sealed class JSONParser implements Closeable
 
     public String readString() {
         skipWhitespace();
-        int quote = ch(offset);
-        if (offset >= end() || (quote != '"' && quote != '\'')) {
+        if (offset >= end()) {
             throw new JSONException("expected quote at offset " + offset);
         }
-        offset++;
-        return readStringContentWithQuote(quote);
+        int quote = ch(offset);
+        if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+            offset++;
+            return readStringContentWithQuote(quote);
+        }
+        throw new JSONException("expected quote at offset " + offset);
     }
 
     /**
@@ -436,18 +446,21 @@ public abstract sealed class JSONParser implements Closeable
 
     public String readFieldName() {
         skipWhitespace();
-        int quote = ch(offset);
-        if (offset >= end() || (quote != '"' && quote != '\'')) {
+        if (offset >= end()) {
             throw new JSONException("expected quote for field name at offset " + offset);
         }
-        offset++;
-        String name = readStringContentWithQuote(quote);
-        skipWhitespace();
-        if (offset >= end() || ch(offset) != ':') {
-            throw new JSONException("expected ':' at offset " + offset);
+        int quote = ch(offset);
+        if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+            offset++;
+            String name = readStringContentWithQuote(quote);
+            skipWhitespace();
+            if (offset >= end() || ch(offset) != ':') {
+                throw new JSONException("expected ':' at offset " + offset);
+            }
+            offset++;
+            return name;
         }
-        offset++;
-        return name;
+        throw new JSONException("expected quote for field name at offset " + offset);
     }
 
     /**
@@ -1190,8 +1203,15 @@ public abstract sealed class JSONParser implements Closeable
             while (off < end && b[off] <= ' ') {
                 off++;
             }
+            // Boundary check BEFORE accessing b[off]
+            if (off >= end) {
+                throw new JSONException("expected quote for field name at offset " + off);
+            }
             final byte quote = b[off];
-            if (off >= end || (quote != '"' && quote != '\'')) {
+            // Single quote only allowed when AllowSingleQuotes feature is enabled
+            if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+                // valid quote
+            } else {
                 throw new JSONException("expected quote for field name at offset " + off);
             }
             off++;
@@ -1273,8 +1293,13 @@ public abstract sealed class JSONParser implements Closeable
             while (off < e && b[off] <= ' ') {
                 off++;
             }
+            // Boundary check BEFORE accessing b[off]
+            if (off >= e) {
+                throw new JSONException("expected quote for field name at offset " + off);
+            }
             final byte quote = b[off];
-            if (off >= e || (quote != '"' && quote != '\'')) {
+            // Single quote only allowed when AllowSingleQuotes feature is enabled
+            if (quote != '"' && !(quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
                 throw new JSONException("expected quote for field name at offset " + off);
             }
             off++;
