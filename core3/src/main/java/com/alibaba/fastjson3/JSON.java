@@ -805,6 +805,32 @@ public final class JSON {
     }
 
     /**
+     * Parse JSON string to Java array {@code T[]} with configuration.
+     *
+     * <pre>
+     * User[] users = JSON.parseTypedArray(json, User.class, ParseConfig.LENIENT);
+     * </pre>
+     *
+     * @param json        JSON string representing an array
+     * @param elementType array element type
+     * @param config      parsing configuration preset
+     * @param <E>         element type parameter
+     * @return typed Java array, or null if input is null/empty
+     * @throws JSONException if JSON syntax is invalid or type conversion fails
+     */
+    @SuppressWarnings("unchecked")
+    public static <E> E[] parseTypedArray(String json, Class<E> elementType, ParseConfig config) {
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        List<E> list = ObjectMapper.shared().readList(json, elementType, config.mask());
+        if (list == null) {
+            return null;
+        }
+        return list.toArray((E[]) java.lang.reflect.Array.newInstance(elementType, 0));
+    }
+
+    /**
      * Parse JSON bytes (UTF-8) to Java array {@code T[]}.
      *
      * @param jsonBytes   JSON bytes representing an array
@@ -819,6 +845,28 @@ public final class JSON {
             return null;
         }
         List<E> list = ObjectMapper.shared().readList(jsonBytes, elementType);
+        if (list == null) {
+            return null;
+        }
+        return list.toArray((E[]) java.lang.reflect.Array.newInstance(elementType, 0));
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to Java array {@code T[]} with configuration.
+     *
+     * @param jsonBytes   JSON bytes representing an array
+     * @param elementType array element type
+     * @param config      parsing configuration preset
+     * @param <E>         element type parameter
+     * @return typed Java array, or null if input is null/empty
+     * @throws JSONException if JSON syntax is invalid or type conversion fails
+     */
+    @SuppressWarnings("unchecked")
+    public static <E> E[] parseTypedArray(byte[] jsonBytes, Class<E> elementType, ParseConfig config) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        List<E> list = ObjectMapper.shared().readList(jsonBytes, elementType, config.mask());
         if (list == null) {
             return null;
         }

@@ -64,7 +64,8 @@ public class JSONArray extends ArrayList<Object> {
             }
             return Integer.parseInt(str);
         }
-        throw new JSONException("Cannot cast JSONArray[%d] from %s to Integer: %s".formatted(index, val.getClass().getSimpleName(), val));
+        throw new JSONException("Cannot cast JSONArray[" + index + "] from "
+            + val.getClass().getSimpleName() + " to Integer: " + val);
     }
 
     public int getIntValue(int index) {
@@ -90,7 +91,8 @@ public class JSONArray extends ArrayList<Object> {
             }
             return Long.parseLong(str);
         }
-        throw new JSONException("Cannot cast JSONArray[%d] from %s to Long: %s".formatted(index, val.getClass().getSimpleName(), val));
+        throw new JSONException("Cannot cast JSONArray[" + index + "] from "
+            + val.getClass().getSimpleName() + " to Long: " + val);
     }
 
     public long getLongValue(int index) {
@@ -112,7 +114,8 @@ public class JSONArray extends ArrayList<Object> {
         if (val instanceof Number) {
             return ((Number) val).intValue() != 0;
         }
-        throw new JSONException("Cannot cast JSONArray[%d] from %s to Boolean: %s".formatted(index, val.getClass().getSimpleName(), val));
+        throw new JSONException("Cannot cast JSONArray[" + index + "] from "
+            + val.getClass().getSimpleName() + " to Boolean: " + val);
     }
 
     public boolean getBooleanValue(int index) {
@@ -134,7 +137,8 @@ public class JSONArray extends ArrayList<Object> {
         if (val instanceof String) {
             return new BigDecimal((String) val);
         }
-        throw new JSONException("Cannot cast JSONArray[%d] from %s to BigDecimal: %s".formatted(index, val.getClass().getSimpleName(), val));
+        throw new JSONException("Cannot cast JSONArray[" + index + "] from "
+            + val.getClass().getSimpleName() + " to BigDecimal: " + val);
     }
 
     public BigInteger getBigInteger(int index) {
@@ -151,7 +155,8 @@ public class JSONArray extends ArrayList<Object> {
         if (val instanceof String) {
             return new BigInteger((String) val);
         }
-        throw new JSONException("Cannot cast JSONArray[%d] from %s to BigInteger: %s".formatted(index, val.getClass().getSimpleName(), val));
+        throw new JSONException("Cannot cast JSONArray[" + index + "] from "
+            + val.getClass().getSimpleName() + " to BigInteger: " + val);
     }
 
     public Double getDouble(int index) {
@@ -168,7 +173,8 @@ public class JSONArray extends ArrayList<Object> {
         if (val instanceof String) {
             return Double.parseDouble((String) val);
         }
-        throw new JSONException("Cannot cast JSONArray[%d] from %s to Double: %s".formatted(index, val.getClass().getSimpleName(), val));
+        throw new JSONException("Cannot cast JSONArray[" + index + "] from "
+            + val.getClass().getSimpleName() + " to Double: " + val);
     }
 
     public double getDoubleValue(int index) {
@@ -190,7 +196,8 @@ public class JSONArray extends ArrayList<Object> {
         if (val instanceof String) {
             return Float.parseFloat((String) val);
         }
-        throw new JSONException("Cannot cast JSONArray[%d] from %s to Float: %s".formatted(index, val.getClass().getSimpleName(), val));
+        throw new JSONException("Cannot cast JSONArray[" + index + "] from "
+            + val.getClass().getSimpleName() + " to Float: " + val);
     }
 
     public float getFloatValue(int index) {
@@ -206,7 +213,8 @@ public class JSONArray extends ArrayList<Object> {
         if (val instanceof JSONObject) {
             return (JSONObject) val;
         }
-        throw new JSONException("Cannot cast JSONArray[%d] from %s to JSONObject: %s".formatted(index, val.getClass().getSimpleName(), val));
+        throw new JSONException("Cannot cast JSONArray[" + index + "] from "
+            + val.getClass().getSimpleName() + " to JSONObject: " + val);
     }
 
     public JSONArray getJSONArray(int index) {
@@ -217,7 +225,8 @@ public class JSONArray extends ArrayList<Object> {
         if (val instanceof JSONArray) {
             return (JSONArray) val;
         }
-        throw new JSONException("Cannot cast JSONArray[%d] from %s to JSONArray: %s".formatted(index, val.getClass().getSimpleName(), val));
+        throw new JSONException("Cannot cast JSONArray[" + index + "] from "
+            + val.getClass().getSimpleName() + " to JSONArray: " + val);
     }
 
     /**

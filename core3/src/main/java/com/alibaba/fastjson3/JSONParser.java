@@ -79,6 +79,16 @@ public abstract sealed class JSONParser implements Closeable
         return new Str(json, ReadFeature.of(features));
     }
 
+    /**
+     * Create parser with feature mask directly (avoids array allocation).
+     */
+    public static JSONParser of(String json, long features) {
+        if (json == null || json.isEmpty()) {
+            throw new JSONException("input is null or empty");
+        }
+        return new Str(json, features);
+    }
+
     public static JSONParser of(byte[] jsonBytes) {
         if (jsonBytes == null || jsonBytes.length == 0) {
             throw new JSONException("input is null or empty");
@@ -91,6 +101,16 @@ public abstract sealed class JSONParser implements Closeable
             throw new JSONException("input is null or empty");
         }
         return new UTF8(jsonBytes, 0, jsonBytes.length, ReadFeature.of(features));
+    }
+
+    /**
+     * Create parser with feature mask directly (avoids array allocation).
+     */
+    public static JSONParser of(byte[] jsonBytes, long features) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            throw new JSONException("input is null or empty");
+        }
+        return new UTF8(jsonBytes, 0, jsonBytes.length, features);
     }
 
     public static JSONParser of(char[] chars, int offset, int length) {
