@@ -13,9 +13,19 @@ fastjson3 adopts a [Jackson 3](https://github.com/FasterXML/jackson-core) style 
 |--------|-------|
 | Source files | 83 |
 | Lines of code | 22,000+ |
-| Test cases | 768 |
+| Test cases | 1,327 |
 | Test pass rate | 100% |
 | Hand-written code | 0 lines |
+
+## Documentation
+
+**[Documentation Index](docs/README.md)** — Complete documentation with tutorials, guides, API references, and samples.
+
+Quick links:
+- [Getting Started](docs/start/00-5-minutes.md) — 5-minute quick start
+- [API Reference](docs/api/) — Core API documentation
+- [Guides](docs/guides/) — JSONPath, validation, performance, etc.
+- [Migration](docs/migration/) — From fastjson2, Jackson, Gson, org.json
 
 ## Highlights
 
