@@ -53,6 +53,62 @@ public abstract sealed class JSONParser implements Closeable
         }
     }
 
+    /**
+     * Fast lookup table for single-character escape sequences.
+     * Maps escape character codes to their actual values (e.g., 'n' -> '\n').
+     * Returns -1 for unmapped characters (need special handling or error).
+     * Includes both transforming escapes ('n' -> '\n') and self-mapping escapes ('"' -> '"', '\\' -> '\\').
+     * Non-essential self-mapping entries (e.g., '#', '&') are excluded for cache efficiency.
+     * Borrowed from fastjson2's CHAR1_ESCAPED optimization.
+     */
+    static final int[] CHAR1_ESCAPED = new int[128];
+    static {
+        java.util.Arrays.fill(CHAR1_ESCAPED, -1);
+        // Escape sequences that transform to different values
+        CHAR1_ESCAPED['0'] = '\0';
+        CHAR1_ESCAPED['1'] = '\1';
+        CHAR1_ESCAPED['2'] = '\2';
+        CHAR1_ESCAPED['3'] = '\3';
+        CHAR1_ESCAPED['4'] = '\4';
+        CHAR1_ESCAPED['5'] = '\5';
+        CHAR1_ESCAPED['6'] = '\6';
+        CHAR1_ESCAPED['7'] = '\7';
+        CHAR1_ESCAPED['b'] = '\b';
+        CHAR1_ESCAPED['t'] = '\t';
+        CHAR1_ESCAPED['n'] = '\n';
+        CHAR1_ESCAPED['v'] = '\u000b';
+        CHAR1_ESCAPED['f'] = '\f';
+        CHAR1_ESCAPED['r'] = '\r';
+        // Quote and backslash need to be escaped in JSON
+        CHAR1_ESCAPED['"'] = '"';
+        CHAR1_ESCAPED['\''] = '\'';
+        CHAR1_ESCAPED['/'] = '/';
+        CHAR1_ESCAPED['\\'] = '\\';
+    }
+
+    /**
+     * Optimized digit parsing: extracts 2 digits at once using SWAR technique.
+     * Returns the numeric value of two consecutive decimal digits, or -1 if invalid.
+     * Borrowed from fastjson2's IOUtils.digit2 - processes 2 digits in parallel.
+     *
+     * @param bytes byte array
+     * @param off starting offset (must have at least 2 bytes available)
+     * @return numeric value (0-99) or -1 if not valid digits
+     */
+    static int digit2(byte[] bytes, int off) {
+        int x = ((bytes[off] & 0xFF) << 8) | (bytes[off + 1] & 0xFF);
+        // SWAR check: validate both bytes are '0'-'9'
+        // (x & 0xF0F0) extracts the high nibble of each byte
+        // (x & 0xF0F0) - 0x3030 checks if high nibble is 0x30 ('0')
+        // ((d & 0x0F0F) + 0x0606) adds 6 to low nibbles to check if they are <= 9
+        int d = x & 0x0F0F;
+        if ((((x & 0xF0F0) - 0x3030) | ((d + 0x0606) & 0xF0F0)) != 0) {
+            return -1;
+        }
+        // Return the 2-digit value: high digit (d >> 8) * 10 + low digit (d & 0xF)
+        return (d >> 8) * 10 + (d & 0xF);
+    }
+
     static final int MAX_NESTING_DEPTH = 512;
 
     protected final long features;
@@ -1024,25 +1080,27 @@ public abstract sealed class JSONParser implements Closeable
                         throw new JSONException("unterminated string escape");
                     }
                     c = json.charAt(offset++);
-                    switch (c) {
-                        case '"', '\\', '/' -> sb.append(c);
-                        case 'b' -> sb.append('\b');
-                        case 'f' -> sb.append('\f');
-                        case 'n' -> sb.append('\n');
-                        case 'r' -> sb.append('\r');
-                        case 't' -> sb.append('\t');
-                        case 'u' -> {
-                            if (offset + 4 > length) {
-                                throw new JSONException("unterminated unicode escape");
-                            }
-                            int code = (hexToInt(json.charAt(offset)) << 12)
-                                    | (hexToInt(json.charAt(offset + 1)) << 8)
-                                    | (hexToInt(json.charAt(offset + 2)) << 4)
-                                    | hexToInt(json.charAt(offset + 3));
-                            sb.append((char) code);
-                            offset += 4;
+                    // Fast path: use lookup table for single-char escapes
+                    if (c < CHAR1_ESCAPED.length) {
+                        int mapped = CHAR1_ESCAPED[c];
+                        if (mapped >= 0) {
+                            sb.append((char) mapped);
+                            continue;
                         }
-                        default -> throw new JSONException("invalid escape: \\" + c);
+                    }
+                    // Special case: unicode escape
+                    if (c == 'u') {
+                        if (offset + 4 > length) {
+                            throw new JSONException("unterminated unicode escape");
+                        }
+                        int code = (hexToInt(json.charAt(offset)) << 12)
+                                | (hexToInt(json.charAt(offset + 1)) << 8)
+                                | (hexToInt(json.charAt(offset + 2)) << 4)
+                                | hexToInt(json.charAt(offset + 3));
+                        sb.append((char) code);
+                        offset += 4;
+                    } else {
+                        throw new JSONException("invalid escape: \\" + c);
                     }
                 } else {
                     sb.append(c);
@@ -1516,28 +1574,13 @@ public abstract sealed class JSONParser implements Closeable
             off++;
             int start = off;
 
-            // Vector API: scan VECTOR_SIZE bytes at a time (32/64 bytes)
+            // Vector API: scan VECTOR_SIZE bytes at a time (for quote, backslash, or non-ASCII)
+            // Note: SWAR fallback removed - Vector API provides better performance on supported platforms (JDK16+)
+            // For platforms without Vector API, the per-byte loop below handles all cases correctly.
             if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
                 off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
-            } else {
-                // SWAR fallback: scan 8 bytes at a time for quote, '\\', or non-ASCII (>= 0x80)
-                final long SWAR_QUOTE_OR_SINGLE = (quote == '"') ? SWAR_QUOTE : SWAR_SINGLE_QUOTE;
-                while (off + 8 <= e) {
-                    long word = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
-                    long v1 = word ^ SWAR_QUOTE_OR_SINGLE;
-                    long v2 = word ^ SWAR_ESCAPE;
-                    long detect = ((v1 - SWAR_LO) & ~v1)
-                            | ((v2 - SWAR_LO) & ~v2)
-                            | word; // non-ASCII bytes have high bit set
-                    if ((detect & SWAR_HI) != 0) {
-                        off += Long.numberOfTrailingZeros(detect & SWAR_HI) >> 3;
-                        break;
-                    }
-                    off += 8;
-                }
             }
 
-            // Per-byte scan for the found/remaining bytes
             while (off < e) {
                 byte c = b[off];
                 if (c == quote) {
@@ -1587,16 +1630,44 @@ public abstract sealed class JSONParser implements Closeable
             int value = c - '0';
             int start = off;
             off++;
+
+            // Fastjson2 optimization: process 2 digits at a time using digit2
+            // This reduces loop iterations by ~50% for multi-digit numbers
+            while (off + 1 < e) {
+                int d2 = digit2(b, off);
+                if (d2 < 0) break;
+                // Check for overflow before multiplying
+                // Integer.MAX_VALUE = 2147483647, Integer.MIN_VALUE = -2147483648
+                // When value == 21474836: max d2 is 47 for positive, 48 for negative
+                if (value > 21474836 || (value == 21474836 && d2 > (neg ? 48 : 47))) {
+                    break;
+                }
+                value = value * 100 + d2;
+                off += 2;
+            }
+
+            // Handle remaining single digit
             while (off < e) {
                 c = b[off] & 0xFF;
                 if (c < '0' || c > '9') {
                     break;
                 }
-                value = value * 10 + (c - '0');
+                int digit = c - '0';
+                // Overflow check
+                // Integer.MAX_VALUE = 2147483647, Integer.MIN_VALUE = -2147483648
+                // When value == 214748364: max digit is 7 for positive, 8 for negative
+                if (value > 214748364 || (value == 214748364 && digit > (neg ? 8 : 7))) {
+                    break;
+                }
+                value = value * 10 + digit;
                 off++;
             }
+
             // Overflow guard: int has at most 10 digits
-            if (off - start >= 10) {
+            // Changed from >= to >: a 10-digit number like "2147483647" is valid and should be parsed directly.
+            // The overflow checks above (value > 21474836 and value > 214748364) already prevent overflow.
+            // Only need fallback for numbers with MORE than 10 digits (which won't fit in int).
+            if (off - start > 10) {
                 this.offset = start - (neg ? 1 : 0);
                 return readNumber().intValue();
             }
@@ -2659,25 +2730,27 @@ public abstract sealed class JSONParser implements Closeable
                         throw new JSONException("unterminated string escape");
                     }
                     b = bytes[offset++] & 0xFF;
-                    switch (b) {
-                        case '"', '\\', '/' -> sb.append((char) b);
-                        case 'b' -> sb.append('\b');
-                        case 'f' -> sb.append('\f');
-                        case 'n' -> sb.append('\n');
-                        case 'r' -> sb.append('\r');
-                        case 't' -> sb.append('\t');
-                        case 'u' -> {
-                            if (offset + 4 > end) {
-                                throw new JSONException("unterminated unicode escape");
-                            }
-                            int code = (hexToInt(bytes[offset] & 0xFF) << 12)
-                                    | (hexToInt(bytes[offset + 1] & 0xFF) << 8)
-                                    | (hexToInt(bytes[offset + 2] & 0xFF) << 4)
-                                    | hexToInt(bytes[offset + 3] & 0xFF);
-                            sb.append((char) code);
-                            offset += 4;
+                    // Fast path: use lookup table for single-char escapes
+                    if (b < CHAR1_ESCAPED.length) {
+                        int mapped = CHAR1_ESCAPED[b];
+                        if (mapped >= 0) {
+                            sb.append((char) mapped);
+                            continue;
                         }
-                        default -> throw new JSONException("invalid escape: \\" + (char) b);
+                    }
+                    // Special case: unicode escape
+                    if (b == 'u') {
+                        if (offset + 4 > end) {
+                            throw new JSONException("unterminated unicode escape");
+                        }
+                        int code = (hexToInt(bytes[offset] & 0xFF) << 12)
+                                | (hexToInt(bytes[offset + 1] & 0xFF) << 8)
+                                | (hexToInt(bytes[offset + 2] & 0xFF) << 4)
+                                | hexToInt(bytes[offset + 3] & 0xFF);
+                        sb.append((char) code);
+                        offset += 4;
+                    } else {
+                        throw new JSONException("invalid escape: \\" + (char) b);
                     }
                 } else if (b < 0x80) {
                     sb.append((char) b);
@@ -2781,25 +2854,27 @@ public abstract sealed class JSONParser implements Closeable
                         throw new JSONException("unterminated string escape");
                     }
                     c = chars[offset++];
-                    switch (c) {
-                        case '"', '\\', '/' -> sb.append(c);
-                        case 'b' -> sb.append('\b');
-                        case 'f' -> sb.append('\f');
-                        case 'n' -> sb.append('\n');
-                        case 'r' -> sb.append('\r');
-                        case 't' -> sb.append('\t');
-                        case 'u' -> {
-                            if (offset + 4 > end) {
-                                throw new JSONException("unterminated unicode escape");
-                            }
-                            int code = (hexToInt(chars[offset]) << 12)
-                                    | (hexToInt(chars[offset + 1]) << 8)
-                                    | (hexToInt(chars[offset + 2]) << 4)
-                                    | hexToInt(chars[offset + 3]);
-                            sb.append((char) code);
-                            offset += 4;
+                    // Fast path: use lookup table for single-char escapes
+                    if (c < CHAR1_ESCAPED.length) {
+                        int mapped = CHAR1_ESCAPED[c];
+                        if (mapped >= 0) {
+                            sb.append((char) mapped);
+                            continue;
                         }
-                        default -> throw new JSONException("invalid escape: \\" + c);
+                    }
+                    // Special case: unicode escape
+                    if (c == 'u') {
+                        if (offset + 4 > end) {
+                            throw new JSONException("unterminated unicode escape");
+                        }
+                        int code = (hexToInt(chars[offset]) << 12)
+                                | (hexToInt(chars[offset + 1]) << 8)
+                                | (hexToInt(chars[offset + 2]) << 4)
+                                | hexToInt(chars[offset + 3]);
+                        sb.append((char) code);
+                        offset += 4;
+                    } else {
+                        throw new JSONException("invalid escape: \\" + c);
                     }
                 } else {
                     sb.append(c);
