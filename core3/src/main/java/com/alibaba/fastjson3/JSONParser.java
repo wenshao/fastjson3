@@ -38,6 +38,34 @@ public abstract sealed class JSONParser implements Closeable
         WHITESPACE['\r'] = true;
     }
 
+    /**
+     * Bitmask for fast whitespace detection.
+     * Bit is set for: space, \n, \r, \f, \t, \b
+     * Usage: (ch <= ' ' && ((1L << ch) & SPACE) != 0) is faster than WHITESPACE[ch]
+     * Borrowed from fastjson2 for optimized whitespace skipping.
+     */
+    static final long SPACE = 1L | (1L << ' ') | (1L << '\n') | (1L << '\r') | (1L << '\f') | (1L << '\t') | (1L << '\b');
+
+    /**
+     * Fast lookup table for integer value termination.
+     * INT_VALUE_END[ch] = true means the character ends an integer value.
+     * Borrowed from fastjson2 for optimized integer parsing.
+     */
+    static final boolean[] INT_VALUE_END = new boolean[256];
+    static {
+        java.util.Arrays.fill(INT_VALUE_END, true);
+        // Characters that continue an integer (do NOT end it):
+        // - Digits 0-9 (for multi-digit numbers)
+        // - Decimal point and exponent notation (for floating point, handled separately)
+        // - Letters 't', 'f', 'n' for true/false/null literals
+        // - Structural characters '{', '[' for object/array start
+        char[] continues = {'.', 'e', 'E', 't', 'f', 'n', '{', '[',
+                           '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
+        for (char ch : continues) {
+            INT_VALUE_END[ch] = false;
+        }
+    }
+
     static final int HEX_INVALID = -1;
     static final int[] HEX_VALUES = new int[128];
     static {
@@ -200,7 +228,8 @@ public abstract sealed class JSONParser implements Closeable
         int e = end();
         while (offset < e) {
             int c = ch(offset);
-            if (c > ' ' || !WHITESPACE[c]) {
+            // Fast path: use SPACE bitmask for common whitespace characters
+            if (c > ' ' || ((1L << c) & SPACE) == 0) {
                 break;
             }
             offset++;
@@ -1152,7 +1181,8 @@ public abstract sealed class JSONParser implements Closeable
             final int e = this.end;
             while (off < e) {
                 byte c = b[off];
-                if (c > ' ' || !WHITESPACE[c & 0xFF]) {
+                // Fast path: use SPACE bitmask for common whitespace characters
+                if (c > ' ' || ((1L << c) & SPACE) == 0) {
                     break;
                 }
                 off++;
@@ -1671,6 +1701,17 @@ public abstract sealed class JSONParser implements Closeable
                 this.offset = start - (neg ? 1 : 0);
                 return readNumber().intValue();
             }
+
+            // Fast check: verify next character is a valid integer terminator
+            // Using INT_VALUE_END lookup table for O(1) check
+            int nextCh = (off < e) ? (b[off] & 0xFF) : -1;
+            if (nextCh >= 0 && !INT_VALUE_END[nextCh]) {
+                // Next character continues the integer (e.g., another digit, decimal, exponent)
+                // Fall back to full number parsing for float/exponent cases
+                this.offset = start - (neg ? 1 : 0);
+                return readNumber().intValue();
+            }
+
             this.offset = off;
             return neg ? -value : value;
         }
