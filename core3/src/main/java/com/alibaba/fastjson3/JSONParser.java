@@ -57,7 +57,8 @@ public abstract sealed class JSONParser implements Closeable
      * Fast lookup table for single-character escape sequences.
      * Maps escape character codes to their actual values (e.g., 'n' -> '\n').
      * Returns -1 for unmapped characters (need special handling or error).
-     * Only includes characters that actually transform - self-mapping entries excluded for cache efficiency.
+     * Includes both transforming escapes ('n' -> '\n') and self-mapping escapes ('"' -> '"', '\\' -> '\\').
+     * Non-essential self-mapping entries (e.g., '#', '&') are excluded for cache efficiency.
      * Borrowed from fastjson2's CHAR1_ESCAPED optimization.
      */
     static final int[] CHAR1_ESCAPED = new int[128];

@@ -195,4 +195,53 @@ class JSONParserOptimizationTest {
         obj = parser.readObject();
         assertEquals(1234567890L, obj.getLongValue("x"));
     }
+
+    @Test
+    void testParseIntWithDigit2Utf8Path() {
+        // Test the optimized readIntDirect method via UTF-8 byte[] path
+        // This exercises JSONParser.UTF8.readIntDirect() where digit2 optimization lives
+        byte[] jsonBytes = "{\"value\":12345678}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        JSONParser parser = JSONParser.of(jsonBytes);
+        JSONObject obj = parser.readObject();
+        assertEquals(12345678, obj.getIntValue("value"));
+    }
+
+    @Test
+    void testParseIntLargeNumberUtf8Path() {
+        // Test parsing large integers via UTF-8 byte[] path
+        byte[] jsonBytes = "{\"id\":98765432,\"count\":1000000}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        JSONParser parser = JSONParser.of(jsonBytes);
+        JSONObject obj = parser.readObject();
+        assertEquals(98765432, obj.getIntValue("id"));
+        assertEquals(1000000, obj.getIntValue("count"));
+    }
+
+    @Test
+    void testParseIntMaxValueUtf8Path() {
+        // Test Integer.MAX_VALUE via UTF-8 byte[] path
+        byte[] jsonBytes = "{\"max\":2147483647}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        JSONParser parser = JSONParser.of(jsonBytes);
+        JSONObject obj = parser.readObject();
+        assertEquals(Integer.MAX_VALUE, obj.getIntValue("max"));
+    }
+
+    @Test
+    void testParseIntMinValueUtf8Path() {
+        // Test Integer.MIN_VALUE via UTF-8 byte[] path
+        byte[] jsonBytes = "{\"min\":-2147483648}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        JSONParser parser = JSONParser.of(jsonBytes);
+        JSONObject obj = parser.readObject();
+        assertEquals(Integer.MIN_VALUE, obj.getIntValue("min"));
+    }
+
+    @Test
+    void testDigit2InMultiDigitNumberUtf8Path() {
+        // Test that digit2 correctly handles multi-digit numbers via UTF-8 byte[] path
+        byte[] jsonBytes = "{\"a\":1234,\"b\":5678,\"c\":9999}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        JSONParser parser = JSONParser.of(jsonBytes);
+        JSONObject obj = parser.readObject();
+        assertEquals(1234, obj.getIntValue("a"));
+        assertEquals(5678, obj.getIntValue("b"));
+        assertEquals(9999, obj.getIntValue("c"));
+    }
 }

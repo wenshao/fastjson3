@@ -36,14 +36,15 @@ static int digit2(byte[] bytes, int off) {
     if ((((x & 0xF0F0) - 0x3030) | ((d + 0x0606) & 0xF0F0)) != 0) {
         return -1;
     }
-    return (d & 0xF) * 10 + (d >> 8);
+    return (d >> 8) * 10 + (d & 0xF);
 }
 
 // 使用：每次处理2位数字
 while (off + 1 < e) {
     int d2 = digit2(b, off);
     if (d2 < 0) break;
-    if (value > 21474836) break;  // Integer.MAX_VALUE / 100
+    // 溢出检查：处理边界值 (Integer.MAX_VALUE = 2147483647, Integer.MIN_VALUE = -2147483648)
+    if (value > 21474836 || (value == 21474836 && d2 > (neg ? 48 : 47))) break;
     value = value * 100 + d2;
     off += 2;
 }
@@ -138,7 +139,7 @@ static final boolean[] INT_VALUE_END = new boolean[256];
 static {
     Arrays.fill(INT_VALUE_END, true);
     char[] chars = {'.', 'e', 'E', 't', 'f', 'n', '{', '[',
-                    '0', '1', '2', '2', '3', '4', '5', '6', '7', '8', '9'};
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
     for (char ch : chars) {
         INT_VALUE_END[ch] = false;  // 这些字符表示数字结束
     }

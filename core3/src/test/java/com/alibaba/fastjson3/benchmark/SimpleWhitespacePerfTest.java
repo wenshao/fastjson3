@@ -28,7 +28,7 @@ public class SimpleWhitespacePerfTest {
             String json;
             try (var is = SimpleWhitespacePerfTest.class.getClassLoader().getResourceAsStream("data/large.json")) {
                 if (is != null) {
-                    json = new String(is.readAllBytes());
+                    json = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
                 } else {
                     throw new RuntimeException("Resource not found");
                 }
