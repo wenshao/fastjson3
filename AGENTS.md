@@ -42,5 +42,17 @@ mvn package -pl core3 -DskipTests      # Skip tests for faster builds
 
 ## Design Docs
 
-- `docs/design.md` — Overall architecture, platform support, module structure
-- `docs/serialization_optimization.md` — Performance optimization techniques (SWAR, putLong, etc.)
+- `core3/docs/design.md` — Overall architecture, platform support, module structure
+- `core3/docs/serialization_optimization.md` — Performance optimization techniques (SWAR, putLong, etc.)
+
+## User Documentation
+
+- `docs/README.md` — Documentation index
+- `docs/getting-started.md` — Getting started guide (中文)
+- `docs/getting-started-en.md` — Getting started guide (English)
+- `docs/api-reference.md` — API reference (中文)
+- `docs/api-reference-en.md` — API reference (English)
+- `docs/advanced.md` — Advanced topics (中文)
+- `docs/advanced-en.md` — Advanced topics (English)
+- `docs/migration.md` — Migration guide (中文)
+- `docs/migration-en.md` — Migration guide (English)
