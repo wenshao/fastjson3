@@ -8,8 +8,10 @@
 
 | 来源库 | 迁移难度 | 兼容性 | 文档 |
 |--------|----------|--------|------|
+| fastjson 1.x | ⭐⭐ 中 | API 相似 | [from-fastjson1.md](from-fastjson1.md) |
 | fastjson2 | ⭐ 低 | 高度兼容 | [from-fastjson2.md](from-fastjson2.md) |
-| Jackson 2.x/3.x | ⭐⭐ 中 | API 相似 | [from-jackson.md](from-jackson.md) |
+| Jackson 2.x | ⭐⭐ 中 | 注解兼容 | [from-jackson2.md](from-jackson2.md) |
+| Jackson 3.x | ⭐ 低 | API 相似 | [from-jackson3.md](from-jackson3.md) |
 | Gson | ⭐⭐ 中 | 需要适应 | [from-gson.md](from-gson.md) |
 | org.json | ⭐⭐ 中 | 完全重写 | [from-org-json.md](from-org-json.md) |
 
