@@ -35,6 +35,11 @@ public final class ASMObjectReaderProvider extends AbstractObjectReaderProvider 
 
     @Override
     protected ObjectReader<?> createReader(Class<?> type) {
+        // Check built-in codecs first (UUID, Duration, Period, etc.)
+        com.alibaba.fastjson3.ObjectReader<?> builtin = com.alibaba.fastjson3.BuiltinCodecs.getReader(type);
+        if (builtin != null) {
+            return builtin;
+        }
         return createRecursiveReader(type, java.util.concurrent.ConcurrentHashMap.newKeySet());
     }
 

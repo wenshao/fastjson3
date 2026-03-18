@@ -30,6 +30,11 @@ public final class ReflectObjectReaderProvider extends AbstractObjectReaderProvi
 
     @Override
     protected ObjectReader<?> createReader(Class<?> type) {
+        // Check built-in codecs first (UUID, Duration, Period, etc.)
+        com.alibaba.fastjson3.ObjectReader<?> builtin = com.alibaba.fastjson3.BuiltinCodecs.getReader(type);
+        if (builtin != null) {
+            return builtin;
+        }
         return ObjectReaderCreator.createObjectReader(type);
     }
 }

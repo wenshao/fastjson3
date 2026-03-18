@@ -22,14 +22,14 @@ import java.util.UUID;
  * <p>These are resolved once per type on first access and cached in ObjectMapper's
  * ConcurrentHashMap. Zero hot-path overhead for unrelated types.</p>
  */
-final class BuiltinCodecs {
+public final class BuiltinCodecs {
     private BuiltinCodecs() {
     }
 
     // ==================== ObjectReader factories ====================
 
     @SuppressWarnings("unchecked")
-    static <T> ObjectReader<T> getReader(Class<T> type) {
+    public static <T> ObjectReader<T> getReader(Class<T> type) {
         if (type == Optional.class) {
             return (ObjectReader<T>) OPTIONAL_READER;
         }
@@ -79,7 +79,7 @@ final class BuiltinCodecs {
     // ==================== ObjectWriter factories ====================
 
     @SuppressWarnings("unchecked")
-    static <T> ObjectWriter<T> getWriter(Class<T> type) {
+    public static <T> ObjectWriter<T> getWriter(Class<T> type) {
         if (Optional.class.isAssignableFrom(type)) {
             return (ObjectWriter<T>) OPTIONAL_WRITER;
         }

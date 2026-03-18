@@ -59,6 +59,12 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
 
     @Override
     protected ObjectReader<?> createReader(Class<?> type) {
+        // Check built-in codecs first (UUID, Duration, Period, etc.)
+        com.alibaba.fastjson3.ObjectReader<?> builtin = com.alibaba.fastjson3.BuiltinCodecs.getReader(type);
+        if (builtin != null) {
+            return builtin;
+        }
+
         // For simple POJOs, try ASM first (if available)
         if (ASM_AVAILABLE && isSimplePOJO(type)) {
             try {
