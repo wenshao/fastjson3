@@ -5,7 +5,10 @@ package com.alibaba.fastjson3.util;
  * On Android, we don't support dynamic class generation (ASM),
  * so this class provides a minimal implementation that delegates
  * to the system class loader.
+ *
+ * ANDROID_COMPATIBLE - do not strip from Android builds
  */
+// ANDROID_COMPATIBLE - marker for build scripts to preserve this class
 public final class DynamicClassLoader extends ClassLoader {
     private static final DynamicClassLoader SHARED_INSTANCE = new DynamicClassLoader();
 

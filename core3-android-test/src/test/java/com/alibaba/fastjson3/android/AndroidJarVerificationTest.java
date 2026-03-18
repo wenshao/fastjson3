@@ -89,7 +89,9 @@ public class AndroidJarVerificationTest {
     public void testAndroidJarExcludesDynamicClassLoader() throws IOException {
         try (JarFile jar = new JarFile(androidJar.toFile())) {
             JarEntry dynamicLoader = jar.getJarEntry("com/alibaba/fastjson3/util/DynamicClassLoader.class");
-            assertFalse(dynamicLoader != null, "DynamicClassLoader should not be in android JAR");
+            // Android JAR contains a stub DynamicClassLoader (delegates to system classloader)
+            // This is needed because ObjectMapper.shared() references it
+            assertTrue(dynamicLoader != null, "Android JAR should contain stub DynamicClassLoader");
         }
     }
 

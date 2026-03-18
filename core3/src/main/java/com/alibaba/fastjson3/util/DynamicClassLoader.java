@@ -16,6 +16,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Recommended usage: one DynamicClassLoader per ObjectMapper to ensure
  * generated classes can be unloaded when the ObjectMapper is discarded.</p>
+ *
+ * ANDROID_COMPATIBLE - Android build provides a stub implementation
  */
 @com.alibaba.fastjson3.annotation.JVMOnly
 public class DynamicClassLoader
