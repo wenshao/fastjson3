@@ -70,7 +70,11 @@ public interface ObjectReaderProvider {
         @Override
         public void close() {
             if (!closed) {
-                ObjectReaderProvider.CONTEXT.set(previousContext);
+                if (previousContext != null) {
+                    CONTEXT.set(previousContext);
+                } else {
+                    CONTEXT.remove();
+                }
                 closed = true;
             }
         }

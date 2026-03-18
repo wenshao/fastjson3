@@ -298,35 +298,17 @@ public final class ObjectMapper {
         this.classLoader = classLoader != null ? classLoader
             : com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance();
 
-        // Use custom provider if provided, otherwise create default or classLoader-specific
-        if (readerProvider != null) {
-            // User explicitly provided a provider - use it as-is
-            this.readerProvider = readerProvider;
-        } else if (classLoader != null) {
-            // No custom provider, but classLoader is specified - create classLoader-specific provider
-            // This only happens when readerCreatorType was specified but not readerProvider
-            this.readerProvider = createProviderWithClassLoader(
-                readerCreator != null ? ReaderCreatorType.AUTO : ReaderCreatorType.AUTO,
-                this.classLoader);
-        } else {
-            // No custom provider, no classLoader - use default
-            this.readerProvider = ObjectReaderProvider.defaultProvider();
-        }
+        // Use custom provider if provided, otherwise use default
+        // The Builder.build() method creates per-instance providers when readerCreatorType is set
+        this.readerProvider = readerProvider != null
+            ? readerProvider
+            : ObjectReaderProvider.defaultProvider();
 
-        // Use custom writer provider if provided, otherwise create default or classLoader-specific
-        if (writerProvider != null) {
-            // User explicitly provided a provider - use it as-is
-            this.writerProvider = writerProvider;
-        } else if (classLoader != null) {
-            // No custom provider, but classLoader is specified - create classLoader-specific provider
-            // This only happens when writerCreatorType was specified but not writerProvider
-            this.writerProvider = createWriterProviderWithClassLoader(
-                writerCreator != null ? WriterCreatorType.AUTO : WriterCreatorType.AUTO,
-                this.classLoader);
-        } else {
-            // No custom provider, no classLoader - use default
-            this.writerProvider = ObjectWriterProvider.defaultProvider();
-        }
+        // Use custom writer provider if provided, otherwise use default
+        // The Builder.build() method creates per-instance providers when writerCreatorType is set
+        this.writerProvider = writerProvider != null
+            ? writerProvider
+            : ObjectWriterProvider.defaultProvider();
 
         this.readerCache = new ConcurrentHashMap<Type, ObjectReader<?>>();
         this.writerCache = new ConcurrentHashMap<Type, ObjectWriter<?>>();

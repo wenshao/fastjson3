@@ -38,6 +38,9 @@ public abstract class AbstractObjectReaderProvider
 
     @Override
     public final <T> ObjectReader<T> getObjectReader(final Class<T> type) {
+        if (type == null) {
+            throw new IllegalArgumentException("type cannot be null");
+        }
         return (ObjectReader<T>) readerCache.computeIfAbsent(
                 type, this::createReader);
     }
@@ -58,33 +61,6 @@ public abstract class AbstractObjectReaderProvider
     public void cleanup() {
         if (!shared) {
             readerCache.clear();
-        }
-    }
-
-    /**
-     * RAII-style context guard that ensures ThreadLocal cleanup.
-     * Always call close() in a finally block.
-     *
-     * <p><b>Nested contexts:</b> When opening a nested context, the previous
-     * context value is saved and restored on close, allowing proper nesting
-     * of contexts from different providers.</p>
-     */
-    final class SafeContext implements AutoCloseable {
-        /** Whether the context has been closed. */
-        private boolean closed;
-        /** The previous context provider to restore. */
-        private final ObjectReaderProvider previousContext;
-
-        SafeContext(final ObjectReaderProvider previous) {
-            this.previousContext = previous;
-        }
-
-        @Override
-        public void close() {
-            if (!closed) {
-                ObjectReaderProvider.CONTEXT.set(previousContext);
-                closed = true;
-            }
         }
     }
 }
