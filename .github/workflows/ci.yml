@@ -87,7 +87,19 @@ jobs:
           cache: 'maven'
 
       - name: Build Android JAR
-        run: mvn -B install -Pandroid -pl core3 -am -DskipTests
+        run: mvn -B package -Pandroid -pl core3 -am -DskipTests
+
+      - name: Install Android JAR to local repository
+        run: |
+          JAR=$(find core3/target -name "fastjson3-*-android.jar")
+          mvn -B install:install-file \
+            -Dfile="$JAR" \
+            -DgroupId=com.alibaba.fastjson3 \
+            -DartifactId=fastjson3 \
+            -Dversion=3.0.0-SNAPSHOT \
+            -Dpackaging=jar \
+            -Dclassifier=android \
+            -DgeneratePom=true
 
       - name: Verify Android JAR
         run: |
@@ -163,7 +175,19 @@ jobs:
           cache: 'maven'
 
       - name: Build Android JAR
-        run: mvn -B install -Pandroid -pl core3 -am -DskipTests
+        run: mvn -B package -Pandroid -pl core3 -am -DskipTests
+
+      - name: Install Android JAR to local repository
+        run: |
+          JAR=$(find core3/target -name "fastjson3-*-android.jar")
+          mvn -B install:install-file \
+            -Dfile="$JAR" \
+            -DgroupId=com.alibaba.fastjson3 \
+            -DartifactId=fastjson3 \
+            -Dversion=3.0.0-SNAPSHOT \
+            -Dpackaging=jar \
+            -Dclassifier=android \
+            -DgeneratePom=true
 
       - name: Run tests on Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
