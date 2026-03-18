@@ -18,6 +18,9 @@ import java.time.YearMonth;
 import java.time.ZonedDateTime;
 import java.util.Date;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -98,6 +101,15 @@ public final class BuiltinCodecs {
         if (type == Date.class) {
             return (ObjectReader<T>) DATE_READER;
         }
+        if (type == AtomicInteger.class) {
+            return (ObjectReader<T>) ATOMIC_INTEGER_READER;
+        }
+        if (type == AtomicLong.class) {
+            return (ObjectReader<T>) ATOMIC_LONG_READER;
+        }
+        if (type == AtomicBoolean.class) {
+            return (ObjectReader<T>) ATOMIC_BOOLEAN_READER;
+        }
 
         // Guava immutable collections (zero-dependency, reflection-based)
         ObjectReader<?> guavaReader = GuavaSupport.getReader(type);
@@ -171,6 +183,15 @@ public final class BuiltinCodecs {
         }
         if (type == Date.class) {
             return (ObjectWriter<T>) DATE_WRITER;
+        }
+        if (type == AtomicInteger.class) {
+            return (ObjectWriter<T>) ATOMIC_INTEGER_WRITER;
+        }
+        if (type == AtomicLong.class) {
+            return (ObjectWriter<T>) ATOMIC_LONG_WRITER;
+        }
+        if (type == AtomicBoolean.class) {
+            return (ObjectWriter<T>) ATOMIC_BOOLEAN_WRITER;
         }
         return null;
     }
@@ -452,5 +473,46 @@ public final class BuiltinCodecs {
     private static final ObjectWriter<Date> DATE_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
                 generator.writeString(((Date) object).toInstant().toString());
+            };
+
+    // ==================== java.util.concurrent.atomic types ====================
+
+    private static final ObjectReader<AtomicInteger> ATOMIC_INTEGER_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return new AtomicInteger(parser.readInt());
+            };
+
+    private static final ObjectWriter<AtomicInteger> ATOMIC_INTEGER_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeInt32(((AtomicInteger) object).get());
+            };
+
+    private static final ObjectReader<AtomicLong> ATOMIC_LONG_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return new AtomicLong(parser.readLong());
+            };
+
+    private static final ObjectWriter<AtomicLong> ATOMIC_LONG_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeInt64(((AtomicLong) object).get());
+            };
+
+    private static final ObjectReader<AtomicBoolean> ATOMIC_BOOLEAN_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return new AtomicBoolean(parser.readBoolean());
+            };
+
+    private static final ObjectWriter<AtomicBoolean> ATOMIC_BOOLEAN_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeBool(((AtomicBoolean) object).get());
             };
 }
