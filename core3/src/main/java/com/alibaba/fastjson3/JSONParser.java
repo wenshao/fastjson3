@@ -44,7 +44,7 @@ public abstract sealed class JSONParser implements Closeable
      * Usage: (ch <= ' ' && ((1L << ch) & SPACE) != 0) is faster than WHITESPACE[ch]
      * Borrowed from fastjson2 for optimized whitespace skipping.
      */
-    static final long SPACE = 1L | (1L << ' ') | (1L << '\n') | (1L << '\r') | (1L << '\f') | (1L << '\t') | (1L << '\b');
+    static final long SPACE = (1L << ' ') | (1L << '\n') | (1L << '\r') | (1L << '\f') | (1L << '\t') | (1L << '\b');
 
     /**
      * Fast lookup table for integer value termination.
