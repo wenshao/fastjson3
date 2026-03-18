@@ -11,7 +11,12 @@ import com.alibaba.fastjson3.reader.ObjectReaderCreator;
 import com.alibaba.fastjson3.reader.ObjectReaderProvider;
 import com.alibaba.fastjson3.reader.ReaderCreatorType;
 import com.alibaba.fastjson3.reader.ReflectObjectReaderProvider;
+import com.alibaba.fastjson3.writer.ASMObjectWriterProvider;
+import com.alibaba.fastjson3.writer.AutoObjectWriterProvider;
 import com.alibaba.fastjson3.writer.ObjectWriterCreator;
+import com.alibaba.fastjson3.writer.ObjectWriterProvider;
+import com.alibaba.fastjson3.writer.ReflectObjectWriterProvider;
+import com.alibaba.fastjson3.writer.WriterCreatorType;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -118,6 +123,7 @@ public final class ObjectMapper {
             Collections.<Class<?>, Class<?>>emptyMap(),
             false,
             null,
+            null,
             com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance());
 
     private final long readFeatures;
@@ -132,6 +138,9 @@ public final class ObjectMapper {
 
     // ObjectReaderProvider for ASM/Reflection strategy control
     private final ObjectReaderProvider readerProvider;
+
+    // ObjectWriterProvider for ASM/Reflection strategy control
+    private final ObjectWriterProvider writerProvider;
 
     // DynamicClassLoader for ASM-generated classes (one per ObjectMapper)
     // This ensures generated classes can be unloaded when the ObjectMapper is GC'd
@@ -265,6 +274,7 @@ public final class ObjectMapper {
             Map<Class<?>, Class<?>> mixInCache,
             boolean useJacksonAnnotation,
             ObjectReaderProvider readerProvider,
+            ObjectWriterProvider writerProvider,
             com.alibaba.fastjson3.util.DynamicClassLoader classLoader
     ) {
         this.readFeatures = readFeatures;
@@ -297,6 +307,21 @@ public final class ObjectMapper {
             this.readerProvider = ObjectReaderProvider.defaultProvider();
         }
 
+        // Use custom writer provider if provided, otherwise create default or classLoader-specific
+        if (writerProvider != null) {
+            // User explicitly provided a provider - use it as-is
+            this.writerProvider = writerProvider;
+        } else if (classLoader != null) {
+            // No custom provider, but classLoader is specified - create classLoader-specific provider
+            // This only happens when writerCreatorType was specified but not writerProvider
+            this.writerProvider = createWriterProviderWithClassLoader(
+                writerCreator != null ? WriterCreatorType.AUTO : WriterCreatorType.AUTO,
+                this.classLoader);
+        } else {
+            // No custom provider, no classLoader - use default
+            this.writerProvider = ObjectWriterProvider.defaultProvider();
+        }
+
         this.readerCache = new ConcurrentHashMap<Type, ObjectReader<?>>();
         this.writerCache = new ConcurrentHashMap<Type, ObjectWriter<?>>();
     }
@@ -312,6 +337,20 @@ public final class ObjectMapper {
             case AUTO -> new AutoObjectReaderProvider(classLoader);
             case ASM -> new ASMObjectReaderProvider(classLoader);
             case REFLECT -> new ReflectObjectReaderProvider();
+        };
+    }
+
+    /**
+     * Create a writer provider instance with a specific classloader.
+     * This ensures generated classes can be unloaded when the ObjectMapper is discarded.
+     */
+    private static ObjectWriterProvider createWriterProviderWithClassLoader(
+            WriterCreatorType creatorType,
+            com.alibaba.fastjson3.util.DynamicClassLoader classLoader) {
+        return switch (creatorType) {
+            case AUTO -> new AutoObjectWriterProvider(classLoader);
+            case ASM -> new ASMObjectWriterProvider(classLoader);
+            case REFLECT -> new ReflectObjectWriterProvider(classLoader);
         };
     }
 
@@ -449,6 +488,7 @@ public final class ObjectMapper {
         b.readerCreator = this.readerCreator;
         b.writerCreator = this.writerCreator;
         b.readerCreatorType = this.readerProvider.getCreatorType();
+        b.writerCreatorType = this.writerProvider.getCreatorType();
         b.classLoader = this.classLoader; // Preserve classLoader for rebuild
         Collections.addAll(b.propertyFilters, this.propertyFilters);
         Collections.addAll(b.valueFilters, this.valueFilters);
@@ -1379,17 +1419,10 @@ public final class ObjectMapper {
                 if (writerCreator != null) {
                     writer = writerCreator.apply(rawType);
                 } else {
+                    // Use ObjectWriterCreator for annotation support (mixIn, Jackson, @JSONField)
+                    // This ensures @JSONField(name), @JSONWriter, etc. are processed
                     Class<?> mixIn = mixInCache.get(rawType);
-                    if (mixIn == null && !useJacksonAnnotation) {
-                        try {
-                            writer = com.alibaba.fastjson3.writer.ObjectWriterCreatorASM.createObjectWriter(rawType);
-                        } catch (LinkageError e) {
-                            // ASM not available (Android or restricted environment), fall back to reflection
-                            writer = ObjectWriterCreator.createObjectWriter(rawType, null, false);
-                        }
-                    } else {
-                        writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
-                    }
+                    writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
                 }
             } catch (Exception e) {
                 return null;
@@ -1456,6 +1489,7 @@ public final class ObjectMapper {
         writerCache.clear();
         // Provider cleanup (only clears if it's a per-instance provider)
         readerProvider.cleanup();
+        writerProvider.cleanup();
     }
 
     // ==================== Feature queries ====================
@@ -1495,6 +1529,20 @@ public final class ObjectMapper {
      */
     public ReaderCreatorType getReaderCreatorType() {
         return readerProvider.getCreatorType();
+    }
+
+    /**
+     * Get the ObjectWriterProvider used by this mapper.
+     */
+    public ObjectWriterProvider getWriterProvider() {
+        return writerProvider;
+    }
+
+    /**
+     * Get the WriterCreatorType used by this mapper.
+     */
+    public WriterCreatorType getWriterCreatorType() {
+        return writerProvider.getCreatorType();
     }
 
     // ==================== Internal ====================
@@ -1855,6 +1903,8 @@ public final class ObjectMapper {
         Function<Class<?>, ObjectWriter<?>> writerCreator;
         ReaderCreatorType readerCreatorType;
         ObjectReaderProvider readerProviderInstance;
+        WriterCreatorType writerCreatorType;
+        ObjectWriterProvider writerProviderInstance;
         com.alibaba.fastjson3.util.DynamicClassLoader classLoader;
         final List<PropertyFilter> propertyFilters = new ArrayList<PropertyFilter>();
         final List<ValueFilter> valueFilters = new ArrayList<ValueFilter>();
@@ -1960,6 +2010,44 @@ public final class ObjectMapper {
             this.readerProviderInstance = provider;
             this.readerCreatorType = provider != null ? provider.getCreatorType() : null;
             this.readerCreator = provider != null ? provider::getObjectReader : null;
+            return this;
+        }
+
+        /**
+         * Set the ObjectWriterProvider strategy (AUTO, ASM, REFLECT).
+         * Controls whether to use ASM bytecode generation or reflection.
+         *
+         * <pre>
+         * // Force ASM for all types (including nested)
+         * ObjectMapper mapper = ObjectMapper.builder()
+         *     .writerCreatorType(WriterCreatorType.ASM)
+         *     .build();
+         *
+         * // Force reflection only
+         * ObjectMapper mapper = ObjectMapper.builder()
+         *     .writerCreatorType(WriterCreatorType.REFLECT)
+         *     .build();
+         * </pre>
+         *
+         * @param type the creator type strategy
+         * @return this builder
+         */
+        public Builder writerCreatorType(WriterCreatorType type) {
+            this.writerCreatorType = type;
+            this.writerCreator = null; // Will be set in build()
+            return this;
+        }
+
+        /**
+         * Set a custom ObjectWriterProvider instance.
+         *
+         * @param provider the provider to use
+         * @return this builder
+         */
+        public Builder writerProvider(ObjectWriterProvider provider) {
+            this.writerProviderInstance = provider;
+            this.writerCreatorType = provider != null ? provider.getCreatorType() : null;
+            this.writerCreator = provider != null ? provider::getObjectWriter : null;
             return this;
         }
 
@@ -2075,6 +2163,13 @@ public final class ObjectMapper {
                 provider = createProviderWithClassLoader(readerCreatorType, loader);
             }
 
+            // Determine the writer provider
+            ObjectWriterProvider writerProvider = writerProviderInstance;
+            if (writerProvider == null && writerCreatorType != null) {
+                // Create per-instance provider with custom classLoader
+                writerProvider = createWriterProviderWithClassLoader(writerCreatorType, loader);
+            }
+
             ObjectMapper mapper = new ObjectMapper(
                     readFeatures,
                     writeFeatures,
@@ -2089,6 +2184,7 @@ public final class ObjectMapper {
                     Collections.unmodifiableMap(new LinkedHashMap<Class<?>, Class<?>>(mixIns)),
                     useJacksonAnnotation,
                     provider,
+                    writerProvider,
                     loader
             );
             // Initialize modules
