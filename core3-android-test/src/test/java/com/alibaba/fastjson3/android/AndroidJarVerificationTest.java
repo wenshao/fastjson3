@@ -1,5 +1,7 @@
 package com.alibaba.fastjson3.android;
 
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -16,20 +18,32 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Verify that the android JAR artifact is built correctly.
  * This test reads the actual JAR file to verify content.
+ * <p>
+ * Tests are skipped if the Android JAR has not been built (i.e., when running
+ * regular `mvn test` without `-Pandroid` profile).
+ * </p>
  */
 public class AndroidJarVerificationTest {
+    private static Path androidJar;
+
+    @BeforeAll
+    static void setupAndroidJar() {
+        try {
+            androidJar = locateAndroidJar();
+            Assumptions.assumeTrue(androidJar != null && Files.exists(androidJar),
+                "Android JAR must be built first (run: mvn package -Pandroid -pl core3)");
+        } catch (IOException e) {
+            Assumptions.assumeTrue(false, "Android JAR must be built first (run: mvn package -Pandroid -pl core3)");
+        }
+    }
+
     @Test
     public void testAndroidJarExists() throws IOException {
-        Path androidJar = findAndroidJar();
-        assertNotNull(androidJar, "Android JAR should exist in target directory");
         assertTrue(Files.exists(androidJar), "Android JAR file should exist: " + androidJar);
     }
 
     @Test
     public void testAndroidJarContainsCoreClasses() throws IOException {
-        Path androidJar = findAndroidJar();
-        assertNotNull(androidJar, "Android JAR should exist");
-
         try (JarFile jar = new JarFile(androidJar.toFile())) {
             // Core classes should be present
             assertTrue(jar.getJarEntry("com/alibaba/fastjson3/JSON.class") != null,
@@ -47,9 +61,6 @@ public class AndroidJarVerificationTest {
 
     @Test
     public void testAndroidJarExcludesASMClasses() throws IOException {
-        Path androidJar = findAndroidJar();
-        assertNotNull(androidJar, "Android JAR should exist");
-
         try (JarFile jar = new JarFile(androidJar.toFile())) {
             // ASM classes should NOT be present
             JarEntry classWriter = jar.getJarEntry("com/alibaba/fastjson3/internal/asm/ClassWriter.class");
@@ -65,9 +76,6 @@ public class AndroidJarVerificationTest {
 
     @Test
     public void testAndroidJarExcludesASMCreators() throws IOException {
-        Path androidJar = findAndroidJar();
-        assertNotNull(androidJar, "Android JAR should exist");
-
         try (JarFile jar = new JarFile(androidJar.toFile())) {
             JarEntry readerCreator = jar.getJarEntry("com/alibaba/fastjson3/reader/ObjectReaderCreatorASM.class");
             assertFalse(readerCreator != null, "ObjectReaderCreatorASM should not be in android JAR");
@@ -79,9 +87,6 @@ public class AndroidJarVerificationTest {
 
     @Test
     public void testAndroidJarExcludesDynamicClassLoader() throws IOException {
-        Path androidJar = findAndroidJar();
-        assertNotNull(androidJar, "Android JAR should exist");
-
         try (JarFile jar = new JarFile(androidJar.toFile())) {
             JarEntry dynamicLoader = jar.getJarEntry("com/alibaba/fastjson3/util/DynamicClassLoader.class");
             assertFalse(dynamicLoader != null, "DynamicClassLoader should not be in android JAR");
@@ -90,9 +95,6 @@ public class AndroidJarVerificationTest {
 
     @Test
     public void testAndroidJarHasReflectiveCreators() throws IOException {
-        Path androidJar = findAndroidJar();
-        assertNotNull(androidJar, "Android JAR should exist");
-
         try (JarFile jar = new JarFile(androidJar.toFile())) {
             // Non-ASM creators should be present
             JarEntry readerCreator = jar.getJarEntry("com/alibaba/fastjson3/reader/ObjectReaderCreator.class");
@@ -105,9 +107,6 @@ public class AndroidJarVerificationTest {
 
     @Test
     public void testAndroidJarSize() throws IOException {
-        Path androidJar = findAndroidJar();
-        assertNotNull(androidJar, "Android JAR should exist");
-
         long size = Files.size(androidJar);
         // Android JAR should be reasonably sized
         // Actual size depends on included features, but should be between 300KB-500KB
@@ -118,7 +117,7 @@ public class AndroidJarVerificationTest {
     /**
      * Find the android JAR file in the target directory.
      */
-    private Path findAndroidJar() throws IOException {
+    private static Path locateAndroidJar() throws IOException {
         // First try the target directory of the android-test module (may not exist)
         Path androidTestTarget = Paths.get("target").toAbsolutePath();
         if (Files.exists(androidTestTarget)) {
