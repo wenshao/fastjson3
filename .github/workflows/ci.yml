@@ -141,12 +141,12 @@ jobs:
           fi
           echo "Verified: ASM Creator classes excluded"
 
-          # Verify DynamicClassLoader is excluded
-          if jar tf "$JAR" | grep -q "DynamicClassLoader\.class"; then
-            echo "Error: DynamicClassLoader.class should be excluded from Android JAR"
+          # Verify DynamicClassLoader stub is present (Android-compatible version)
+          if ! jar tf "$JAR" | grep -q "DynamicClassLoader\.class"; then
+            echo "Error: DynamicClassLoader.class (stub) should be in Android JAR"
             exit 1
           fi
-          echo "Verified: DynamicClassLoader excluded"
+          echo "Verified: DynamicClassLoader stub present"
 
           echo "Android JAR verification passed!"
 
