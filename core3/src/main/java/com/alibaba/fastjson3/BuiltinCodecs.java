@@ -421,7 +421,7 @@ public final class BuiltinCodecs {
     private static final ObjectReader<LocalDate> LOCAL_DATE_READER =
             (parser, fieldType, fieldName, features) -> {
                 String str = parser.readString();
-                return str == null ? null : LocalDate.parse(str);
+                return str == null ? null : com.alibaba.fastjson3.util.DateUtils.parseLocalDate(str);
             };
 
     private static final ObjectWriter<LocalDate> LOCAL_DATE_WRITER =
@@ -432,7 +432,7 @@ public final class BuiltinCodecs {
     private static final ObjectReader<LocalDateTime> LOCAL_DATE_TIME_READER =
             (parser, fieldType, fieldName, features) -> {
                 String str = parser.readString();
-                return str == null ? null : LocalDateTime.parse(str);
+                return str == null ? null : com.alibaba.fastjson3.util.DateUtils.parseLocalDateTime(str);
             };
 
     private static final ObjectWriter<LocalDateTime> LOCAL_DATE_TIME_WRITER =
@@ -546,6 +546,35 @@ public final class BuiltinCodecs {
             (generator, object, fieldName, fieldType, features) -> {
                 generator.writeBool(((AtomicBoolean) object).get());
             };
+
+    // ==================== Primitive types ====================
+
+    private static final ObjectReader<Byte> BYTE_READER =
+            (parser, fieldType, fieldName, features) -> (byte) parser.readInt();
+
+    private static final ObjectReader<Short> SHORT_READER =
+            (parser, fieldType, fieldName, features) -> (short) parser.readInt();
+
+    private static final ObjectReader<Character> CHAR_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null || str.isEmpty() ? '\0' : str.charAt(0);
+            };
+
+    private static final ObjectReader<Integer> INT_READER =
+            (parser, fieldType, fieldName, features) -> parser.readInt();
+
+    private static final ObjectReader<Long> LONG_READER =
+            (parser, fieldType, fieldName, features) -> parser.readLong();
+
+    private static final ObjectReader<Float> FLOAT_READER =
+            (parser, fieldType, fieldName, features) -> (float) parser.readDouble();
+
+    private static final ObjectReader<Double> DOUBLE_READER =
+            (parser, fieldType, fieldName, features) -> parser.readDouble();
+
+    private static final ObjectReader<Boolean> BOOLEAN_READER =
+            (parser, fieldType, fieldName, features) -> parser.readBoolean();
 
     // ==================== String ====================
 

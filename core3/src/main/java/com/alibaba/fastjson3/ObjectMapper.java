@@ -217,6 +217,11 @@ public final class ObjectMapper {
             try {
                 if (readerCreator != null) {
                     reader = readerCreator.apply(type);
+                } else if (mixInCache != null || useJacksonAnnotation) {
+                    // For Mixin/Jackson annotation support, bypass readerProvider
+                    // to ensure annotations are properly processed
+                    Class<?> mixIn = (mixInCache != null) ? mixInCache.get(type) : null;
+                    reader = ObjectReaderCreator.createObjectReader(type, mixIn, useJacksonAnnotation);
                 } else {
                     // Use readerProvider to get the reader (respects ASM/Reflect strategy)
                     reader = readerProvider.getObjectReader(type);

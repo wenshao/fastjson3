@@ -40,6 +40,12 @@ public final class ASMObjectReaderProvider extends AbstractObjectReaderProvider 
         if (builtin != null) {
             return builtin;
         }
+
+        // Primitive types don't have ObjectReaders - they're handled inline
+        if (type.isPrimitive() && type != void.class) {
+            return null;
+        }
+
         return createRecursiveReader(type, java.util.concurrent.ConcurrentHashMap.newKeySet());
     }
 

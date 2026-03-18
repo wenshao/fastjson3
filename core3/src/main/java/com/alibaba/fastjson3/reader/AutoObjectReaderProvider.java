@@ -65,6 +65,12 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
             return builtin;
         }
 
+        // Primitive types don't have ObjectReaders - they're handled inline
+        // Return null so the parser handles them directly via typeTag dispatch
+        if (type.isPrimitive() && type != void.class) {
+            return null;
+        }
+
         // For simple POJOs, try ASM first (if available)
         if (ASM_AVAILABLE && isSimplePOJO(type)) {
             try {

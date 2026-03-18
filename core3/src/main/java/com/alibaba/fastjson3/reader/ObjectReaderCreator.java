@@ -678,6 +678,10 @@ public final class ObjectReaderCreator {
                             throw new JSONException("cannot instantiate deserializeUsing: "
                                     + fr.deserializeUsingClass.getName(), e);
                         }
+                    } else if (fr.formatter != null) {
+                        // Field has custom @JSONField(format=...) annotation
+                        // Skip BuiltinCodecs so FieldReader.convertValue() uses the formatter
+                        objReaders[i] = null;
                     } else if (fr.typeTag == FieldReader.TAG_GENERIC) {
                         // For POJO fields (not basic types), get ObjectReader
                         // Use context provider if available, otherwise create directly
@@ -1504,7 +1508,10 @@ public final class ObjectReaderCreator {
                 ObjectReader<?>[] elemReaders = new ObjectReader<?>[len];
                 for (int i = 0; i < len; i++) {
                     FieldReader fr = fieldReaders[i];
-                    if (fr.typeTag == FieldReader.TAG_GENERIC) {
+                    // Skip BuiltinCodecs for fields with custom @JSONField(format=...) annotation
+                    if (fr.formatter != null) {
+                        // objReaders[i] remains null, will fall through to convertValue path
+                    } else if (fr.typeTag == FieldReader.TAG_GENERIC) {
                         // Use context provider if available, otherwise create directly
                         ObjectReader<?> r = (contextProvider != null)
                             ? contextProvider.getObjectReader(fr.fieldClass)
