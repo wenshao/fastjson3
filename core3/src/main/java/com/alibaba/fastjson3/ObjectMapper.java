@@ -6,6 +6,8 @@ import com.alibaba.fastjson3.filter.ValueFilter;
 import com.alibaba.fastjson3.modules.ObjectReaderModule;
 import com.alibaba.fastjson3.modules.ObjectWriterModule;
 import com.alibaba.fastjson3.reader.ObjectReaderCreator;
+import com.alibaba.fastjson3.reader.ObjectReaderProvider;
+import com.alibaba.fastjson3.reader.ReaderCreatorType;
 import com.alibaba.fastjson3.writer.ObjectWriterCreator;
 
 import java.io.IOException;
@@ -68,6 +70,24 @@ import java.util.function.Function;
  *     .build();
  * </pre>
  *
+ * <h3>ASM vs Reflection strategy:</h3>
+ * <pre>
+ * // AUTO (default): automatically choose best strategy
+ * ObjectMapper mapper = ObjectMapper.builder()
+ *     .readerCreatorType(ReaderCreatorType.AUTO)
+ *     .build();
+ *
+ * // ASM: force bytecode generation (including nested types)
+ * ObjectMapper asmMapper = ObjectMapper.builder()
+ *     .readerCreatorType(ReaderCreatorType.ASM)
+ *     .build();
+ *
+ * // REFLECT: force reflection only
+ * ObjectMapper reflectMapper = ObjectMapper.builder()
+ *     .readerCreatorType(ReaderCreatorType.REFLECT)
+ *     .build();
+ * </pre>
+ *
  * <h3>Per-call configuration (mutant factory):</h3>
  * <pre>
  * // Create a per-call reader with extra features
@@ -93,7 +113,8 @@ public final class ObjectMapper {
             NO_PROPERTY_FILTERS, NO_VALUE_FILTERS, NO_NAME_FILTERS,
             null,
             Collections.<Class<?>, Class<?>>emptyMap(),
-            false);
+            false,
+            null);
 
     private final long readFeatures;
     private final long writeFeatures;
@@ -104,6 +125,9 @@ public final class ObjectMapper {
     // null means use default auto-detection (ASM > Reflection)
     private final Function<Class<?>, ObjectReader<?>> readerCreator;
     private final Function<Class<?>, ObjectWriter<?>> writerCreator;
+
+    // ObjectReaderProvider for ASM/Reflection strategy control
+    private final ObjectReaderProvider readerProvider;
 
     // Filters (empty arrays = no overhead)
     private final PropertyFilter[] propertyFilters;
@@ -192,7 +216,8 @@ public final class ObjectMapper {
             NameFilter[] nameFilters,
             com.alibaba.fastjson3.filter.LabelFilter labelFilter,
             Map<Class<?>, Class<?>> mixInCache,
-            boolean useJacksonAnnotation
+            boolean useJacksonAnnotation,
+            ObjectReaderProvider readerProvider
     ) {
         this.readFeatures = readFeatures;
         this.writeFeatures = writeFeatures;
@@ -206,6 +231,7 @@ public final class ObjectMapper {
         this.labelFilter = labelFilter;
         this.mixInCache = mixInCache;
         this.useJacksonAnnotation = useJacksonAnnotation;
+        this.readerProvider = readerProvider != null ? readerProvider : ObjectReaderProvider.defaultProvider();
         this.readerCache = new ConcurrentHashMap<Type, ObjectReader<?>>();
         this.writerCache = new ConcurrentHashMap<Type, ObjectWriter<?>>();
     }
@@ -349,6 +375,7 @@ public final class ObjectMapper {
         b.mixIns.putAll(this.mixInCache);
         b.labelFilter = this.labelFilter;
         b.useJacksonAnnotation = this.useJacksonAnnotation;
+        // Preserve readerProvider via readerCreator
         return b;
     }
 
@@ -1220,6 +1247,20 @@ public final class ObjectMapper {
         return mixInCache.get(target);
     }
 
+    /**
+     * Get the ObjectReaderProvider used by this mapper.
+     */
+    public ObjectReaderProvider getReaderProvider() {
+        return readerProvider;
+    }
+
+    /**
+     * Get the ReaderCreatorType used by this mapper.
+     */
+    public ReaderCreatorType getReaderCreatorType() {
+        return readerProvider.getCreatorType();
+    }
+
     // ==================== Internal ====================
 
     private static byte[] readAllBytes(InputStream in) {
@@ -1646,6 +1687,41 @@ public final class ObjectMapper {
         }
 
         /**
+         * Set the ObjectReaderProvider strategy (AUTO, ASM, REFLECT).
+         * Controls whether to use ASM bytecode generation or reflection.
+         *
+         * <pre>
+         * // Force ASM for all types (including nested)
+         * ObjectMapper mapper = ObjectMapper.builder()
+         *     .readerCreatorType(ReaderCreatorType.ASM)
+         *     .build();
+         *
+         * // Force reflection only
+         * ObjectMapper mapper = ObjectMapper.builder()
+         *     .readerCreatorType(ReaderCreatorType.REFLECT)
+         *     .build();
+         * </pre>
+         *
+         * @param type the creator type strategy
+         * @return this builder
+         */
+        public Builder readerCreatorType(ReaderCreatorType type) {
+            this.readerCreator = ObjectReaderProvider.of(type)::getObjectReader;
+            return this;
+        }
+
+        /**
+         * Set a custom ObjectReaderProvider instance.
+         *
+         * @param provider the provider to use
+         * @return this builder
+         */
+        public Builder readerProvider(ObjectReaderProvider provider) {
+            this.readerCreator = provider::getObjectReader;
+            return this;
+        }
+
+        /**
          * Set a custom ObjectWriter creator function.
          * Use this to plug in ASM or APT-based writer creation.
          */
@@ -1756,7 +1832,8 @@ public final class ObjectMapper {
                     nameFilters.toArray(NO_NAME_FILTERS),
                     labelFilter,
                     Collections.unmodifiableMap(new LinkedHashMap<Class<?>, Class<?>>(mixIns)),
-                    useJacksonAnnotation
+                    useJacksonAnnotation,
+                    null // readerProvider derived from readerCreator
             );
             // Initialize modules
             for (ObjectReaderModule module : mapper.readerModules) {
