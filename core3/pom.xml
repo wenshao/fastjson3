@@ -134,6 +134,12 @@
                                         <copy todir="${project.build.directory}/android-sources" overwrite="true">
                                             <fileset dir="${project.basedir}/../core3-android/src/main/java"/>
                                         </copy>
+                                        <!-- Remove @JVMOnly source files before compilation -->
+                                        <echo>Removing @JVMOnly source files...</echo>
+                                        <exec executable="bash">
+                                            <arg value="-c"/>
+                                            <arg value="find '${project.build.directory}/android-sources' -type f -name '*.java' | while read file; do grep -q '@JVMOnly' &quot;$file&quot; &amp;&amp; rm -f &quot;$file&quot;; done"/>
+                                        </exec>
                                     </target>
                                 </configuration>
                             </execution>

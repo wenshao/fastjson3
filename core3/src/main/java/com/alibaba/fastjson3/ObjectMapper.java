@@ -283,7 +283,7 @@ public final class ObjectMapper {
         this.mixInCache = mixInCache;
         this.useJacksonAnnotation = useJacksonAnnotation;
         this.classLoader = classLoader != null ? classLoader
-            : new com.alibaba.fastjson3.util.DynamicClassLoader();
+            : com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance();
 
         // Create per-instance provider when using custom classLoader for proper cleanup
         if (readerProvider != null && classLoader != null) {
@@ -2060,7 +2060,7 @@ public final class ObjectMapper {
             // Create per-ObjectMapper DynamicClassLoader for proper cleanup
             com.alibaba.fastjson3.util.DynamicClassLoader loader = this.classLoader;
             if (loader == null) {
-                loader = new com.alibaba.fastjson3.util.DynamicClassLoader();
+                loader = com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance();
             }
 
             // Determine the reader provider
