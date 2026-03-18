@@ -57,8 +57,17 @@ public final class ObjectReaderCreator {
         // Parse class-level @JSONType(schema=)
         JSONSchema typeSchema = parseTypeSchema(type);
 
-        return new ReflectionObjectReader<>(type, constructor, collection.fieldReaders,
+        // Create reflection reader first (will be used as fallback for ASM)
+        ObjectReader<T> reflectionReader = new ReflectionObjectReader<>(type, constructor, collection.fieldReaders,
                 collection.fieldReaderMap, collection.matcher, useUnsafeAlloc, anySetter, typeSchema);
+
+        // Try ASM-based reader with DirectField optimization first
+        ObjectReader<T> asmReader = tryCreateASMReader(type, collection.fieldReaders, anySetter, typeSchema, reflectionReader);
+        if (asmReader != null) {
+            return asmReader;
+        }
+
+        return reflectionReader;
     }
 
     @SuppressWarnings("unchecked")
@@ -1927,5 +1936,38 @@ public final class ObjectReaderCreator {
             }
         }
         return null;
+    }
+
+    /**
+     * Try to create an ASM-based reader with DirectField optimization.
+     *
+     * @param reflectionReader the reflection reader to use as fallback for non-UTF8 parsers
+     * @return ASM reader if successful, null otherwise
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectReader<T> tryCreateASMReader(
+            Class<T> type,
+            FieldReader[] fieldReaders,
+            Method anySetter,
+            JSONSchema typeSchema,
+            ObjectReader<T> reflectionReader) {
+
+        // Skip if anySetter is present (ASM generation doesn't support it yet)
+        if (anySetter != null) {
+            return null;
+        }
+
+        // Skip if typeSchema is present (ASM generation doesn't support it yet)
+        if (typeSchema != null) {
+            return null;
+        }
+
+        try {
+            ObjectReader<T> reader = ObjectReaderCreatorASM.createObjectReader(type, reflectionReader);
+            return reader;
+        } catch (Throwable e) {
+            // If ASM generation fails, fall back to reflection
+            return null;
+        }
     }
 }

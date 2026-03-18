@@ -5,9 +5,9 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test for genRead243 algorithm prefix grouping.
+ * Test for DirectField algorithm prefix grouping.
  */
-public class GenRead243Test {
+public class DirectFieldTest {
 
     static class TestBean {
         public String id;
@@ -44,7 +44,7 @@ public class GenRead243Test {
     }
 
     @Test
-    public void testBuildPrefixGroupInfo() {
+    public void testBuildFieldJumpInfo() {
         FieldReader[] fieldReaders = new FieldReader[] {
             new FieldReader("id", null, String.class, String.class, 0, null, false, null, null),
             new FieldReader("name", null, String.class, String.class, 1, null, false, null, null),
@@ -52,18 +52,18 @@ public class GenRead243Test {
             new FieldReader("email", null, String.class, String.class, 3, null, false, null, null),
         };
 
-        ObjectReaderCreatorASM.PrefixGroupInfo info =
-            ObjectReaderCreatorASM.buildPrefixGroupInfo(fieldReaders, 0, 0);
+        ObjectReaderCreatorASM.FieldJumpInfo info =
+            ObjectReaderCreatorASM.buildFieldJumpInfo(fieldReaders, 0, 0);
 
         assertTrue(info.enabled, "Should be enabled for valid field names");
         assertEquals(4, info.prefixes.length, "Should have 4 prefix groups");
 
         // Print for debugging
-        ObjectReaderCreatorASM.printPrefixGroupInfo(info);
+        ObjectReaderCreatorASM.printFieldJumpInfo(info);
     }
 
     @Test
-    public void testPrefixGrouping() {
+    public void testFieldJumping() {
         // Test that fields with similar prefixes are grouped together
         FieldReader[] fieldReaders = new FieldReader[] {
             new FieldReader("id", null, String.class, String.class, 0, null, false, null, null),
@@ -72,8 +72,8 @@ public class GenRead243Test {
             new FieldReader("age", null, String.class, String.class, 3, null, false, null, null),
         };
 
-        ObjectReaderCreatorASM.PrefixGroupInfo info =
-            ObjectReaderCreatorASM.buildPrefixGroupInfo(fieldReaders, 0, 0);
+        ObjectReaderCreatorASM.FieldJumpInfo info =
+            ObjectReaderCreatorASM.buildFieldJumpInfo(fieldReaders, 0, 0);
 
         assertTrue(info.enabled, "Should be enabled");
 
@@ -87,15 +87,15 @@ public class GenRead243Test {
     }
 
     @Test
-    public void testPrefixGroupInfoWithConstraints() {
+    public void testFieldJumpInfoWithConstraints() {
         FieldReader[] fieldReaders = new FieldReader[] {
             new FieldReader("id", null, String.class, String.class, 0, null, false, null, null),
             new FieldReader("x", null, String.class, String.class, 1, null, false, null, null),  // too short
         };
 
         // Should fail because "x" is only 1 character
-        ObjectReaderCreatorASM.PrefixGroupInfo info =
-            ObjectReaderCreatorASM.buildPrefixGroupInfo(fieldReaders, 0, 0);
+        ObjectReaderCreatorASM.FieldJumpInfo info =
+            ObjectReaderCreatorASM.buildFieldJumpInfo(fieldReaders, 0, 0);
 
         // Since there's a field that doesn't meet constraints, enabled should be false
         // or it should still process valid fields
@@ -104,14 +104,14 @@ public class GenRead243Test {
     }
 
     @Test
-    public void testPrefixGroupInfoWithAlternateNames() {
+    public void testFieldJumpInfoWithAlternateNames() {
         FieldReader[] fieldReaders = new FieldReader[] {
             new FieldReader("id", new String[]{"ID", "Id"}, String.class, String.class, 0, null, false, null, null),
             new FieldReader("name", null, String.class, String.class, 1, null, false, null, null),
         };
 
-        ObjectReaderCreatorASM.PrefixGroupInfo info =
-            ObjectReaderCreatorASM.buildPrefixGroupInfo(fieldReaders, 0, 0);
+        ObjectReaderCreatorASM.FieldJumpInfo info =
+            ObjectReaderCreatorASM.buildFieldJumpInfo(fieldReaders, 0, 0);
 
         assertTrue(info.enabled, "Should be enabled");
 

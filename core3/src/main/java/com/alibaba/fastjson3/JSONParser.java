@@ -2620,6 +2620,88 @@ public abstract sealed class JSONParser implements Closeable
         }
 
         /**
+         * Read 4 bytes as int (big-endian) for DirectField prefix matching.
+         * Assumes position is at the first byte after opening quote.
+         *
+         * @param offset position to read from (should point to first char after '"')
+         * @return 4-byte int value, or 0 if not enough bytes
+         */
+        public int readInt4(int offset) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            if (offset + 4 > e) {
+                return 0;
+            }
+            // Read 4 bytes as big-endian int
+            return ((b[offset] & 0xFF) << 24)
+                 | ((b[offset + 1] & 0xFF) << 16)
+                 | ((b[offset + 2] & 0xFF) << 8)
+                 | (b[offset + 3] & 0xFF);
+        }
+
+        /**
+         * Check if field name matches expected name (DirectField exact matching).
+         * Fast path for ASCII field names without escapes.
+         *
+         * @param offset current offset (should be after opening quote)
+         * @param expected expected field name
+         * @return true if matches, false otherwise
+         */
+        public boolean checkFieldName(int offset, String expected) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int len = expected.length();
+
+            if (offset + len > e) {
+                return false;
+            }
+
+            // Fast byte-by-byte comparison for ASCII
+            for (int i = 0; i < len; i++) {
+                char c = expected.charAt(i);
+                if (c > 127) {
+                    // Non-ASCII: need UTF-8 comparison
+                    return checkFieldNameUTF8(offset, expected);
+                }
+                if (b[offset + i] != (byte) c) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /**
+         * Check field name length (DirectField fast path).
+         *
+         * @param offset current offset
+         * @param expectedLength expected length
+         * @return true if enough bytes remain for field name
+         */
+        public boolean checkFieldNameLength(int offset, int expectedLength) {
+            return offset + expectedLength <= this.end;
+        }
+
+        /**
+         * UTF-8 field name comparison for non-ASCII characters.
+         */
+        private boolean checkFieldNameUTF8(int offset, String expected) {
+            byte[] expectedBytes = expected.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            final byte[] b = this.bytes;
+            int len = expectedBytes.length;
+
+            if (offset + len > this.end) {
+                return false;
+            }
+
+            for (int i = 0; i < len; i++) {
+                if (b[offset + i] != expectedBytes[i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /**
          * Skip whitespace and check for field separator.
          * Returns 0 for comma (continue), 1 for close brace (done), -1 for error/end.
          * Advances past the separator character.

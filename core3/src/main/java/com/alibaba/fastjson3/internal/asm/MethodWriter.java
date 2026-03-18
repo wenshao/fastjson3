@@ -290,6 +290,30 @@ public final class MethodWriter {
         visitInsn(Opcodes.SWAP);
     }
 
+    public void pop() {
+        visitInsn(Opcodes.POP);
+    }
+
+    public void pop2() {
+        visitInsn(Opcodes.POP2);
+    }
+
+    public void dup() {
+        visitInsn(Opcodes.DUP);
+    }
+
+    public void dup_x1() {
+        visitInsn(90);  // DUP_X1
+    }
+
+    public void dup_x2() {
+        visitInsn(91);  // DUP_X2
+    }
+
+    public void dup2() {
+        visitInsn(Opcodes.DUP2);
+    }
+
     public void arraylength() {
         visitInsn(Opcodes.ARRAYLENGTH);
     }
@@ -308,6 +332,18 @@ public final class MethodWriter {
 
     public void i2d() {
         visitInsn(Opcodes.I2D);
+    }
+
+    public void i2b() {
+        visitInsn(Opcodes.I2B);
+    }
+
+    public void i2s() {
+        visitInsn(Opcodes.I2S);
+    }
+
+    public void d2i() {
+        visitInsn(Opcodes.D2I);
     }
 
     public void d2f() {
@@ -442,24 +478,12 @@ public final class MethodWriter {
         visitVarInsn(Opcodes.DSTORE, var);
     }
 
-    public void dup() {
-        visitInsn(Opcodes.DUP);
-    }
-
     public void dup(Class<?> fieldClass) {
         if (fieldClass == long.class || fieldClass == double.class) {
             visitInsn(Opcodes.DUP2);
         } else {
             visitInsn(Opcodes.DUP);
         }
-    }
-
-    public void dup2() {
-        visitInsn(Opcodes.DUP2);
-    }
-
-    public void pop() {
-        visitInsn(Opcodes.POP);
     }
 
     public void visitVarInsn(final int opcode, final int var) {

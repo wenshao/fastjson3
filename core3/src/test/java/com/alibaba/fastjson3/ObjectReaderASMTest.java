@@ -1,6 +1,7 @@
 package com.alibaba.fastjson3;
 
 import com.alibaba.fastjson3.reader.ObjectReaderCreatorASM;
+import com.alibaba.fastjson3.reader.ObjectReaderCreator;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -15,9 +16,15 @@ public class ObjectReaderASMTest {
         public float score;
     }
 
+    private ObjectReader<SimpleBean> createASMReader() {
+        // Create reflection reader as fallback
+        ObjectReader<SimpleBean> fallbackReader = ObjectReaderCreator.createObjectReader(SimpleBean.class);
+        return ObjectReaderCreatorASM.createObjectReader(SimpleBean.class, fallbackReader);
+    }
+
     @Test
     public void testSimpleBean() {
-        ObjectReader<SimpleBean> reader = ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
+        ObjectReader<SimpleBean> reader = createASMReader();
         assertNotNull(reader);
 
         String json = "{\"id\":123,\"name\":\"test\",\"version\":99,\"percent\":3.14,\"active\":true,\"score\":1.5}";
@@ -34,7 +41,7 @@ public class ObjectReaderASMTest {
 
     @Test
     public void testASMReaderDirectly() {
-        ObjectReader<SimpleBean> reader = ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
+        ObjectReader<SimpleBean> reader = createASMReader();
         assertNotNull(reader);
 
         String json = "{\"id\":42,\"name\":\"hello\",\"version\":100,\"percent\":2.71,\"active\":false,\"score\":9.8}";
@@ -54,7 +61,7 @@ public class ObjectReaderASMTest {
 
     @Test
     public void testNullStringField() {
-        ObjectReader<SimpleBean> reader = ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
+        ObjectReader<SimpleBean> reader = createASMReader();
 
         String json = "{\"id\":1,\"name\":null,\"version\":0,\"percent\":0.0,\"active\":false,\"score\":0.0}";
         byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -69,7 +76,7 @@ public class ObjectReaderASMTest {
 
     @Test
     public void testEmptyObject() {
-        ObjectReader<SimpleBean> reader = ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
+        ObjectReader<SimpleBean> reader = createASMReader();
 
         String json = "{}";
         byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -84,7 +91,7 @@ public class ObjectReaderASMTest {
 
     @Test
     public void testNullInput() {
-        ObjectReader<SimpleBean> reader = ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
+        ObjectReader<SimpleBean> reader = createASMReader();
 
         String json = "null";
         byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -101,7 +108,7 @@ public class ObjectReaderASMTest {
         byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
         // Parse with ASM reader
-        ObjectReader<SimpleBean> asmReader = ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
+        ObjectReader<SimpleBean> asmReader = createASMReader();
         SimpleBean asmBean;
         try (JSONParser parser = JSONParser.of(bytes)) {
             asmBean = asmReader.readObject(parser, null, null, 0);
@@ -120,7 +127,7 @@ public class ObjectReaderASMTest {
 
     @Test
     public void testUnknownFieldsSkipped() {
-        ObjectReader<SimpleBean> reader = ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
+        ObjectReader<SimpleBean> reader = createASMReader();
 
         String json = "{\"id\":5,\"unknown\":\"skip_me\",\"name\":\"ok\",\"version\":1,\"percent\":1.0,\"active\":true,\"score\":2.0}";
         byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -135,7 +142,7 @@ public class ObjectReaderASMTest {
 
     @Test
     public void testCreateInstance() {
-        ObjectReader<SimpleBean> reader = ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
+        ObjectReader<SimpleBean> reader = createASMReader();
         Object instance = reader.createInstance(0);
         assertNotNull(instance);
         assertInstanceOf(SimpleBean.class, instance);
@@ -143,7 +150,7 @@ public class ObjectReaderASMTest {
 
     @Test
     public void testGetObjectClass() {
-        ObjectReader<SimpleBean> reader = ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
+        ObjectReader<SimpleBean> reader = createASMReader();
         assertEquals(SimpleBean.class, reader.getObjectClass());
     }
 }
