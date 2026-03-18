@@ -209,7 +209,7 @@ public final class JDKUtils {
      * Falls back to normal constructor if Unsafe is unavailable.
      */
     public static String createAsciiString(byte[] bytes, int offset, int length) {
-        if (!NATIVE_IMAGE && UNSAFE_AVAILABLE && COMPACT_STRINGS && STRING_VALUE_OFFSET >= 0) {
+        if (FAST_STRING_CREATION) {
             try {
                 byte[] value;
                 if (offset == 0 && length == bytes.length) {
