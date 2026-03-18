@@ -41,6 +41,9 @@ public final class BuiltinCodecs {
 
     @SuppressWarnings("unchecked")
     public static <T> ObjectReader<T> getReader(Class<T> type) {
+        if (type == String.class) {
+            return (ObjectReader<T>) STRING_READER;
+        }
         if (type == Optional.class) {
             return (ObjectReader<T>) OPTIONAL_READER;
         }
@@ -515,4 +518,9 @@ public final class BuiltinCodecs {
             (generator, object, fieldName, fieldType, features) -> {
                 generator.writeBool(((AtomicBoolean) object).get());
             };
+
+    // ==================== String ====================
+
+    private static final ObjectReader<String> STRING_READER =
+            (parser, fieldType, fieldName, features) -> parser.readString();
 }
