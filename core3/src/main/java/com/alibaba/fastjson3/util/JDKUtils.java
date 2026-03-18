@@ -1,5 +1,7 @@
 package com.alibaba.fastjson3.util;
 
+import com.alibaba.fastjson3.annotation.AndroidNative;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.RecordComponent;
 
@@ -10,12 +12,16 @@ import java.lang.reflect.RecordComponent;
  * <p>Uses sun.misc.Unsafe when available (with fallback) for:
  * <ul>
  *   <li>Bulk array comparison (8 bytes at a time)</li>
- *   <li>Fast String creation without char[] copy (JDK 8-style)</li>
+ * <li>Fast String creation without char[] copy (JDK 8-style)</li>
  *   <li>Direct field access bypassing getter overhead</li>
  * </ul>
  *
  * <p>Requires JDK 21+. Uses Record API directly (no reflection).</p>
+ *
+ * <p>Android: Use the {@code core3-android} module which provides an
+ * Android-optimized implementation.</p>
  */
+@AndroidNative("Android version in core3-android module")
 public final class JDKUtils {
     public static final boolean UNSAFE_AVAILABLE;
     public static final boolean NATIVE_IMAGE;

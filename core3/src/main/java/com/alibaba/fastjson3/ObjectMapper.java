@@ -1164,7 +1164,12 @@ public final class ObjectMapper {
                 } else {
                     Class<?> mixIn = mixInCache.get(rawType);
                     if (mixIn == null && !useJacksonAnnotation) {
-                        writer = com.alibaba.fastjson3.writer.ObjectWriterCreatorASM.createObjectWriter(rawType);
+                        try {
+                            writer = com.alibaba.fastjson3.writer.ObjectWriterCreatorASM.createObjectWriter(rawType);
+                        } catch (LinkageError e) {
+                            // ASM not available (Android or restricted environment), fall back to reflection
+                            writer = ObjectWriterCreator.createObjectWriter(rawType, null, false);
+                        }
                     } else {
                         writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
                     }

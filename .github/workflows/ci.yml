@@ -1,5 +1,9 @@
 name: CI
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main ]
@@ -15,6 +19,9 @@ on:
       - 'docs/**'
       - '*.txt'
       - '.gitignore'
+  schedule:
+    - cron: '0 18 * * *'  # 每天北京时间凌晨 2 点 (UTC 18:00) 运行 android-test-full
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   build:
@@ -68,4 +75,137 @@ jobs:
         with:
           name: test-reports-jdk${{ matrix.java }}-${{ matrix.os }}
           path: '**/target/surefire-reports/'
+          retention-days: 7
+
+  android-test:
+    name: Android Test (Quick)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Build Android JAR
+        run: mvn -B package -Pandroid -pl core3 -am -DskipTests
+
+      - name: Install Android JAR to local repository
+        run: |
+          JAR=$(find core3/target -name "fastjson3-*-android.jar")
+          mvn -B install:install-file \
+            -Dfile="$JAR" \
+            -DgroupId=com.alibaba.fastjson3 \
+            -DartifactId=fastjson3 \
+            -Dversion=3.0.0-SNAPSHOT \
+            -Dpackaging=jar \
+            -Dclassifier=android \
+            -DgeneratePom=true
+
+      - name: Verify Android JAR
+        run: |
+          echo "Checking Android JAR contents..."
+          JAR=$(find core3/target -name "fastjson3-*-android.jar")
+          echo "Android JAR: $JAR"
+
+          # Check JAR size
+          SIZE=$(stat -c%s "$JAR")
+          echo "JAR size: $SIZE bytes"
+          if [ $SIZE -gt 600000 ]; then
+            echo "Error: Android JAR too large ($SIZE bytes)"
+            exit 1
+          fi
+          if [ $SIZE -lt 300000 ]; then
+            echo "Error: Android JAR too small ($SIZE bytes)"
+            exit 1
+          fi
+
+          # Verify ASM classes are excluded (check actual .class files, not just directory)
+          ASM_CLASSES=$(jar tf "$JAR" | grep "internal/asm/.*\.class$" || true)
+          if [ -n "$ASM_CLASSES" ]; then
+            echo "Error: ASM classes found in Android JAR:"
+            echo "$ASM_CLASSES"
+            exit 1
+          fi
+          echo "Verified: ASM classes excluded"
+
+          # Verify ASM Creator classes are excluded
+          if jar tf "$JAR" | grep -q "ObjectReaderCreatorASM\.class"; then
+            echo "Error: ObjectReaderCreatorASM.class should be excluded from Android JAR"
+            exit 1
+          fi
+          if jar tf "$JAR" | grep -q "ObjectWriterCreatorASM\.class"; then
+            echo "Error: ObjectWriterCreatorASM.class should be excluded from Android JAR"
+            exit 1
+          fi
+          echo "Verified: ASM Creator classes excluded"
+
+          # Verify DynamicClassLoader is excluded
+          if jar tf "$JAR" | grep -q "DynamicClassLoader\.class"; then
+            echo "Error: DynamicClassLoader.class should be excluded from Android JAR"
+            exit 1
+          fi
+          echo "Verified: DynamicClassLoader excluded"
+
+          echo "Android JAR verification passed!"
+
+      - name: Run Android tests
+        run: mvn -B test -pl core3-android-test
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: 'core3-android-test/target/surefire-reports/'
+          retention-days: 7
+
+  android-test-full:
+    name: Android Test (Emulator)
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'workflow_dispatch') || (github.event_name == 'schedule' && github.ref == 'refs/heads/main')
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Build Android JAR
+        run: mvn -B package -Pandroid -pl core3 -am -DskipTests
+
+      - name: Install Android JAR to local repository
+        run: |
+          JAR=$(find core3/target -name "fastjson3-*-android.jar")
+          mvn -B install:install-file \
+            -Dfile="$JAR" \
+            -DgroupId=com.alibaba.fastjson3 \
+            -DartifactId=fastjson3 \
+            -Dversion=3.0.0-SNAPSHOT \
+            -Dpackaging=jar \
+            -Dclassifier=android \
+            -DgeneratePom=true
+
+      - name: Run tests on Android Emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 26
+          target: default
+          arch: x86_64
+          profile: Nexus 6
+          script: mvn -B test -pl core3-android-test
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-test-reports
+          path: 'core3-android-test/target/surefire-reports/'
           retention-days: 7
