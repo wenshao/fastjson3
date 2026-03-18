@@ -140,11 +140,21 @@ public final class ObjectReaderCreatorASM {
         if (type.getClassLoader() == null) {
             return false;
         }
+        // Skip non-public classes (inner classes in test classes are often non-public)
+        if (!java.lang.reflect.Modifier.isPublic(type.getModifiers())) {
+            return false;
+        }
+        // Skip inner classes (including static nested classes in test classes)
+        // to avoid IllegalAccess issues with module system
+        if (type.getDeclaringClass() != null) {
+            return false;
+        }
         return true;
     }
 
     /**
      * Create FieldReader array for a given class.
+     * Reads @JSONField annotation to get the JSON field name.
      */
     private static FieldReader[] createFieldReaders(Class<?> type) {
         java.util.List<FieldReader> readers = new java.util.ArrayList<>();
@@ -155,9 +165,22 @@ public final class ObjectReaderCreatorASM {
                 continue;
             }
             field.setAccessible(true);
+
+            // Read @JSONField annotation for JSON field name
+            String jsonFieldName = field.getName();
+            String[] alternateNames = null;
+            com.alibaba.fastjson3.annotation.JSONField annotation =
+                field.getAnnotation(com.alibaba.fastjson3.annotation.JSONField.class);
+            if (annotation != null && !annotation.name().isEmpty()) {
+                jsonFieldName = annotation.name();
+            }
+            if (annotation != null && annotation.alternateNames().length > 0) {
+                alternateNames = annotation.alternateNames();
+            }
+
             FieldReader reader = new FieldReader(
-                field.getName(),
-                null,
+                jsonFieldName,
+                alternateNames,
                 field.getGenericType(),
                 field.getType(),
                 readers.size(),
@@ -359,6 +382,22 @@ public final class ObjectReaderCreatorASM {
     }
 
     /**
+     * Check if a string contains only ASCII characters.
+     * DirectField optimization only works with ASCII field names.
+     *
+     * @param str the string to check
+     * @return true if all characters are ASCII (<= 127)
+     */
+    private static boolean isAscii(String str) {
+        for (int i = 0; i < str.length(); i++) {
+            if (str.charAt(i) > 127) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Compute 4-byte prefix for a field name in JSON format.
      *
      * <p>Examples:</p>
@@ -394,6 +433,41 @@ public final class ObjectReaderCreatorASM {
     }
 
     /**
+     * Check if a field type is supported by DirectField optimization.
+     *
+     * @param fieldClass the field type to check
+     * @return true if the type is supported
+     */
+    private static boolean isSupportedFieldType(Class<?> fieldClass) {
+        // Supported types: primitives and their wrappers, String, and specific arrays
+        return fieldClass == String.class
+                || fieldClass == int.class || fieldClass == Integer.class
+                || fieldClass == long.class || fieldClass == Long.class
+                || fieldClass == boolean.class || fieldClass == Boolean.class
+                || fieldClass == double.class || fieldClass == Double.class
+                || fieldClass == float.class || fieldClass == Float.class
+                || fieldClass == short.class || fieldClass == Short.class
+                || fieldClass == byte.class || fieldClass == Byte.class
+                || fieldClass == String[].class
+                || fieldClass == long[].class;
+    }
+
+    /**
+     * Check if all field types are supported by DirectField optimization.
+     *
+     * @param fieldReaders array of field readers
+     * @return true if all field types are supported
+     */
+    private static boolean allFieldsSupported(FieldReader[] fieldReaders) {
+        for (FieldReader fr : fieldReaders) {
+            if (!isSupportedFieldType(fr.fieldClass)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Build prefix group information for DirectField algorithm.
      *
      * @param fieldReaders array of field readers
@@ -410,18 +484,35 @@ public final class ObjectReaderCreatorASM {
             int len = fr.fieldName.length();
             actualMinLen = Math.min(actualMinLen, len);
             actualMaxLen = Math.max(actualMaxLen, len);
+
+            // Check for non-ASCII characters in field name
+            // DirectField only works with ASCII field names due to multi-byte UTF-8 encoding
+            if (!isAscii(fr.fieldName)) {
+                return new FieldJumpInfo(new int[0], new int[0], new ArrayList<>(), false);
+            }
+
             for (String alt : fr.alternateNames) {
                 int altLen = alt.length();
                 actualMinLen = Math.min(actualMinLen, altLen);
                 actualMaxLen = Math.max(actualMaxLen, altLen);
+
+                // Check for non-ASCII in alternate names
+                if (!isAscii(alt)) {
+                    return new FieldJumpInfo(new int[0], new int[0], new ArrayList<>(), false);
+                }
             }
         }
 
         if (minNameLen == 0) minNameLen = actualMinLen;
         if (maxNameLen == 0) maxNameLen = actualMaxLen;
 
-        // genRead243 requires: 2 <= length <= 43
+        // DirectField requires: 2 <= length <= 43
         if (minNameLen < 2 || maxNameLen > 43) {
+            return new FieldJumpInfo(new int[0], new int[0], new ArrayList<>(), false);
+        }
+
+        // Check if all field types are supported
+        if (!allFieldsSupported(fieldReaders)) {
             return new FieldJumpInfo(new int[0], new int[0], new ArrayList<>(), false);
         }
 
