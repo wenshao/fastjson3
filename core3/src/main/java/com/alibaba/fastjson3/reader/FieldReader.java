@@ -161,13 +161,19 @@ public final class FieldReader implements Comparable<FieldReader> {
         this.deserializeUsingClass = deserializeUsingClass;
 
         // Parse JSON Schema for validation
+        JSONSchema parsedSchema = null;
         if (schema != null && !schema.isEmpty()) {
-            JSONObject schemaObj = JSON.parseObject(schema);
-            this.jsonSchema = (schemaObj != null && !schemaObj.isEmpty())
-                    ? JSONSchema.of(schemaObj, fieldClass) : null;
-        } else {
-            this.jsonSchema = null;
+            try {
+                JSONObject schemaObj = JSON.parseObject(schema);
+                if (schemaObj != null && !schemaObj.isEmpty()) {
+                    parsedSchema = JSONSchema.of(schemaObj, fieldClass);
+                }
+            } catch (Exception e) {
+                // Invalid schema, disable validation
+                com.alibaba.fastjson3.util.Logger.warn("Invalid JSON schema for field '" + fieldName + "': " + e.getMessage());
+            }
         }
+        this.jsonSchema = parsedSchema;
 
         if (field != null) {
             field.setAccessible(true);
@@ -325,8 +331,17 @@ public final class FieldReader implements Comparable<FieldReader> {
             jsonSchema.assertValidate(value);
         }
         if (fieldOffset >= 0) {
-            JDKUtils.putObject(bean, fieldOffset, value);
-            return;
+            // Handle primitive types that don't have dedicated tags
+            if (fieldClass == short.class) {
+                // Fall through to reflection for short
+            } else if (fieldClass == byte.class) {
+                // Fall through to reflection for byte
+            } else if (fieldClass == char.class) {
+                // Fall through to reflection for char
+            } else {
+                JDKUtils.putObject(bean, fieldOffset, value);
+                return;
+            }
         }
         setFieldValue(bean, value);
     }

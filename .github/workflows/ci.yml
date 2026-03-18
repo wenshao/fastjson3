@@ -130,23 +130,23 @@ jobs:
           fi
           echo "Verified: ASM classes excluded"
 
-          # Verify ASM Creator classes are excluded
-          if jar tf "$JAR" | grep -q "ObjectReaderCreatorASM\.class"; then
-            echo "Error: ObjectReaderCreatorASM.class should be excluded from Android JAR"
+          # Verify ASM Creator stub classes are present (Android-compatible versions)
+          if ! jar tf "$JAR" | grep -q "ObjectReaderCreatorASM\.class"; then
+            echo "Error: ObjectReaderCreatorASM.class (stub) should be in Android JAR"
             exit 1
           fi
-          if jar tf "$JAR" | grep -q "ObjectWriterCreatorASM\.class"; then
-            echo "Error: ObjectWriterCreatorASM.class should be excluded from Android JAR"
+          if ! jar tf "$JAR" | grep -q "ObjectWriterCreatorASM\.class"; then
+            echo "Error: ObjectWriterCreatorASM.class (stub) should be in Android JAR"
             exit 1
           fi
-          echo "Verified: ASM Creator classes excluded"
+          echo "Verified: ASM Creator stub classes present"
 
-          # Verify DynamicClassLoader is excluded
-          if jar tf "$JAR" | grep -q "DynamicClassLoader\.class"; then
-            echo "Error: DynamicClassLoader.class should be excluded from Android JAR"
+          # Verify DynamicClassLoader stub is present (Android-compatible version)
+          if ! jar tf "$JAR" | grep -q "DynamicClassLoader\.class"; then
+            echo "Error: DynamicClassLoader.class (stub) should be in Android JAR"
             exit 1
           fi
-          echo "Verified: DynamicClassLoader excluded"
+          echo "Verified: DynamicClassLoader stub present"
 
           echo "Android JAR verification passed!"
 

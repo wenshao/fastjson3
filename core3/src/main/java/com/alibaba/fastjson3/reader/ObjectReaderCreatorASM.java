@@ -34,7 +34,7 @@ import static com.alibaba.fastjson3.internal.asm.ASMUtils.TYPE_OBJECT_READER;
 @com.alibaba.fastjson3.annotation.JVMOnly
 public final class ObjectReaderCreatorASM {
     private static final AtomicLong SEED = new AtomicLong();
-    private static final DynamicClassLoader CLASS_LOADER = DynamicClassLoader.getInstance();
+    private static final DynamicClassLoader CLASS_LOADER = DynamicClassLoader.getSharedInstance();
 
     private static final String[] INTERFACES = {TYPE_OBJECT_READER};
 

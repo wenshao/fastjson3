@@ -75,7 +75,7 @@
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>@{argLine} --add-modules jdk.incubator.vector</argLine>
+                    <argLine>@{argLine} --add-modules jdk.incubator.vector --add-opens=java.base/java.time=com.alibaba.fastjson3 --add-opens=java.base/java.lang=com.alibaba.fastjson3 --add-opens=java.base/java.util=com.alibaba.fastjson3 --add-opens=java.base/sun.nio.cs=com.alibaba.fastjson3 --add-opens=java.base/sun.util.calendar=com.alibaba.fastjson3 --add-opens=java.base/java.lang.reflect=com.alibaba.fastjson3 --add-opens=java.base/sun.nio.ch=com.alibaba.fastjson3 --add-opens=java.base/java.nio=com.alibaba.fastjson3 --add-opens=java.base/jdk.internal.reflect=com.alibaba.fastjson3 --add-opens=java.base/java.net=com.alibaba.fastjson3</argLine>
                 </configuration>
             </plugin>
             <plugin>
@@ -134,6 +134,12 @@
                                         <copy todir="${project.build.directory}/android-sources" overwrite="true">
                                             <fileset dir="${project.basedir}/../core3-android/src/main/java"/>
                                         </copy>
+                                        <!-- Remove @JVMOnly source files before compilation -->
+                                        <echo>Removing @JVMOnly source files...</echo>
+                                        <exec executable="bash" failonerror="false">
+                                            <arg value="-c"/>
+                                            <arg value="find '${project.build.directory}/android-sources' -type f -name '*.java' 2>/dev/null | while read file; do grep -q '@JVMOnly' &quot;$file&quot; &amp;&amp; rm -f &quot;$file&quot;; done; exit 0"/>
+                                        </exec>
                                     </target>
                                 </configuration>
                             </execution>
@@ -147,7 +153,7 @@
                                         <echo>Removing @JVMOnly classes...</echo>
                                         <exec executable="bash" failonerror="false">
                                             <arg value="-c"/>
-                                            <arg value="cd '${project.build.outputDirectory}' &amp;&amp; find . -type f -name '*.class' | while read classfile; do classname=$(echo &quot;$classfile&quot; | sed 's|^\./||; s|\.class$||; s|/|.|g'); javafile=&quot;${project.basedir}/src/main/java/$(echo &quot;$classname&quot; | tr '.' '/').java&quot;; if [ -f &quot;$javafile&quot; ] &amp;&amp; grep -qE 'JVMOnly' &quot;$javafile&quot;; then rm -f &quot;$classfile&quot;; dir=$(dirname &quot;$classfile&quot;); base=$(basename &quot;$classfile&quot; .class); find &quot;$dir&quot; -name &quot;${base}\$*.class&quot; -delete 2>/dev/null || true; fi; done"/>
+                                            <arg value="cd '${project.build.outputDirectory}' &amp;&amp; find . -type f -name '*.class' | while read classfile; do classname=$(echo &quot;$classfile&quot; | sed 's|^\./||; s|\.class$||; s|/|.|g'); javafile=&quot;${project.build.directory}/android-sources/$(echo &quot;$classname&quot; | tr '.' '/').java&quot;; if [ -f &quot;$javafile&quot; ] &amp;&amp; grep -qE 'JVMOnly' &quot;$javafile&quot; &amp;&amp; ! grep -q 'ANDROID_COMPATIBLE' &quot;$javafile&quot;; then rm -f &quot;$classfile&quot;; dir=$(dirname &quot;$classfile&quot;); base=$(basename &quot;$classfile&quot; .class); find &quot;$dir&quot; -name &quot;${base}\$*.class&quot; -delete 2>/dev/null || true; fi; done"/>
                                         </exec>
                                     </target>
                                 </configuration>

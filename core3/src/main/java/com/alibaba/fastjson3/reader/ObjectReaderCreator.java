@@ -661,7 +661,8 @@ public final class ObjectReaderCreator {
                 if (fieldReadersResolved) {
                     return;
                 }
-                ObjectMapper mapper = ObjectMapper.shared();
+                // Check if there's a provider context from the parent ObjectMapper
+                ObjectReaderProvider contextProvider = ObjectReaderProvider.getContext();
                 int len = fieldReaders.length;
                 ObjectReader<?>[] objReaders = new ObjectReader<?>[len];
                 ObjectReader<?>[] elemReaders = new ObjectReader<?>[len];
@@ -677,16 +678,25 @@ public final class ObjectReaderCreator {
                             throw new JSONException("cannot instantiate deserializeUsing: "
                                     + fr.deserializeUsingClass.getName(), e);
                         }
+                    } else if (fr.formatter != null) {
+                        // Field has custom @JSONField(format=...) annotation
+                        // Skip BuiltinCodecs so FieldReader.convertValue() uses the formatter
+                        objReaders[i] = null;
                     } else if (fr.typeTag == FieldReader.TAG_GENERIC) {
                         // For POJO fields (not basic types), get ObjectReader
-                        ObjectReader<?> r = mapper.getObjectReader(fc);
+                        // Use context provider if available, otherwise create directly
+                        ObjectReader<?> r = (contextProvider != null)
+                            ? contextProvider.getObjectReader(fc)
+                            : createObjectReader(fc);
                         if (r != null) {
                             objReaders[i] = r;
                         }
                     }
                     // For List fields, get element ObjectReader
                     if (fr.elementClass != null && fr.elementClass != String.class) {
-                        elemReaders[i] = mapper.getObjectReader(fr.elementClass);
+                        elemReaders[i] = (contextProvider != null)
+                            ? contextProvider.getObjectReader(fr.elementClass)
+                            : createObjectReader(fr.elementClass);
                     }
                 }
                 this.fieldElementReaders = elemReaders;
@@ -1486,26 +1496,41 @@ public final class ObjectReaderCreator {
             if (fieldReadersResolved) {
                 return;
             }
-            ObjectMapper mapper = ObjectMapper.shared();
-            int len = fieldReaders.length;
-            ObjectReader<?>[] objReaders = new ObjectReader<?>[len];
-            ObjectReader<?>[] elemReaders = new ObjectReader<?>[len];
-            for (int i = 0; i < len; i++) {
-                FieldReader fr = fieldReaders[i];
-                if (fr.typeTag == FieldReader.TAG_GENERIC) {
-                    ObjectReader<?> r = mapper.getObjectReader(fr.fieldClass);
-                    if (r != null) {
-                        objReaders[i] = r;
-                        fr.typeTag = FieldReader.TAG_POJO;
+            // Use double-checked locking to avoid unnecessary array allocation
+            synchronized (this) {
+                if (fieldReadersResolved) {
+                    return;
+                }
+                // Check if there's a provider context from the parent ObjectMapper
+                ObjectReaderProvider contextProvider = ObjectReaderProvider.getContext();
+                int len = fieldReaders.length;
+                ObjectReader<?>[] objReaders = new ObjectReader<?>[len];
+                ObjectReader<?>[] elemReaders = new ObjectReader<?>[len];
+                for (int i = 0; i < len; i++) {
+                    FieldReader fr = fieldReaders[i];
+                    // Skip BuiltinCodecs for fields with custom @JSONField(format=...) annotation
+                    if (fr.formatter != null) {
+                        // objReaders[i] remains null, will fall through to convertValue path
+                    } else if (fr.typeTag == FieldReader.TAG_GENERIC) {
+                        // Use context provider if available, otherwise create directly
+                        ObjectReader<?> r = (contextProvider != null)
+                            ? contextProvider.getObjectReader(fr.fieldClass)
+                            : createObjectReader(fr.fieldClass);
+                        if (r != null) {
+                            objReaders[i] = r;
+                            // Don't modify fr.typeTag - it may be shared across readers
+                        }
+                    }
+                    if (fr.elementClass != null && fr.elementClass != String.class) {
+                        elemReaders[i] = (contextProvider != null)
+                            ? contextProvider.getObjectReader(fr.elementClass)
+                            : createObjectReader(fr.elementClass);
                     }
                 }
-                if (fr.elementClass != null && fr.elementClass != String.class) {
-                    elemReaders[i] = mapper.getObjectReader(fr.elementClass);
-                }
+                this.fieldElementReaders = elemReaders;
+                this.fieldObjectReaders = objReaders;
+                this.fieldReadersResolved = true;
             }
-            this.fieldElementReaders = elemReaders;
-            this.fieldObjectReaders = objReaders;
-            this.fieldReadersResolved = true;
         }
 
         @Override

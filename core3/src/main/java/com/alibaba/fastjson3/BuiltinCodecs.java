@@ -5,11 +5,22 @@ import java.lang.reflect.Type;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.MonthDay;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
 import java.time.Period;
 import java.time.Year;
 import java.time.YearMonth;
+import java.time.ZonedDateTime;
+import java.util.Date;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -22,14 +33,17 @@ import java.util.UUID;
  * <p>These are resolved once per type on first access and cached in ObjectMapper's
  * ConcurrentHashMap. Zero hot-path overhead for unrelated types.</p>
  */
-final class BuiltinCodecs {
+public final class BuiltinCodecs {
     private BuiltinCodecs() {
     }
 
     // ==================== ObjectReader factories ====================
 
     @SuppressWarnings("unchecked")
-    static <T> ObjectReader<T> getReader(Class<T> type) {
+    public static <T> ObjectReader<T> getReader(Class<T> type) {
+        if (type == String.class) {
+            return (ObjectReader<T>) STRING_READER;
+        }
         if (type == Optional.class) {
             return (ObjectReader<T>) OPTIONAL_READER;
         }
@@ -66,6 +80,63 @@ final class BuiltinCodecs {
         if (Path.class.isAssignableFrom(type)) {
             return (ObjectReader<T>) PATH_READER;
         }
+        if (type == LocalDate.class) {
+            return (ObjectReader<T>) LOCAL_DATE_READER;
+        }
+        if (type == LocalDateTime.class) {
+            return (ObjectReader<T>) LOCAL_DATE_TIME_READER;
+        }
+        if (type == LocalTime.class) {
+            return (ObjectReader<T>) LOCAL_TIME_READER;
+        }
+        if (type == Instant.class) {
+            return (ObjectReader<T>) INSTANT_READER;
+        }
+        if (type == ZonedDateTime.class) {
+            return (ObjectReader<T>) ZONED_DATE_TIME_READER;
+        }
+        if (type == OffsetDateTime.class) {
+            return (ObjectReader<T>) OFFSET_DATE_TIME_READER;
+        }
+        if (type == OffsetTime.class) {
+            return (ObjectReader<T>) OFFSET_TIME_READER;
+        }
+        if (type == Date.class) {
+            return (ObjectReader<T>) DATE_READER;
+        }
+        if (type == AtomicInteger.class) {
+            return (ObjectReader<T>) ATOMIC_INTEGER_READER;
+        }
+        if (type == AtomicLong.class) {
+            return (ObjectReader<T>) ATOMIC_LONG_READER;
+        }
+        if (type == AtomicBoolean.class) {
+            return (ObjectReader<T>) ATOMIC_BOOLEAN_READER;
+        }
+        if (type == Byte.class || type == byte.class) {
+            return (ObjectReader<T>) BYTE_READER;
+        }
+        if (type == Short.class || type == short.class) {
+            return (ObjectReader<T>) SHORT_READER;
+        }
+        if (type == Character.class || type == char.class) {
+            return (ObjectReader<T>) CHARACTER_READER;
+        }
+        if (type == Integer.class || type == int.class) {
+            return (ObjectReader<T>) INTEGER_READER;
+        }
+        if (type == Long.class || type == long.class) {
+            return (ObjectReader<T>) LONG_READER;
+        }
+        if (type == Float.class || type == float.class) {
+            return (ObjectReader<T>) FLOAT_READER;
+        }
+        if (type == Double.class || type == double.class) {
+            return (ObjectReader<T>) DOUBLE_READER;
+        }
+        if (type == Boolean.class || type == boolean.class) {
+            return (ObjectReader<T>) BOOLEAN_READER;
+        }
 
         // Guava immutable collections (zero-dependency, reflection-based)
         ObjectReader<?> guavaReader = GuavaSupport.getReader(type);
@@ -79,7 +150,7 @@ final class BuiltinCodecs {
     // ==================== ObjectWriter factories ====================
 
     @SuppressWarnings("unchecked")
-    static <T> ObjectWriter<T> getWriter(Class<T> type) {
+    public static <T> ObjectWriter<T> getWriter(Class<T> type) {
         if (Optional.class.isAssignableFrom(type)) {
             return (ObjectWriter<T>) OPTIONAL_WRITER;
         }
@@ -115,6 +186,39 @@ final class BuiltinCodecs {
         }
         if (Path.class.isAssignableFrom(type)) {
             return (ObjectWriter<T>) PATH_WRITER;
+        }
+        if (type == LocalDate.class) {
+            return (ObjectWriter<T>) LOCAL_DATE_WRITER;
+        }
+        if (type == LocalDateTime.class) {
+            return (ObjectWriter<T>) LOCAL_DATE_TIME_WRITER;
+        }
+        if (type == LocalTime.class) {
+            return (ObjectWriter<T>) LOCAL_TIME_WRITER;
+        }
+        if (type == Instant.class) {
+            return (ObjectWriter<T>) INSTANT_WRITER;
+        }
+        if (type == ZonedDateTime.class) {
+            return (ObjectWriter<T>) ZONED_DATE_TIME_WRITER;
+        }
+        if (type == OffsetDateTime.class) {
+            return (ObjectWriter<T>) OFFSET_DATE_TIME_WRITER;
+        }
+        if (type == OffsetTime.class) {
+            return (ObjectWriter<T>) OFFSET_TIME_WRITER;
+        }
+        if (type == Date.class) {
+            return (ObjectWriter<T>) DATE_WRITER;
+        }
+        if (type == AtomicInteger.class) {
+            return (ObjectWriter<T>) ATOMIC_INTEGER_WRITER;
+        }
+        if (type == AtomicLong.class) {
+            return (ObjectWriter<T>) ATOMIC_LONG_WRITER;
+        }
+        if (type == AtomicBoolean.class) {
+            return (ObjectWriter<T>) ATOMIC_BOOLEAN_WRITER;
         }
         return null;
     }
@@ -306,5 +410,205 @@ final class BuiltinCodecs {
     private static final ObjectWriter<Path> PATH_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
                 generator.writeString(((Path) object).toString());
+            };
+
+    // ==================== java.time types ====================
+
+    private static final ObjectReader<LocalDate> LOCAL_DATE_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null ? null : com.alibaba.fastjson3.util.DateUtils.parseLocalDate(str);
+            };
+
+    private static final ObjectWriter<LocalDate> LOCAL_DATE_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeString(((LocalDate) object).toString());
+            };
+
+    private static final ObjectReader<LocalDateTime> LOCAL_DATE_TIME_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null ? null : com.alibaba.fastjson3.util.DateUtils.parseLocalDateTime(str);
+            };
+
+    private static final ObjectWriter<LocalDateTime> LOCAL_DATE_TIME_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeString(((LocalDateTime) object).toString());
+            };
+
+    private static final ObjectReader<LocalTime> LOCAL_TIME_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null ? null : LocalTime.parse(str);
+            };
+
+    private static final ObjectWriter<LocalTime> LOCAL_TIME_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeString(((LocalTime) object).toString());
+            };
+
+    private static final ObjectReader<Instant> INSTANT_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null ? null : Instant.parse(str);
+            };
+
+    private static final ObjectWriter<Instant> INSTANT_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeString(((Instant) object).toString());
+            };
+
+    private static final ObjectReader<ZonedDateTime> ZONED_DATE_TIME_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null ? null : ZonedDateTime.parse(str);
+            };
+
+    private static final ObjectWriter<ZonedDateTime> ZONED_DATE_TIME_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeString(((ZonedDateTime) object).toString());
+            };
+
+    private static final ObjectReader<OffsetDateTime> OFFSET_DATE_TIME_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null ? null : OffsetDateTime.parse(str);
+            };
+
+    private static final ObjectWriter<OffsetDateTime> OFFSET_DATE_TIME_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeString(((OffsetDateTime) object).toString());
+            };
+
+    private static final ObjectReader<OffsetTime> OFFSET_TIME_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null ? null : OffsetTime.parse(str);
+            };
+
+    private static final ObjectWriter<OffsetTime> OFFSET_TIME_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeString(((OffsetTime) object).toString());
+            };
+
+    private static final ObjectReader<Date> DATE_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null ? null : Date.from(Instant.parse(str));
+            };
+
+    private static final ObjectWriter<Date> DATE_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeString(((Date) object).toInstant().toString());
+            };
+
+    // ==================== java.util.concurrent.atomic types ====================
+
+    private static final ObjectReader<AtomicInteger> ATOMIC_INTEGER_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return new AtomicInteger(parser.readInt());
+            };
+
+    private static final ObjectWriter<AtomicInteger> ATOMIC_INTEGER_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeInt32(((AtomicInteger) object).get());
+            };
+
+    private static final ObjectReader<AtomicLong> ATOMIC_LONG_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return new AtomicLong(parser.readLong());
+            };
+
+    private static final ObjectWriter<AtomicLong> ATOMIC_LONG_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeInt64(((AtomicLong) object).get());
+            };
+
+    private static final ObjectReader<AtomicBoolean> ATOMIC_BOOLEAN_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return new AtomicBoolean(parser.readBoolean());
+            };
+
+    private static final ObjectWriter<AtomicBoolean> ATOMIC_BOOLEAN_WRITER =
+            (generator, object, fieldName, fieldType, features) -> {
+                generator.writeBool(((AtomicBoolean) object).get());
+            };
+
+    // ==================== String ====================
+
+    private static final ObjectReader<String> STRING_READER =
+            (parser, fieldType, fieldName, features) -> parser.readString();
+
+    // ==================== Primitive wrapper types ====================
+
+    private static final ObjectReader<Byte> BYTE_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return (byte) parser.readInt();
+            };
+
+    private static final ObjectReader<Short> SHORT_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return (short) parser.readInt();
+            };
+
+    private static final ObjectReader<Character> CHARACTER_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null ? null : str.charAt(0);
+            };
+
+    private static final ObjectReader<Integer> INTEGER_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return parser.readInt();
+            };
+
+    private static final ObjectReader<Long> LONG_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return parser.readLong();
+            };
+
+    private static final ObjectReader<Float> FLOAT_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return (float) parser.readDouble();
+            };
+
+    private static final ObjectReader<Double> DOUBLE_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return parser.readDouble();
+            };
+
+    private static final ObjectReader<Boolean> BOOLEAN_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return parser.readBoolean();
             };
 }
