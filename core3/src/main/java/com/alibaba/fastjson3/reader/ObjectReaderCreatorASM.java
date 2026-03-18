@@ -574,6 +574,15 @@ public final class ObjectReaderCreatorASM {
             return new FieldJumpInfo(new int[0], new int[0], new ArrayList<>(), false);
         }
 
+        // Check for prefix collisions (multiple fields with same 4-byte prefix)
+        // When collisions exist, disable DirectField to avoid incorrect parsing
+        for (var entry : prefixMap.entrySet()) {
+            if (entry.getValue().size() > 1) {
+                // Prefix collision detected - disable DirectField for safety
+                return new FieldJumpInfo(new int[0], new int[0], new ArrayList<>(), false);
+            }
+        }
+
         int[] prefixes = new int[prefixMap.size()];
         int[] prefixCounts = new int[prefixMap.size()];
         List<List<JumpField>> fields = new ArrayList<>(prefixMap.size());
