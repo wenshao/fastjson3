@@ -547,35 +547,6 @@ public final class BuiltinCodecs {
                 generator.writeBool(((AtomicBoolean) object).get());
             };
 
-    // ==================== Primitive types ====================
-
-    private static final ObjectReader<Byte> BYTE_READER =
-            (parser, fieldType, fieldName, features) -> (byte) parser.readInt();
-
-    private static final ObjectReader<Short> SHORT_READER =
-            (parser, fieldType, fieldName, features) -> (short) parser.readInt();
-
-    private static final ObjectReader<Character> CHAR_READER =
-            (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
-                return str == null || str.isEmpty() ? '\0' : str.charAt(0);
-            };
-
-    private static final ObjectReader<Integer> INT_READER =
-            (parser, fieldType, fieldName, features) -> parser.readInt();
-
-    private static final ObjectReader<Long> LONG_READER =
-            (parser, fieldType, fieldName, features) -> parser.readLong();
-
-    private static final ObjectReader<Float> FLOAT_READER =
-            (parser, fieldType, fieldName, features) -> (float) parser.readDouble();
-
-    private static final ObjectReader<Double> DOUBLE_READER =
-            (parser, fieldType, fieldName, features) -> parser.readDouble();
-
-    private static final ObjectReader<Boolean> BOOLEAN_READER =
-            (parser, fieldType, fieldName, features) -> parser.readBoolean();
-
     // ==================== String ====================
 
     private static final ObjectReader<String> STRING_READER =
