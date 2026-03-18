@@ -77,11 +77,13 @@ public class AndroidJarVerificationTest {
     @Test
     public void testAndroidJarExcludesASMCreators() throws IOException {
         try (JarFile jar = new JarFile(androidJar.toFile())) {
+            // Android JAR contains stub versions of ASM creators that throw LinkageError
+            // to trigger fallback to reflection
             JarEntry readerCreator = jar.getJarEntry("com/alibaba/fastjson3/reader/ObjectReaderCreatorASM.class");
-            assertFalse(readerCreator != null, "ObjectReaderCreatorASM should not be in android JAR");
+            assertTrue(readerCreator != null, "ObjectReaderCreatorASM stub should be in android JAR");
 
             JarEntry writerCreator = jar.getJarEntry("com/alibaba/fastjson3/writer/ObjectWriterCreatorASM.class");
-            assertFalse(writerCreator != null, "ObjectWriterCreatorASM should not be in android JAR");
+            assertTrue(writerCreator != null, "ObjectWriterCreatorASM stub should be in android JAR");
         }
     }
 
