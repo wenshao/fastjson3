@@ -97,4 +97,11 @@ public interface ObjectReaderProvider {
      */
     default void cleanup() {
     }
+
+    /**
+     * Get the default provider (uses REFLECT strategy on Android).
+     */
+    static ObjectReaderProvider defaultProvider() {
+        return ReflectObjectReaderProvider.INSTANCE;
+    }
 }
