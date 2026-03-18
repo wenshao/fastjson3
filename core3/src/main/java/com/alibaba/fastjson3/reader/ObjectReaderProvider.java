@@ -48,11 +48,15 @@ public interface ObjectReaderProvider {
      *     }
      * </pre>
      *
+     * <p><b>Nested contexts:</b> This method supports nested contexts by saving
+     * and restoring the previous context value.</p>
+     *
      * @return a SafeContext that must be closed when done
      */
     default SafeContext openContext() {
+        ObjectReaderProvider previous = CONTEXT.get();
         CONTEXT.set(this);
-        return new SafeContext();
+        return new SafeContext(previous);
     }
 
     /**
@@ -82,17 +86,27 @@ public interface ObjectReaderProvider {
     /**
      * RAII-style context guard that ensures ThreadLocal cleanup.
      * Always call close() in a finally block.
+     *
+     * <p><b>Nested contexts:</b> When opening a nested context, the previous
+     * context value is saved and restored on close, allowing proper nesting
+     * of contexts from different providers.</p>
      */
     class SafeContext implements AutoCloseable {
         private boolean closed = false;
+        private final ObjectReaderProvider previousContext;
 
-        private SafeContext() {
+        private SafeContext(ObjectReaderProvider previousContext) {
+            this.previousContext = previousContext;
         }
 
         @Override
         public void close() {
             if (!closed) {
-                CONTEXT.remove();
+                if (previousContext != null) {
+                    CONTEXT.set(previousContext);
+                } else {
+                    CONTEXT.remove();
+                }
                 closed = true;
             }
         }

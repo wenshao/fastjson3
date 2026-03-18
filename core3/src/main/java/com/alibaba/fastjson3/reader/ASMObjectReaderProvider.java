@@ -125,10 +125,13 @@ public final class ASMObjectReaderProvider extends AbstractObjectReaderProvider 
                 continue;
             }
 
-            // Recursively create reader for nested POJO type
+            // Recursively create and cache reader for nested POJO type
             if (!readerCache.containsKey(fieldType)) {
                 try {
-                    createRecursiveReader(fieldType, creating, depth + 1);
+                    ObjectReader<?> reader = createRecursiveReader(fieldType, creating, depth + 1);
+                    if (reader != null) {
+                        readerCache.put(fieldType, reader);
+                    }
                 } catch (Throwable e) {
                     // Ignore prewarm failures - will be created on-demand
                     LOG.debug(() -> "Prewarm failed for " + fieldType.getName() + ": " + e.getMessage());

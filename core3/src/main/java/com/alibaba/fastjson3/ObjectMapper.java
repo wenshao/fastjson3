@@ -217,14 +217,11 @@ public final class ObjectMapper {
             try {
                 if (readerCreator != null) {
                     reader = readerCreator.apply(type);
-                } else if (mixInCache != null || useJacksonAnnotation) {
-                    // For Mixin/Jackson annotation support, bypass readerProvider
-                    // to ensure annotations are properly processed
-                    Class<?> mixIn = (mixInCache != null) ? mixInCache.get(type) : null;
-                    reader = ObjectReaderCreator.createObjectReader(type, mixIn, useJacksonAnnotation);
                 } else {
-                    // Use readerProvider to get the reader (respects ASM/Reflect strategy)
-                    reader = readerProvider.getObjectReader(type);
+                    // Use ObjectReaderCreator for annotation support (mixIn, Jackson, @JSONField)
+                    // This ensures @JSONField(anySetter=true), @JSONField(name), etc. are processed
+                    Class<?> mixIn = mixInCache.get(type);
+                    reader = ObjectReaderCreator.createObjectReader(type, mixIn, useJacksonAnnotation);
                 }
                 if (reader != null) {
                     ReaderHolder holder = new ReaderHolder(reader, cacheVersion.get());
@@ -285,11 +282,19 @@ public final class ObjectMapper {
         this.classLoader = classLoader != null ? classLoader
             : com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance();
 
-        // Create per-instance provider when using custom classLoader for proper cleanup
-        if (readerProvider != null && classLoader != null) {
-            this.readerProvider = createProviderWithClassLoader(readerProvider.getCreatorType(), this.classLoader);
+        // Use custom provider if provided, otherwise create default or classLoader-specific
+        if (readerProvider != null) {
+            // User explicitly provided a provider - use it as-is
+            this.readerProvider = readerProvider;
+        } else if (classLoader != null) {
+            // No custom provider, but classLoader is specified - create classLoader-specific provider
+            // This only happens when readerCreatorType was specified but not readerProvider
+            this.readerProvider = createProviderWithClassLoader(
+                readerCreator != null ? ReaderCreatorType.AUTO : ReaderCreatorType.AUTO,
+                this.classLoader);
         } else {
-            this.readerProvider = readerProvider != null ? readerProvider : ObjectReaderProvider.defaultProvider();
+            // No custom provider, no classLoader - use default
+            this.readerProvider = ObjectReaderProvider.defaultProvider();
         }
 
         this.readerCache = new ConcurrentHashMap<Type, ObjectReader<?>>();

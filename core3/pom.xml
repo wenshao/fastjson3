@@ -75,7 +75,7 @@
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>--add-modules jdk.incubator.vector --add-opens=java.base/java.time=com.alibaba.fastjson3 --add-opens=java.base/java.lang=com.alibaba.fastjson3 --add-opens=java.base/java.util=com.alibaba.fastjson3 --add-opens=java.base/sun.nio.cs=com.alibaba.fastjson3 --add-opens=java.base/sun.util.calendar=com.alibaba.fastjson3 --add-opens=java.base/java.lang.reflect=com.alibaba.fastjson3 --add-opens=java.base/sun.nio.ch=com.alibaba.fastjson3 --add-opens=java.base/java.nio=com.alibaba.fastjson3 --add-opens=java.base/jdk.internal.reflect=com.alibaba.fastjson3 --add-opens=java.base/java.net=com.alibaba.fastjson3</argLine>
+                    <argLine>@{argLine} --add-modules jdk.incubator.vector --add-opens=java.base/java.time=com.alibaba.fastjson3 --add-opens=java.base/java.lang=com.alibaba.fastjson3 --add-opens=java.base/java.util=com.alibaba.fastjson3 --add-opens=java.base/sun.nio.cs=com.alibaba.fastjson3 --add-opens=java.base/sun.util.calendar=com.alibaba.fastjson3 --add-opens=java.base/java.lang.reflect=com.alibaba.fastjson3 --add-opens=java.base/sun.nio.ch=com.alibaba.fastjson3 --add-opens=java.base/java.nio=com.alibaba.fastjson3 --add-opens=java.base/jdk.internal.reflect=com.alibaba.fastjson3 --add-opens=java.base/java.net=com.alibaba.fastjson3</argLine>
                 </configuration>
             </plugin>
             <plugin>
