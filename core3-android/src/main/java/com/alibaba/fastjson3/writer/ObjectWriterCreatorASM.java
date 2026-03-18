@@ -8,10 +8,19 @@ import com.alibaba.fastjson3.ObjectWriter;
  * to trigger fallback to reflection in ObjectMapper.
  */
 public final class ObjectWriterCreatorASM {
-    public static ObjectWriter<?> createObjectWriter(Class<?> type) {
-        throw new LinkageError("ASM is not available on Android, use reflection instead");
+    /**
+     * Create an ObjectWriter using ASM (not available on Android).
+     *
+     * @param type the target type
+     * @return never returns, always throws LinkageError
+     * @throws LinkageError always, as ASM is not available on Android
+     */
+    public static ObjectWriter<?> createObjectWriter(final Class<?> type) {
+        throw new LinkageError(
+                "ASM is not available on Android, use reflection instead");
     }
 
+    /** Private constructor to prevent instantiation. */
     private ObjectWriterCreatorASM() {
         throw new LinkageError("ASM is not available on Android");
     }

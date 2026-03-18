@@ -561,30 +561,13 @@ public final class ObjectReaderCreatorASM {
             mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readBooleanDirect", "()Z");
             mw.invokestatic(TYPE_JDK_UTILS, "putBoolean", "(Ljava/lang/Object;JZ)V");
         } else if (fc == String.class) {
-            // peek = utf8.skipWSAndPeek()
-            mw.aload(1);
-            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "skipWSAndPeek", "()I");
-            mw.istore(5);
-
-            // if (peek == 'n' && utf8.readNull()) skip
-            Label readStr = new Label();
-            mw.iload(5);
-            mw.bipush('n');
-            mw.if_icmpne(readStr);
-            mw.aload(1);
-            mw.invokevirtual(TYPE_JSON_PARSER, "readNull", "()Z");
-            Label strEnd = new Label();
-            mw.ifne(strEnd);
-
             // JDKUtils.putObject(instance, foN, utf8.readStringDirect())
-            mw.visitLabel(readStr);
+            // Optimized: direct read like primitive types, no extra peek/null checks
             mw.aload(4); // instance
             mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
             mw.aload(1); // utf8
             mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readStringDirect", "()Ljava/lang/String;");
             mw.invokestatic(TYPE_JDK_UTILS, "putObject", "(Ljava/lang/Object;JLjava/lang/Object;)V");
-
-            mw.visitLabel(strEnd);
         } else {
             // Complex type (List, String[], long[], POJO, etc.):
             // delegate to fallback.readFieldUTF8(utf8, instance, fieldIndex, features)
@@ -614,13 +597,11 @@ public final class ObjectReaderCreatorASM {
     ) {
         Class<?> fc = fr.fieldClass;
 
-        if (fc == String.class || fc == int.class || fc == long.class
+        if (fc == int.class || fc == long.class
                 || fc == double.class || fc == boolean.class) {
             // off = utf8.readXxxOff(off, instance, reader)
             String methodName;
-            if (fc == String.class) {
-                methodName = "readStringOff";
-            } else if (fc == int.class) {
+            if (fc == int.class) {
                 methodName = "readIntOff";
             } else if (fc == long.class) {
                 methodName = "readLongOff";
@@ -643,7 +624,15 @@ public final class ObjectReaderCreatorASM {
             mw.iload(12);
             mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
 
-            if (fc == float.class) {
+            if (fc == String.class) {
+                // String: use direct readStringOffDirect for better performance
+                mw.aload(4); // instance
+                mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
+                mw.aload(1); // utf8
+                mw.iload(12); // off
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readStringOffDirect", "(IJ)I");
+                mw.istore(12); // off = result
+            } else if (fc == float.class) {
                 mw.aload(4);
                 mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
                 mw.aload(1);

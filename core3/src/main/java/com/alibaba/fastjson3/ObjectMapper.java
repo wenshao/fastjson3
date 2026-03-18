@@ -224,11 +224,17 @@ public final class ObjectMapper {
 
             // Auto-create POJO reader (ASM or reflection)
             try {
-                if (readerCreator != null) {
+                if (useJacksonAnnotation || !mixInCache.isEmpty()) {
+                    // When annotations/mixIns are needed, use ObjectReaderCreator directly
+                    Class<?> mixIn = mixInCache.get(type);
+                    reader = ObjectReaderCreator.createObjectReader(type, mixIn, useJacksonAnnotation);
+                } else if (readerCreator != null) {
                     reader = readerCreator.apply(type);
+                } else if (readerProvider != null && readerProvider.getClass() != com.alibaba.fastjson3.reader.AutoObjectReaderProvider.class) {
+                    // Only use custom providers (not AutoObjectReaderProvider, to preserve annotation support)
+                    reader = readerProvider.getObjectReader(type);
                 } else {
-                    // Use ObjectReaderCreator for annotation support (mixIn, Jackson, @JSONField)
-                    // This ensures @JSONField(anySetter=true), @JSONField(name), etc. are processed
+                    // Use ObjectReaderCreator for annotation support (including @JSONField(anySetter=true))
                     Class<?> mixIn = mixInCache.get(type);
                     reader = ObjectReaderCreator.createObjectReader(type, mixIn, useJacksonAnnotation);
                 }
@@ -1416,11 +1422,17 @@ public final class ObjectMapper {
         // Auto-create writer (only for POJO types)
         if (rawType != null && !isBasicType(rawType)) {
             try {
-                if (writerCreator != null) {
+                if (useJacksonAnnotation || !mixInCache.isEmpty()) {
+                    // When annotations/mixIns are needed, use ObjectWriterCreator directly
+                    Class<?> mixIn = mixInCache.get(rawType);
+                    writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
+                } else if (writerCreator != null) {
                     writer = writerCreator.apply(rawType);
+                } else if (writerProvider != null && writerProvider.getClass() != com.alibaba.fastjson3.writer.AutoObjectWriterProvider.class) {
+                    // Only use custom providers (not AutoObjectWriterProvider, to preserve annotation support)
+                    writer = writerProvider.getObjectWriter(rawType);
                 } else {
-                    // Use ObjectWriterCreator for annotation support (mixIn, Jackson, @JSONField)
-                    // This ensures @JSONField(name), @JSONWriter, etc. are processed
+                    // Use ObjectWriterCreator for annotation support
                     Class<?> mixIn = mixInCache.get(rawType);
                     writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
                 }
@@ -2158,16 +2170,28 @@ public final class ObjectMapper {
 
             // Determine the reader provider
             ObjectReaderProvider provider = readerProviderInstance;
+            boolean createdProvider = false;
             if (provider == null && readerCreatorType != null) {
                 // Create per-instance provider with custom classLoader
                 provider = createProviderWithClassLoader(readerCreatorType, loader);
+                createdProvider = true;
+            }
+            // Update readerCreator to use the provider when it was created from readerCreatorType
+            if (createdProvider && readerCreator == null) {
+                readerCreator = provider::getObjectReader;
             }
 
             // Determine the writer provider
             ObjectWriterProvider writerProvider = writerProviderInstance;
+            boolean createdWriterProvider = false;
             if (writerProvider == null && writerCreatorType != null) {
                 // Create per-instance provider with custom classLoader
                 writerProvider = createWriterProviderWithClassLoader(writerCreatorType, loader);
+                createdWriterProvider = true;
+            }
+            // Update writerCreator to use the provider when it was created from writerCreatorType
+            if (createdWriterProvider && writerCreator == null) {
+                writerCreator = writerProvider::getObjectWriter;
             }
 
             ObjectMapper mapper = new ObjectMapper(
