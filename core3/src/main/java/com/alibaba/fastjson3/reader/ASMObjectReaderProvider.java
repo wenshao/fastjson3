@@ -46,6 +46,11 @@ public final class ASMObjectReaderProvider extends AbstractObjectReaderProvider 
             return null;
         }
 
+        // Skip interfaces and abstract classes - they don't have constructors
+        if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
+            return null;
+        }
+
         return createRecursiveReader(type, java.util.concurrent.ConcurrentHashMap.newKeySet());
     }
 

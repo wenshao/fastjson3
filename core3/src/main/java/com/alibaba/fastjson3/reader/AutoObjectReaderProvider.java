@@ -71,6 +71,11 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
             return null;
         }
 
+        // Skip interfaces and abstract classes - they don't have constructors
+        if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
+            return null;
+        }
+
         // For simple POJOs, try ASM first (if available)
         if (ASM_AVAILABLE && isSimplePOJO(type)) {
             try {
