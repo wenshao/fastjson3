@@ -25,6 +25,10 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.OptionalDouble;
+import java.util.OptionalInt;
+import java.util.OptionalLong;
+import java.util.UUID;
 
 /**
  * Built-in ObjectReader/ObjectWriter implementations for JDK types
@@ -112,6 +116,30 @@ public final class BuiltinCodecs {
         }
         if (type == AtomicBoolean.class) {
             return (ObjectReader<T>) ATOMIC_BOOLEAN_READER;
+        }
+        if (type == Byte.class || type == byte.class) {
+            return (ObjectReader<T>) BYTE_READER;
+        }
+        if (type == Short.class || type == short.class) {
+            return (ObjectReader<T>) SHORT_READER;
+        }
+        if (type == Character.class || type == char.class) {
+            return (ObjectReader<T>) CHARACTER_READER;
+        }
+        if (type == Integer.class || type == int.class) {
+            return (ObjectReader<T>) INTEGER_READER;
+        }
+        if (type == Long.class || type == long.class) {
+            return (ObjectReader<T>) LONG_READER;
+        }
+        if (type == Float.class || type == float.class) {
+            return (ObjectReader<T>) FLOAT_READER;
+        }
+        if (type == Double.class || type == double.class) {
+            return (ObjectReader<T>) DOUBLE_READER;
+        }
+        if (type == Boolean.class || type == boolean.class) {
+            return (ObjectReader<T>) BOOLEAN_READER;
         }
 
         // Guava immutable collections (zero-dependency, reflection-based)
@@ -523,4 +551,68 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<String> STRING_READER =
             (parser, fieldType, fieldName, features) -> parser.readString();
+
+    // ==================== Primitive wrapper types ====================
+
+    private static final ObjectReader<Byte> BYTE_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return (byte) parser.readInt();
+            };
+
+    private static final ObjectReader<Short> SHORT_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return (short) parser.readInt();
+            };
+
+    private static final ObjectReader<Character> CHARACTER_READER =
+            (parser, fieldType, fieldName, features) -> {
+                String str = parser.readString();
+                return str == null ? null : str.charAt(0);
+            };
+
+    private static final ObjectReader<Integer> INTEGER_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return parser.readInt();
+            };
+
+    private static final ObjectReader<Long> LONG_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return parser.readLong();
+            };
+
+    private static final ObjectReader<Float> FLOAT_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return (float) parser.readDouble();
+            };
+
+    private static final ObjectReader<Double> DOUBLE_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return parser.readDouble();
+            };
+
+    private static final ObjectReader<Boolean> BOOLEAN_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return parser.readBoolean();
+            };
 }

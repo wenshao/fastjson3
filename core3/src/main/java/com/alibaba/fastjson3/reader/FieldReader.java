@@ -331,8 +331,17 @@ public final class FieldReader implements Comparable<FieldReader> {
             jsonSchema.assertValidate(value);
         }
         if (fieldOffset >= 0) {
-            JDKUtils.putObject(bean, fieldOffset, value);
-            return;
+            // Handle primitive types that don't have dedicated tags
+            if (fieldClass == short.class) {
+                // Fall through to reflection for short
+            } else if (fieldClass == byte.class) {
+                // Fall through to reflection for byte
+            } else if (fieldClass == char.class) {
+                // Fall through to reflection for char
+            } else {
+                JDKUtils.putObject(bean, fieldOffset, value);
+                return;
+            }
         }
         setFieldValue(bean, value);
     }
