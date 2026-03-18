@@ -94,7 +94,7 @@ class BenchmarkTest {
 
     private <T> void benchRead(String label, Class<T> type, byte[] bytes) {
         ObjectReader<T> refReader = ObjectReaderCreator.createObjectReader(type);
-        ObjectReader<T> asmReader = ObjectReaderCreatorASM.createObjectReader(type, refReader);
+        ObjectReader<T> asmReader = ObjectReaderCreatorASM.createObjectReader(type);
         ObjectMapper mapper = ObjectMapper.shared();
 
         // Warmup all paths

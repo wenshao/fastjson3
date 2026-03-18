@@ -17,9 +17,7 @@ public class ObjectReaderASMTest {
     }
 
     private ObjectReader<SimpleBean> createASMReader() {
-        // Create reflection reader as fallback
-        ObjectReader<SimpleBean> fallbackReader = ObjectReaderCreator.createObjectReader(SimpleBean.class);
-        return ObjectReaderCreatorASM.createObjectReader(SimpleBean.class, fallbackReader);
+        return ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
     }
 
     @Test

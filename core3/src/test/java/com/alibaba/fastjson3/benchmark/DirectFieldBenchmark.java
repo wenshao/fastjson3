@@ -1,6 +1,7 @@
 package com.alibaba.fastjson3.benchmark;
 
 import com.alibaba.fastjson3.JSONParser;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.TimeUnit;
@@ -118,6 +119,7 @@ public class DirectFieldBenchmark {
     }
 
     @Test
+    @Disabled("Performance benchmark - run manually or via JMH")
     public void benchmarkFieldMatching() {
         String[] fieldNames = {"id", "name", "email", "city", "age"};
         String json = "{\"id\":\"123\",\"name\":\"test\",\"age\":25}";

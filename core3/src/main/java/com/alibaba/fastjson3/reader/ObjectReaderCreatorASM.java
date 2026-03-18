@@ -1,7 +1,6 @@
 package com.alibaba.fastjson3.reader;
 
 import com.alibaba.fastjson3.JSONException;
-import com.alibaba.fastjson3.JSONParser;
 import com.alibaba.fastjson3.ObjectReader;
 import com.alibaba.fastjson3.internal.asm.ClassWriter;
 import com.alibaba.fastjson3.internal.asm.Label;
@@ -86,6 +85,51 @@ public final class ObjectReaderCreatorASM {
 
     /**
      * Create an ObjectReader using ASM with DirectField optimization.
+     * This is the main public API entry point.
+     *
+     * @param type the target type
+     * @return an ASM-generated reader or fallback reflection reader
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> ObjectReader<T> createObjectReader(Class<T> type) {
+        // Create fallback reader for non-UTF8 parsers and unsupported types
+        ObjectReader<T> fallbackReader = ObjectReaderCreator.createObjectReader(type);
+
+        // Check if class is suitable for ASM generation
+        if (!isCandidateForASM(type)) {
+            return fallbackReader;
+        }
+
+        // Create field readers
+        FieldReader[] fieldReaders = createFieldReaders(type);
+        if (fieldReaders.length == 0) {
+            return fallbackReader;
+        }
+
+        // Build field jump info for DirectField
+        FieldJumpInfo prefixInfo = buildFieldJumpInfo(fieldReaders, 0, 0);
+
+        // Check if DirectField constraints are met
+        if (!prefixInfo.enabled || prefixInfo.prefixes.length == 0) {
+            return fallbackReader;
+        }
+
+        try {
+            return createASMObjectReader(type, fieldReaders, prefixInfo, fallbackReader);
+        } catch (Exception e) {
+            // If ASM generation fails, fall back to reflection silently
+            // Enable debug with: -Dfastjson.asm.debug=true
+            if (DEBUG) {
+                System.err.println("ASM generation failed for " + type.getName() + ": " + e.getMessage());
+                e.printStackTrace();
+            }
+            return fallbackReader;
+        }
+    }
+
+    /**
+     * Create an ObjectReader using ASM with DirectField optimization.
+     * This overload accepts a pre-created fallback reader.
      *
      * @param type the target type
      * @param fallbackReader the reflection reader to use as fallback for non-UTF8 parsers
