@@ -161,13 +161,19 @@ public final class FieldReader implements Comparable<FieldReader> {
         this.deserializeUsingClass = deserializeUsingClass;
 
         // Parse JSON Schema for validation
+        JSONSchema parsedSchema = null;
         if (schema != null && !schema.isEmpty()) {
-            JSONObject schemaObj = JSON.parseObject(schema);
-            this.jsonSchema = (schemaObj != null && !schemaObj.isEmpty())
-                    ? JSONSchema.of(schemaObj, fieldClass) : null;
-        } else {
-            this.jsonSchema = null;
+            try {
+                JSONObject schemaObj = JSON.parseObject(schema);
+                if (schemaObj != null && !schemaObj.isEmpty()) {
+                    parsedSchema = JSONSchema.of(schemaObj, fieldClass);
+                }
+            } catch (Exception e) {
+                // Invalid schema, disable validation
+                com.alibaba.fastjson3.util.Logger.warn("Invalid JSON schema for field '" + fieldName + "': " + e.getMessage());
+            }
         }
+        this.jsonSchema = parsedSchema;
 
         if (field != null) {
             field.setAccessible(true);

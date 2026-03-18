@@ -2,9 +2,7 @@ package com.alibaba.fastjson3.reader;
 
 import com.alibaba.fastjson3.ObjectReader;
 import com.alibaba.fastjson3.util.JDKUtils;
-
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import com.alibaba.fastjson3.util.Logger;
 
 /**
  * ObjectReaderProvider that automatically chooses between ASM and reflection.
@@ -16,13 +14,24 @@ import java.util.concurrent.ConcurrentMap;
  *   <li>Complex types (records, sealed classes): use reflection</li>
  * </ul>
  */
-public final class AutoObjectReaderProvider implements ObjectReaderProvider {
+public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider {
+
+    private static final Logger.CategoryLogger LOG = Logger.category("AutoProvider");
 
     public static final AutoObjectReaderProvider INSTANCE = new AutoObjectReaderProvider();
 
-    private final ConcurrentMap<Class<?>, ObjectReader<?>> readerCache = new ConcurrentHashMap<>();
+    public AutoObjectReaderProvider() {
+        super(null);
+    }
 
-    private AutoObjectReaderProvider() {
+    /**
+     * Create a provider with a specific classloader.
+     *
+     * @param classLoader the classloader to use for ASM-generated classes,
+     *                    or null to use the shared instance
+     */
+    public AutoObjectReaderProvider(com.alibaba.fastjson3.util.DynamicClassLoader classLoader) {
+        super(classLoader);
     }
 
     @Override
@@ -31,26 +40,24 @@ public final class AutoObjectReaderProvider implements ObjectReaderProvider {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public <T> ObjectReader<T> getObjectReader(Class<T> type) {
-        return (ObjectReader<T>) readerCache.computeIfAbsent(type, t -> {
-            // Native-image doesn't support runtime bytecode generation
-            if (JDKUtils.NATIVE_IMAGE) {
-                return ObjectReaderCreator.createObjectReader(t);
-            }
+    protected ObjectReader<?> createReader(Class<?> type) {
+        // Native-image doesn't support runtime bytecode generation
+        if (JDKUtils.NATIVE_IMAGE) {
+            return ObjectReaderCreator.createObjectReader(type);
+        }
 
-            // For simple POJOs, try ASM first
-            if (isSimplePOJO(t)) {
-                try {
-                    return ObjectReaderCreatorASM.createObjectReader(t);
-                } catch (Throwable ignored) {
-                    // Fall through to reflection
-                }
+        // For simple POJOs, try ASM first
+        if (isSimplePOJO(type)) {
+            try {
+                return ObjectReaderCreatorASM.createObjectReader(type);
+            } catch (Throwable e) {
+                // ASM generation failed, fall back to reflection
+                LOG.debug(() -> "ASM generation failed for " + type.getName() + ", using reflection: " + e.getMessage());
             }
+        }
 
-            // Default to reflection
-            return ObjectReaderCreator.createObjectReader(t);
-        });
+        // Default to reflection
+        return ObjectReaderCreator.createObjectReader(type);
     }
 
     /**

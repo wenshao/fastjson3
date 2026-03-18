@@ -2,20 +2,25 @@ package com.alibaba.fastjson3.reader;
 
 import com.alibaba.fastjson3.ObjectReader;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-
 /**
  * ObjectReaderProvider that uses only reflection.
  * No ASM bytecode generation.
  */
-public final class ReflectObjectReaderProvider implements ObjectReaderProvider {
+public final class ReflectObjectReaderProvider extends AbstractObjectReaderProvider {
 
     public static final ReflectObjectReaderProvider INSTANCE = new ReflectObjectReaderProvider();
 
-    private final ConcurrentMap<Class<?>, ObjectReader<?>> readerCache = new ConcurrentHashMap<>();
+    public ReflectObjectReaderProvider() {
+        super(null);
+    }
 
-    private ReflectObjectReaderProvider() {
+    /**
+     * Create a provider with a specific classloader.
+     *
+     * @param classLoader the classloader (ignored for reflection provider, kept for API consistency)
+     */
+    public ReflectObjectReaderProvider(com.alibaba.fastjson3.util.DynamicClassLoader classLoader) {
+        super(classLoader);
     }
 
     @Override
@@ -24,10 +29,7 @@ public final class ReflectObjectReaderProvider implements ObjectReaderProvider {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public <T> ObjectReader<T> getObjectReader(Class<T> type) {
-        return (ObjectReader<T>) readerCache.computeIfAbsent(type, t ->
-            ObjectReaderCreator.createObjectReader(t)
-        );
+    protected ObjectReader<?> createReader(Class<?> type) {
+        return ObjectReaderCreator.createObjectReader(type);
     }
 }

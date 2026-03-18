@@ -5,9 +5,12 @@ import com.alibaba.fastjson3.filter.PropertyFilter;
 import com.alibaba.fastjson3.filter.ValueFilter;
 import com.alibaba.fastjson3.modules.ObjectReaderModule;
 import com.alibaba.fastjson3.modules.ObjectWriterModule;
+import com.alibaba.fastjson3.reader.ASMObjectReaderProvider;
+import com.alibaba.fastjson3.reader.AutoObjectReaderProvider;
 import com.alibaba.fastjson3.reader.ObjectReaderCreator;
 import com.alibaba.fastjson3.reader.ObjectReaderProvider;
 import com.alibaba.fastjson3.reader.ReaderCreatorType;
+import com.alibaba.fastjson3.reader.ReflectObjectReaderProvider;
 import com.alibaba.fastjson3.writer.ObjectWriterCreator;
 
 import java.io.IOException;
@@ -114,7 +117,8 @@ public final class ObjectMapper {
             null,
             Collections.<Class<?>, Class<?>>emptyMap(),
             false,
-            null);
+            null,
+            com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance());
 
     private final long readFeatures;
     private final long writeFeatures;
@@ -129,6 +133,10 @@ public final class ObjectMapper {
     // ObjectReaderProvider for ASM/Reflection strategy control
     private final ObjectReaderProvider readerProvider;
 
+    // DynamicClassLoader for ASM-generated classes (one per ObjectMapper)
+    // This ensures generated classes can be unloaded when the ObjectMapper is GC'd
+    private final com.alibaba.fastjson3.util.DynamicClassLoader classLoader;
+
     // Filters (empty arrays = no overhead)
     private final PropertyFilter[] propertyFilters;
     private final ValueFilter[] valueFilters;
@@ -141,33 +149,63 @@ public final class ObjectMapper {
     // Optional Jackson annotation support (off by default)
     private final boolean useJacksonAnnotation;
 
+    // Holder for ObjectReader that supports invalidation via cleanup
+    private static final class ReaderHolder {
+        final ObjectReader<?> reader;
+        final int cacheVersion;  // Track which cache generation created this holder
+
+        ReaderHolder(ObjectReader<?> reader, int cacheVersion) {
+            this.reader = reader;
+            this.cacheVersion = cacheVersion;
+        }
+
+        ObjectReader<?> get() {
+            return reader;
+        }
+    }
+
+    // Cache version for cleanup visibility - increments on each cleanup()
+    private final java.util.concurrent.atomic.AtomicInteger cacheVersion = new java.util.concurrent.atomic.AtomicInteger(0);
+
+    // Map of Class -> ReaderHolder (for cleanup visibility - cleared on cleanup())
+    private final ConcurrentHashMap<Class<?>, ReaderHolder> readerHolderMap = new ConcurrentHashMap<>();
+
     // Thread-safe caches for ObjectReader/ObjectWriter instances
     private final ConcurrentHashMap<Type, ObjectReader<?>> readerCache;
     private final ConcurrentHashMap<Type, ObjectWriter<?>> writerCache;
     // Fast Class→Reader cache: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns (fory-style)
-    // All lookups (modules, builtins, basic type check, mixIn, reader creation) done once in computeValue.
-    // Note: readerCache is checked first in getObjectReader() to support runtime registerReader() overrides.
-    private final ClassValue<ObjectReader<?>> readerClassCache = new ClassValue<>() {
+    // Uses ReaderHolder indirection for cleanup visibility.
+    private final ClassValue<ReaderHolder> readerClassCache = new ClassValue<>() {
         @Override
-        protected ObjectReader<?> computeValue(Class<?> type) {
-            // Defensive: check readerCache in case a race condition put a value during compute
+        protected ReaderHolder computeValue(Class<?> type) {
+            // Check readerCache first (may contain post-cleanup recomputed values)
             ObjectReader<?> cached = readerCache.get(type);
             if (cached != null) {
-                return cached;
+                return new ReaderHolder(cached, cacheVersion.get());
+            }
+
+            // Check holder map (fast path for already-created readers)
+            ReaderHolder existing = readerHolderMap.get(type);
+            if (existing != null && existing.cacheVersion == cacheVersion.get()) {
+                return existing;
             }
 
             // Try modules first (user-provided readers)
             for (ObjectReaderModule module : readerModules) {
                 ObjectReader<?> reader = module.getObjectReader(type);
                 if (reader != null) {
-                    return reader;
+                    ReaderHolder holder = new ReaderHolder(reader, cacheVersion.get());
+                    readerHolderMap.put(type, holder);
+                    return holder;
                 }
             }
 
             // Try built-in codecs (Optional, UUID, Duration, etc.)
             ObjectReader<?> reader = BuiltinCodecs.getReader(type);
             if (reader != null) {
-                return reader;
+                ReaderHolder holder = new ReaderHolder(reader, cacheVersion.get());
+                readerHolderMap.put(type, holder);
+                return holder;
             }
 
             // Basic types don't need custom readers
@@ -178,14 +216,21 @@ public final class ObjectMapper {
             // Auto-create POJO reader (ASM or reflection)
             try {
                 if (readerCreator != null) {
-                    return readerCreator.apply(type);
+                    reader = readerCreator.apply(type);
                 } else {
-                    Class<?> mixIn = mixInCache.get(type);
-                    return ObjectReaderCreator.createObjectReader(type, mixIn, useJacksonAnnotation);
+                    // Use readerProvider to get the reader (respects ASM/Reflect strategy)
+                    reader = readerProvider.getObjectReader(type);
+                }
+                if (reader != null) {
+                    ReaderHolder holder = new ReaderHolder(reader, cacheVersion.get());
+                    readerHolderMap.put(type, holder);
+                    return holder;
                 }
             } catch (Exception e) {
-                return null;
+                // Log but don't fail - allow fallback to default handling
+                com.alibaba.fastjson3.util.Logger.warn("Failed to create ObjectReader for " + type.getName() + ": " + e.getMessage());
             }
+            return null;
         }
     };
     // Fast Class→Writer cache: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns (fory-style)
@@ -217,7 +262,8 @@ public final class ObjectMapper {
             com.alibaba.fastjson3.filter.LabelFilter labelFilter,
             Map<Class<?>, Class<?>> mixInCache,
             boolean useJacksonAnnotation,
-            ObjectReaderProvider readerProvider
+            ObjectReaderProvider readerProvider,
+            com.alibaba.fastjson3.util.DynamicClassLoader classLoader
     ) {
         this.readFeatures = readFeatures;
         this.writeFeatures = writeFeatures;
@@ -231,9 +277,32 @@ public final class ObjectMapper {
         this.labelFilter = labelFilter;
         this.mixInCache = mixInCache;
         this.useJacksonAnnotation = useJacksonAnnotation;
-        this.readerProvider = readerProvider != null ? readerProvider : ObjectReaderProvider.defaultProvider();
+        this.classLoader = classLoader != null ? classLoader
+            : new com.alibaba.fastjson3.util.DynamicClassLoader();
+
+        // Create per-instance provider when using custom classLoader for proper cleanup
+        if (readerProvider != null && classLoader != null) {
+            this.readerProvider = createProviderWithClassLoader(readerProvider.getCreatorType(), this.classLoader);
+        } else {
+            this.readerProvider = readerProvider != null ? readerProvider : ObjectReaderProvider.defaultProvider();
+        }
+
         this.readerCache = new ConcurrentHashMap<Type, ObjectReader<?>>();
         this.writerCache = new ConcurrentHashMap<Type, ObjectWriter<?>>();
+    }
+
+    /**
+     * Create a provider instance with a specific classloader.
+     * This ensures generated classes can be unloaded when the ObjectMapper is discarded.
+     */
+    private static ObjectReaderProvider createProviderWithClassLoader(
+            ReaderCreatorType creatorType,
+            com.alibaba.fastjson3.util.DynamicClassLoader classLoader) {
+        return switch (creatorType) {
+            case AUTO -> new AutoObjectReaderProvider(classLoader);
+            case ASM -> new ASMObjectReaderProvider(classLoader);
+            case REFLECT -> new ReflectObjectReaderProvider();
+        };
     }
 
     // ==================== Factory methods ====================
@@ -369,13 +438,14 @@ public final class ObjectMapper {
         b.writerModules.addAll(this.writerModules);
         b.readerCreator = this.readerCreator;
         b.writerCreator = this.writerCreator;
+        b.readerCreatorType = this.readerProvider.getCreatorType();
+        b.classLoader = this.classLoader; // Preserve classLoader for rebuild
         Collections.addAll(b.propertyFilters, this.propertyFilters);
         Collections.addAll(b.valueFilters, this.valueFilters);
         Collections.addAll(b.nameFilters, this.nameFilters);
         b.mixIns.putAll(this.mixInCache);
         b.labelFilter = this.labelFilter;
         b.useJacksonAnnotation = this.useJacksonAnnotation;
-        // Preserve readerProvider via readerCreator
         return b;
     }
 
@@ -1077,6 +1147,10 @@ public final class ObjectMapper {
      * Look up or create an ObjectReader for the given type.
      * Results are cached for reuse. Runtime registration via {@link #registerReader(Type, ObjectReader)}
      * is supported and takes precedence over cached ClassValue entries for Class types.
+     *
+     * <p>This method sets the ObjectReaderProvider context so that nested ObjectReader
+     * creation (within the created reader) will use the same provider strategy.
+     * This ensures ASM/Reflect/Auto strategy is applied consistently to nested types.</p>
      */
     @SuppressWarnings("unchecked")
     public <T> ObjectReader<T> getObjectReader(Type type) {
@@ -1088,10 +1162,100 @@ public final class ObjectMapper {
 
         // Fast path for Class types: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns
         if (type instanceof Class<?> cls) {
-            return (ObjectReader<T>) readerClassCache.get(cls);
+            return getReaderForClass(cls);
         }
         // Slow path for non-Class types (ParameterizedType, GenericArrayType, TypeVariable, WildcardType)
         return getObjectReaderSlow(type);
+    }
+
+    /**
+     * Get ObjectReader for a Class type with version checking and context propagation.
+     */
+    @SuppressWarnings("unchecked")
+    private <T> ObjectReader<T> getReaderForClass(Class<?> cls) {
+        ReaderHolder holder = readerClassCache.get(cls);
+        if (holder == null) {
+            // First-time creation - use context for nested types
+            return readerProvider.withContext(() -> {
+                ReaderHolder h = readerClassCache.get(cls);
+                return h != null ? (ObjectReader<T>) h.get() : (ObjectReader<T>) createAndCacheReader(cls);
+            });
+        }
+
+        // Check if holder is stale (post-cleanup)
+        int currentVersion = cacheVersion.get();
+        if (holder.cacheVersion != currentVersion) {
+            // Try to get fresh holder from holder map
+            ReaderHolder freshHolder = readerHolderMap.get(cls);
+            if (freshHolder != null && freshHolder.cacheVersion == currentVersion) {
+                return (ObjectReader<T>) freshHolder.get();
+            }
+            // Fully recompute with context
+            return readerProvider.withContext(() -> (ObjectReader<T>) recomputeReader(cls));
+        }
+
+        return (ObjectReader<T>) holder.get();
+    }
+
+    /**
+     * Create and cache an ObjectReader for the given type.
+     * Should be called within withContext() to propagate provider strategy.
+     */
+    @SuppressWarnings("unchecked")
+    private <T> ObjectReader<T> createAndCacheReader(Class<?> type) {
+        ObjectReader<?> reader = createReaderInternal(type);
+        if (reader != null) {
+            ReaderHolder holder = new ReaderHolder(reader, cacheVersion.get());
+            readerHolderMap.put(type, holder);
+        }
+        return (ObjectReader<T>) reader;
+    }
+
+    /**
+     * Recompute an ObjectReader when the cached holder is stale (post-cleanup).
+     */
+    @SuppressWarnings("unchecked")
+    private <T> ObjectReader<T> recomputeReader(Class<T> type) {
+        ObjectReader<?> reader = createReaderInternal(type);
+        if (reader != null) {
+            ReaderHolder holder = new ReaderHolder(reader, cacheVersion.get());
+            readerHolderMap.put(type, holder);
+        }
+        return (ObjectReader<T>) reader;
+    }
+
+    /**
+     * Internal method to create an ObjectReader without caching.
+     * Tries modules, built-in codecs, and auto-creation in order.
+     */
+    @SuppressWarnings("unchecked")
+    private ObjectReader<?> createReaderInternal(Type type) {
+        // Try modules first
+        for (ObjectReaderModule module : readerModules) {
+            ObjectReader<?> reader = module.getObjectReader(type);
+            if (reader != null) {
+                return reader;
+            }
+        }
+        // For Class types, try built-in codecs and auto-create
+        if (type instanceof Class<?> clazz) {
+            ObjectReader<?> reader = BuiltinCodecs.getReader(clazz);
+            if (reader != null) {
+                return reader;
+            }
+            // Auto-create
+            try {
+                if (readerCreator != null) {
+                    return readerCreator.apply(clazz);
+                } else {
+                    Class<?> mixIn = mixInCache.get(clazz);
+                    return ObjectReaderCreator.createObjectReader(clazz, mixIn, useJacksonAnnotation);
+                }
+            } catch (Exception e) {
+                // fall through
+            }
+        }
+        return null;
     }
 
     @SuppressWarnings("unchecked")
@@ -1220,6 +1384,47 @@ public final class ObjectMapper {
      */
     public <T> void registerWriter(Type type, ObjectWriter<T> writer) {
         writerCache.put(type, writer);
+    }
+
+    /**
+     * Clean up resources to support ClassLoader unloading.
+     *
+     * <p>Clears all cached ObjectReader and ObjectWriter instances, and signals
+     * the provider to release its resources. Call this method when the mapper
+     * is no longer needed to allow the ClassLoader to be garbage collected.</p>
+     *
+     * <p><strong>Important:</strong> After calling cleanup(), this mapper should
+     * not be used for further operations. Create a new mapper instance instead.</p>
+     *
+     * <p>For the shared mapper ({@link #shared()}), this method is a no-op to
+     * avoid affecting other users of the shared instance.</p>
+     *
+     * <pre>
+     * // In a hot-redeployment environment (e.g., application server)
+     * ObjectMapper mapper = ObjectMapper.builder()
+     *     .readerCreatorType(ReaderCreatorType.ASM)
+     *     .build();
+     * try {
+     *     // ... use mapper ...
+     * } finally {
+     *     mapper.cleanup(); // Release resources for ClassLoader unload
+     * }
+     * </pre>
+     */
+    public void cleanup() {
+        // No-op for shared singleton
+        if (this == SHARED) {
+            return;
+        }
+        // Increment cache version - this invalidates all ReaderHolder instances in ClassValue
+        cacheVersion.incrementAndGet();
+        // Clear holder map - forces recomputation on next access
+        readerHolderMap.clear();
+        // Clear caches
+        readerCache.clear();
+        writerCache.clear();
+        // Provider cleanup (only clears if it's a per-instance provider)
+        readerProvider.cleanup();
     }
 
     // ==================== Feature queries ====================
@@ -1617,6 +1822,9 @@ public final class ObjectMapper {
         final List<ObjectWriterModule> writerModules = new ArrayList<ObjectWriterModule>();
         Function<Class<?>, ObjectReader<?>> readerCreator;
         Function<Class<?>, ObjectWriter<?>> writerCreator;
+        ReaderCreatorType readerCreatorType;
+        ObjectReaderProvider readerProviderInstance;
+        com.alibaba.fastjson3.util.DynamicClassLoader classLoader;
         final List<PropertyFilter> propertyFilters = new ArrayList<PropertyFilter>();
         final List<ValueFilter> valueFilters = new ArrayList<ValueFilter>();
         final List<NameFilter> nameFilters = new ArrayList<NameFilter>();
@@ -1706,7 +1914,8 @@ public final class ObjectMapper {
          * @return this builder
          */
         public Builder readerCreatorType(ReaderCreatorType type) {
-            this.readerCreator = ObjectReaderProvider.of(type)::getObjectReader;
+            this.readerCreatorType = type;
+            this.readerCreator = null; // Will be set in build()
             return this;
         }
 
@@ -1717,7 +1926,9 @@ public final class ObjectMapper {
          * @return this builder
          */
         public Builder readerProvider(ObjectReaderProvider provider) {
-            this.readerCreator = provider::getObjectReader;
+            this.readerProviderInstance = provider;
+            this.readerCreatorType = provider != null ? provider.getCreatorType() : null;
+            this.readerCreator = provider != null ? provider::getObjectReader : null;
             return this;
         }
 
@@ -1820,6 +2031,19 @@ public final class ObjectMapper {
          * Build an immutable ObjectMapper from the current configuration.
          */
         public ObjectMapper build() {
+            // Create per-ObjectMapper DynamicClassLoader for proper cleanup
+            com.alibaba.fastjson3.util.DynamicClassLoader loader = this.classLoader;
+            if (loader == null) {
+                loader = new com.alibaba.fastjson3.util.DynamicClassLoader();
+            }
+
+            // Determine the reader provider
+            ObjectReaderProvider provider = readerProviderInstance;
+            if (provider == null && readerCreatorType != null) {
+                // Create per-instance provider with custom classLoader
+                provider = createProviderWithClassLoader(readerCreatorType, loader);
+            }
+
             ObjectMapper mapper = new ObjectMapper(
                     readFeatures,
                     writeFeatures,
@@ -1833,7 +2057,8 @@ public final class ObjectMapper {
                     labelFilter,
                     Collections.unmodifiableMap(new LinkedHashMap<Class<?>, Class<?>>(mixIns)),
                     useJacksonAnnotation,
-                    null // readerProvider derived from readerCreator
+                    provider,
+                    loader
             );
             // Initialize modules
             for (ObjectReaderModule module : mapper.readerModules) {
