@@ -25,6 +25,7 @@
             <groupId>com.alibaba.fastjson3</groupId>
             <artifactId>fastjson3</artifactId>
             <version>${project.version}</version>
+            <classifier>android</classifier>
             <scope>test</scope>
         </dependency>
         <dependency>
