@@ -7,6 +7,7 @@ import com.alibaba.fastjson3.util.Logger;
  * ObjectReaderProvider that prefers ASM bytecode generation.
  * Will recursively generate ASM readers for nested types when possible.
  */
+@com.alibaba.fastjson3.annotation.JVMOnly
 public final class ASMObjectReaderProvider extends AbstractObjectReaderProvider {
 
     public static final ASMObjectReaderProvider INSTANCE = new ASMObjectReaderProvider();

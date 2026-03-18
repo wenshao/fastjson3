@@ -10,6 +10,7 @@ import com.alibaba.fastjson3.util.Logger;
  * <p>Decision logic:</p>
  * <ul>
  *   <li>Native-image: always use reflection</li>
+ *   <li>Android: always use reflection (no ASM support)</li>
  *   <li>Simple POJOs (public, concrete, no schema): try ASM first, fallback to reflection</li>
  *   <li>Complex types (records, sealed classes): use reflection</li>
  * </ul>
@@ -17,6 +18,30 @@ import com.alibaba.fastjson3.util.Logger;
 public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider {
 
     private static final Logger.CategoryLogger LOG = Logger.category("AutoProvider");
+
+    // Check if ASM is available at runtime
+    private static final boolean ASM_AVAILABLE;
+    static {
+        boolean available;
+        try {
+            // Check if ObjectReaderCreatorASM class exists
+            Class.forName("com.alibaba.fastjson3.reader.ObjectReaderCreatorASM");
+            // Check if we're not on Android (Android has ANDROID=true in JDKUtils)
+            // Use reflection to check ANDROID field to avoid compile error on non-Android builds
+            try {
+                java.lang.reflect.Field androidField = JDKUtils.class.getField("ANDROID");
+                boolean isAndroid = androidField.getBoolean(null);
+                available = !isAndroid;
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                // ANDROID field not present (non-Android build), ASM is available
+                available = true;
+            }
+        } catch (ClassNotFoundException e) {
+            // ObjectReaderCreatorASM not available (Android build or stripped)
+            available = false;
+        }
+        ASM_AVAILABLE = available && !JDKUtils.NATIVE_IMAGE;
+    }
 
     public static final AutoObjectReaderProvider INSTANCE = new AutoObjectReaderProvider();
 
@@ -41,13 +66,8 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
 
     @Override
     protected ObjectReader<?> createReader(Class<?> type) {
-        // Native-image doesn't support runtime bytecode generation
-        if (JDKUtils.NATIVE_IMAGE) {
-            return ObjectReaderCreator.createObjectReader(type);
-        }
-
-        // For simple POJOs, try ASM first
-        if (isSimplePOJO(type)) {
+        // For simple POJOs, try ASM first (if available)
+        if (ASM_AVAILABLE && isSimplePOJO(type)) {
             try {
                 return ObjectReaderCreatorASM.createObjectReader(type);
             } catch (Throwable e) {
