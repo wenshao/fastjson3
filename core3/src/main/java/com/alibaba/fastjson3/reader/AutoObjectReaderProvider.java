@@ -26,16 +26,9 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
         try {
             // Check if ObjectReaderCreatorASM class exists
             Class.forName("com.alibaba.fastjson3.reader.ObjectReaderCreatorASM");
-            // Check if we're not on Android (Android has ANDROID=true in JDKUtils)
-            // Use reflection to check ANDROID field to avoid compile error on non-Android builds
-            try {
-                java.lang.reflect.Field androidField = JDKUtils.class.getField("ANDROID");
-                boolean isAndroid = androidField.getBoolean(null);
-                available = !isAndroid;
-            } catch (NoSuchFieldException | IllegalAccessException e) {
-                // ANDROID field not present (non-Android build), ASM is available
-                available = true;
-            }
+            // On non-Android builds, JDKUtils doesn't have ANDROID field
+            // Assume available if ObjectReaderCreatorASM exists
+            available = true;
         } catch (ClassNotFoundException e) {
             // ObjectReaderCreatorASM not available (Android build or stripped)
             available = false;
