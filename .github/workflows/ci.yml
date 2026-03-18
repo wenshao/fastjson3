@@ -151,7 +151,7 @@ jobs:
           echo "Android JAR verification passed!"
 
       - name: Run Android tests
-        run: mvn -B test -pl core3-android-test
+        run: mvn -B test -pl core3-android-test -DargLine="--add-opens=java.base/java.time=ALL-UNNAMED"
 
       - name: Upload test reports
         if: failure()
