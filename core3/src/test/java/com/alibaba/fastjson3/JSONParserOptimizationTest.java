@@ -268,4 +268,29 @@ class JSONParserOptimizationTest {
         assertEquals(42, obj.getIntValue("y"));
         assertEquals(2147483648L, obj.getLongValue("x"));
     }
+
+    @Test
+    void testParseIntOverflowWithRemainingDigits() {
+        // Test the specific fallback path: when overflow check breaks the loop
+        // but there are still remaining digits to consume.
+        // Number 21474836471: parsing stops at "2147483647" due to overflow check,
+        // then falls back to readNumber() to consume the remaining "1".
+        byte[] jsonBytes = "{\"x\":21474836471}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        JSONParser parser = JSONParser.of(jsonBytes);
+        JSONObject obj = parser.readObject();
+        // Should parse as long, correctly consuming all digits
+        assertEquals(21474836471L, obj.getLongValue("x"));
+    }
+
+    @Test
+    void testParseIntNegativeOverflowWithRemainingDigits() {
+        // Test negative number overflow with remaining digits.
+        // MIN_VALUE - 1 = -2147483649, when parsing "-2147483649" the overflow
+        // check breaks at "2147483648" (8 > 8 is false for negative, but next digit 9)
+        byte[] jsonBytes = "{\"x\":-21474836491}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        JSONParser parser = JSONParser.of(jsonBytes);
+        JSONObject obj = parser.readObject();
+        // Should parse as long, correctly consuming all digits
+        assertEquals(-21474836491L, obj.getLongValue("x"));
+    }
 }

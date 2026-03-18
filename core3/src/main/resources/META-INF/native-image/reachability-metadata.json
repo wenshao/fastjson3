@@ -1,0 +1,51 @@
+{
+  "reflection": [
+    {
+      "type": "com.alibaba.fastjson3.NativeImageTest$User",
+      "unsafeAllocated": true,
+      "fields": [
+        {
+          "name": "age"
+        },
+        {
+          "name": "name"
+        }
+      ]
+    },
+    {
+      "type": "com.alibaba.fastjson3.util.BufferPool$CacheItem"
+    },
+    {
+      "type": "com.alibaba.fastjson3.writer.gen.OW_User_0",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "com.google.common.collect.ImmutableList"
+    },
+    {
+      "type": "java.lang.String",
+      "unsafeAllocated": true,
+      "fields": [
+        {
+          "name": "coder"
+        },
+        {
+          "name": "value"
+        }
+      ]
+    },
+    {
+      "type": "sun.misc.Unsafe",
+      "fields": [
+        {
+          "name": "theUnsafe"
+        }
+      ]
+    }
+  ]
+}

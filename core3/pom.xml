@@ -118,20 +118,52 @@
                     <plugin>
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
+                            <!-- Merge core3 + core3-android sources -->
+                            <execution>
+                                <id>merge-sources</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <echo>Merging core3 and core3-android sources...</echo>
+                                        <copy todir="${project.build.directory}/android-sources">
+                                            <fileset dir="${project.basedir}/src/main/java" excludes="module-info.java"/>
+                                        </copy>
+                                        <copy todir="${project.build.directory}/android-sources" overwrite="true">
+                                            <fileset dir="${project.basedir}/../core3-android/src/main/java"/>
+                                        </copy>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <!-- Strip @JVMOnly classes from output -->
                             <execution>
                                 <id>strip-jvmonly</id>
                                 <phase>prepare-package</phase>
                                 <goals><goal>run</goal></goals>
                                 <configuration>
                                     <target>
-                                        <exec executable="bash" failonerror="true">
+                                        <echo>Removing @JVMOnly classes...</echo>
+                                        <exec executable="bash" failonerror="false">
                                             <arg value="-c"/>
-                                            <arg value="cd '${project.build.outputDirectory}' &amp;&amp; grep -rl 'JVMOnly' '${project.basedir}/src/main/java' --include='*.java' | grep -v 'JVMOnly.java' | sed 's|.*/src/main/java/||; s|\.java$||' | while read cls; do rm -f &quot;$cls.class&quot; &quot;$cls\$*.class&quot;; done; rm -f module-info.class"/>
+                                            <arg value="cd '${project.build.outputDirectory}' &amp;&amp; find . -type f -name '*.class' | while read classfile; do classname=$(echo &quot;$classfile&quot; | sed 's|^\./||; s|\.class$||; s|/|.|g'); javafile=&quot;${project.basedir}/src/main/java/$(echo &quot;$classname&quot; | tr '.' '/').java&quot;; if [ -f &quot;$javafile&quot; ] &amp;&amp; grep -qE 'JVMOnly' &quot;$javafile&quot;; then rm -f &quot;$classfile&quot;; dir=$(dirname &quot;$classfile&quot;); base=$(basename &quot;$classfile&quot; .class); find &quot;$dir&quot; -name &quot;${base}\$*.class&quot; -delete 2>/dev/null || true; fi; done"/>
                                         </exec>
                                     </target>
                                 </configuration>
                             </execution>
                         </executions>
+                    </plugin>
+                    <!-- Use only merged sources for compilation -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <compileSourceRoots>${project.build.directory}/android-sources</compileSourceRoots>
+                            <compilerArgs></compilerArgs>
+                            <source>17</source>
+                            <target>17</target>
+                        </configuration>
                     </plugin>
                     <plugin>
                         <artifactId>maven-jar-plugin</artifactId>

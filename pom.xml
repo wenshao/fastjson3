@@ -35,6 +35,7 @@
 
     <modules>
         <module>core3</module>
+        <module>core3-android-test</module>
     </modules>
 
     <build>

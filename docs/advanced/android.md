@@ -50,9 +50,10 @@ dependencies {
 
 | 特性 | 普通 JAR | Android JAR |
 |------|----------|------------|
-| 文件大小 | ~172KB | ~111KB (-35%) |
-| 类数量 | 62 类 | 45 类 |
+| 文件大小 | ~400KB | ~340KB (-15%) |
+| 类数量 | 148 类 | 128 类 |
 | ASM 支持 | ✅ | ❌ |
+| Vector API | ✅ | ❌ |
 | 反射支持 | ✅ | ✅ |
 | Unsafe 支持 | ✅ | ✅ |
 | 性能 | 更高 (ASM) | 稍低 (反射) |
@@ -66,7 +67,55 @@ Android JAR 移除了以下 JVM 专用的组件：
 - `ObjectWriterCreatorASM` - ASM 写入器创建
 - `DynamicClassLoader` - 动态类加载
 
-这些类标记为 `@JVMOnly`，Android 构建会自动排除。
+这些类标记为 `@JVMOnly` 注解，Android 构建会自动排除。
+
+### 替换的组件
+
+以下组件在 Android JAR 中使用优化实现：
+
+- `JDKUtils` - Android 特定实现，禁用 Vector API 和快速字符串创建
+
+---
+
+## 构建机制
+
+### @JVMOnly 注解
+
+fastjson3 使用 `@JVMOnly` 注解标记需要在 Android 构建中排除的类：
+
+```java
+@com.alibaba.fastjson3.annotation.JVMOnly
+public final class ASMUtils {
+    // 这个类不会包含在 Android JAR 中
+}
+```
+
+### @AndroidNative 注解
+
+`@AndroidNative` 注解标记在 Android 上需要不同实现的类：
+
+```java
+@AndroidNative("Android version in core3-android module")
+public final class JDKUtils {
+    // 这个类会被 core3-android 中的实现替换
+}
+```
+
+### 构建流程
+
+```bash
+# 构建 Android JAR
+mvn clean package -Pandroid -pl core3
+
+# 构建产物
+# core3/target/fastjson3-3.0.0-SNAPSHOT-android.jar
+```
+
+构建过程：
+1. 合并 `core3/src/main/java` 和 `core3-android/src/main/java` 源码
+2. `@AndroidNative` 标记的类被 Android 版本覆盖
+3. `@JVMOnly` 标记的类及其内部类从编译输出中删除
+4. 生成带有 `android` classifier 的 JAR
 
 ---
 
@@ -413,3 +462,4 @@ public class JsonTest {
 - [GraalVM 配置 →](graalvm.md)
 - [📖 性能调优 →](../guides/performance.md)
 - [📖 POJO 序列化 →](../guides/pojo.md)
+- [📖 注解说明 →](../api/annotations.md)
