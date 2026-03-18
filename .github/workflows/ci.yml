@@ -87,7 +87,7 @@ jobs:
           cache: 'maven'
 
       - name: Build Android JAR
-        run: mvn -B package -Pandroid -pl core3 -am -DskipTests
+        run: mvn -B install -Pandroid -pl core3 -am -DskipTests
 
       - name: Verify Android JAR
         run: |
@@ -161,6 +161,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
           cache: 'maven'
+
+      - name: Build Android JAR
+        run: mvn -B install -Pandroid -pl core3 -am -DskipTests
 
       - name: Run tests on Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
