@@ -34,8 +34,6 @@ jobs:
         os: [ ubuntu-latest ]
         include:
           - java: '21'
-            os: macos-latest
-          - java: '21'
             os: windows-latest
 
     steps:
