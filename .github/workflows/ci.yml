@@ -161,7 +161,7 @@ jobs:
 
   android-test-full:
     name: Android Test (Emulator)
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     if: (github.event_name == 'workflow_dispatch') || (github.event_name == 'schedule' && github.ref == 'refs/heads/main')
     timeout-minutes: 45
     steps:
