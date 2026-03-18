@@ -288,10 +288,8 @@ public final class ObjectMapper {
             this.readerProvider = readerProvider;
         } else if (classLoader != null) {
             // No custom provider, but classLoader is specified - create classLoader-specific provider
-            // This only happens when readerCreatorType was specified but not readerProvider
-            this.readerProvider = createProviderWithClassLoader(
-                readerCreator != null ? ReaderCreatorType.AUTO : ReaderCreatorType.AUTO,
-                this.classLoader);
+            // This only happens when neither readerCreatorType nor readerProvider was specified
+            this.readerProvider = createProviderWithClassLoader(ReaderCreatorType.AUTO, this.classLoader);
         } else {
             // No custom provider, no classLoader - use default
             this.readerProvider = ObjectReaderProvider.defaultProvider();
