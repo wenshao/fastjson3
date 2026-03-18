@@ -67,6 +67,102 @@ sealed JSONGenerator
 
 ---
 
+## ObjectReaderProvider 机制
+
+### 设计目标
+
+在 ObjectMapper 层面配置 ASM/Reflection 策略，确保嵌套 POJO 使用相同的策略。
+
+### 架构
+
+```
+                    ObjectReaderProvider (interface)
+                            │
+        ┌───────────────────┼───────────────────┐
+        │                   │                   │
+  AutoObjectReaderProvider  │   ASMObjectReaderProvider
+    (自动选择 ASM/反射)      │      (强制 ASM)
+                            │
+                   ReflectObjectReaderProvider
+                      (仅反射)
+
+                    ↑ 继承自
+    AbstractObjectReaderProvider (基类)
+    ├─ readerCache (ConcurrentHashMap)
+    ├─ classLoader (DynamicClassLoader)
+    ├─ shared (boolean)
+    └─ cleanup() 方法
+```
+
+### ThreadLocal 上下文传播
+
+```
+ThreadA                               ThreadB
+    │                                     │
+    │ context = provider.openContext()    │
+    │ ┌─ ThreadLocal.set(provider) ───────┼──┐
+    │ │                                   │  │
+    │ │ createObjectReader(User)          │  │
+    │ │   └─ CONTEXT.get() ───────────────┼──┼───→ ASM
+    │ │                                   │  │
+    │ │   createObjectReader(Client)      │  │
+    │ │     └─ CONTEXT.get() ─────────────┼──┼───→ ASM
+    │ │                                   │  │
+    │ │ context.close()                   │  │
+    │ └─ ThreadLocal.remove() ────────────┼──┘
+    │                                     │
+```
+
+### SafeContext RAII 模式
+
+```java
+// 自动清理，避免 ThreadLocal 内存泄漏
+try (SafeContext ctx = provider.openContext()) {
+    // 嵌套类型创建，自动使用父级策略
+    User user = mapper.readValue(json, User.class);
+    // Client 和 Geo 也使用 ASM
+}
+```
+
+### ReaderCreatorType 枚举
+
+| 策略 | 说明 |
+|------|------|
+| AUTO | 自动选择：简单 POJO 用 ASM，复杂类型用反射 |
+| ASM | 强制 ASM，递归应用到嵌套类型 |
+| REFLECT | 仅反射，无字节码生成 |
+
+### 配置方式
+
+```java
+// ObjectMapper 层面配置
+ObjectMapper asmMapper = ObjectMapper.builder()
+    .readerCreatorType(ReaderCreatorType.ASM)
+    .build();
+
+// 所有嵌套类型都使用 ASM
+User user = asmMapper.readValue(json, User.class);
+// User.client → ASM
+// User.client.geo → ASM
+```
+
+### ClassLoader 卸载支持
+
+```
+ObjectMapper (per-instance)
+    │
+    ├─ DynamicClassLoader (one per ObjectMapper)
+    │   ├─ WeakReference<Class<?>>
+    │   └─ ReferenceQueue (自动清理)
+    │
+    └─ cleanup() 方法
+        ├─ cacheVersion.incrementAndGet()
+        ├─ readerCache.clear()
+        └─ readerProvider.cleanup()
+```
+
+---
+
 ## Creator SPI
 
 ### 设计
@@ -267,6 +363,12 @@ core3/src/main/java/com/alibaba/fastjson3/
 ├── reader/
 │   ├── FieldReader.java           # type tag dispatch
 │   ├── FieldNameMatcher.java      # byte + hash 双策略
+│   ├── ObjectReaderProvider.java        # Reader 创建策略接口
+│   ├── AbstractObjectReaderProvider.java  # Provider 基类
+│   ├── AutoObjectReaderProvider.java     # 自动 ASM/反射选择
+│   ├── ASMObjectReaderProvider.java      # 强制 ASM 策略
+│   ├── ReflectObjectReaderProvider.java  # 仅反射策略
+│   ├── ReaderCreatorType.java           # 策略枚举 (AUTO/ASM/REFLECT)
 │   ├── ObjectReaderCreator.java
 │   └── ObjectReaderCreatorASM.java
 ├── writer/
@@ -290,7 +392,8 @@ core3/src/main/java/com/alibaba/fastjson3/
 │   ├── JDKUtils.java              # Unsafe + 平台检测
 │   ├── UnsafeAllocator.java
 │   ├── BufferPool.java
-│   ├── DynamicClassLoader.java
+│   ├── DynamicClassLoader.java    # ASM 类加载器，支持卸载
+│   ├── Logger.java                # 内部诊断日志
 │   └── VectorizedScanner.java
 └── internal/
     └── asm/                        # @JVMOnly ASM 库
