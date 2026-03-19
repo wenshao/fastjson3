@@ -667,8 +667,6 @@ public final class ObjectReaderCreator {
                 if (fieldReadersResolved) {
                     return;
                 }
-                // Check if there's a provider context from the parent ObjectMapper
-                ObjectReaderProvider contextProvider = ObjectReaderProvider.getContext();
                 int len = fieldReaders.length;
                 ObjectReader<?>[] objReaders = new ObjectReader<?>[len];
                 ObjectReader<?>[] elemReaders = new ObjectReader<?>[len];
@@ -690,17 +688,12 @@ public final class ObjectReaderCreator {
                         objReaders[i] = null;
                     } else if (fr.typeTag == FieldReader.TAG_GENERIC) {
                         // For POJO fields (not basic types), get ObjectReader
-                        ObjectReader<?> r;
-                        if (contextProvider != null) {
-                            r = contextProvider.getObjectReader(fc);
-                        } else {
-                            // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
-                            r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fc);
-                            if (r == null) {
-                                // Skip interfaces and abstract classes - they don't have constructors
-                                if (!fc.isInterface() && !java.lang.reflect.Modifier.isAbstract(fc.getModifiers())) {
-                                    r = createObjectReader(fc);
-                                }
+                        // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
+                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fc);
+                        if (r == null) {
+                            // Skip interfaces and abstract classes - they don't have constructors
+                            if (!fc.isInterface() && !java.lang.reflect.Modifier.isAbstract(fc.getModifiers())) {
+                                r = createObjectReader(fc);
                             }
                         }
                         if (r != null) {
@@ -709,16 +702,11 @@ public final class ObjectReaderCreator {
                     }
                     // For List fields, get element ObjectReader
                     if (fr.elementClass != null && fr.elementClass != String.class) {
-                        ObjectReader<?> r;
-                        if (contextProvider != null) {
-                            r = contextProvider.getObjectReader(fr.elementClass);
-                        } else {
-                            r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.elementClass);
-                            if (r == null) {
-                                // Skip interfaces and abstract classes - they don't have constructors
-                                if (!fr.elementClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.elementClass.getModifiers())) {
-                                    r = createObjectReader(fr.elementClass);
-                                }
+                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.elementClass);
+                        if (r == null) {
+                            // Skip interfaces and abstract classes - they don't have constructors
+                            if (!fr.elementClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.elementClass.getModifiers())) {
+                                r = createObjectReader(fr.elementClass);
                             }
                         }
                         if (r != null) {
@@ -1528,8 +1516,6 @@ public final class ObjectReaderCreator {
                 if (fieldReadersResolved) {
                     return;
                 }
-                // Check if there's a provider context from the parent ObjectMapper
-                ObjectReaderProvider contextProvider = ObjectReaderProvider.getContext();
                 int len = fieldReaders.length;
                 ObjectReader<?>[] objReaders = new ObjectReader<?>[len];
                 ObjectReader<?>[] elemReaders = new ObjectReader<?>[len];
@@ -1540,17 +1526,12 @@ public final class ObjectReaderCreator {
                         // objReaders[i] remains null, will fall through to convertValue path
                     } else if (fr.typeTag == FieldReader.TAG_GENERIC) {
                         // For POJO fields (not basic types), get ObjectReader
-                        ObjectReader<?> r;
-                        if (contextProvider != null) {
-                            r = contextProvider.getObjectReader(fr.fieldClass);
-                        } else {
-                            // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
-                            r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.fieldClass);
-                            if (r == null) {
-                                // Skip interfaces and abstract classes - they don't have constructors
-                                if (!fr.fieldClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.fieldClass.getModifiers())) {
-                                    r = createObjectReader(fr.fieldClass);
-                                }
+                        // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
+                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.fieldClass);
+                        if (r == null) {
+                            // Skip interfaces and abstract classes - they don't have constructors
+                            if (!fr.fieldClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.fieldClass.getModifiers())) {
+                                r = createObjectReader(fr.fieldClass);
                             }
                         }
                         if (r != null) {
@@ -1559,16 +1540,11 @@ public final class ObjectReaderCreator {
                         }
                     }
                     if (fr.elementClass != null && fr.elementClass != String.class) {
-                        ObjectReader<?> r;
-                        if (contextProvider != null) {
-                            r = contextProvider.getObjectReader(fr.elementClass);
-                        } else {
-                            r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.elementClass);
-                            if (r == null) {
-                                // Skip interfaces and abstract classes - they don't have constructors
-                                if (!fr.elementClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.elementClass.getModifiers())) {
-                                    r = createObjectReader(fr.elementClass);
-                                }
+                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.elementClass);
+                        if (r == null) {
+                            // Skip interfaces and abstract classes - they don't have constructors
+                            if (!fr.elementClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.elementClass.getModifiers())) {
+                                r = createObjectReader(fr.elementClass);
                             }
                         }
                         if (r != null) {
