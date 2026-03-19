@@ -92,7 +92,19 @@ public final class ObjectWriterCreatorASM {
             return ObjectWriterCreator.createObjectWriter(beanType);
         }
 
-        // 2. Generate bytecode
+        // 2. Check for boxed primitive fields - these need null handling logic
+        // which is complex in ASM. Fall back to reflection for such types.
+        for (FieldWriterInfo fi : fields) {
+            if (fi.fieldClass == Integer.class || fi.fieldClass == Long.class ||
+                fi.fieldClass == Double.class || fi.fieldClass == Float.class ||
+                fi.fieldClass == Boolean.class || fi.fieldClass == Byte.class ||
+                fi.fieldClass == Short.class || fi.fieldClass == Character.class) {
+                // Has boxed primitive field - use reflection for proper null handling
+                return ObjectWriterCreator.createObjectWriter(beanType);
+            }
+        }
+
+        // 3. Generate bytecode
         String beanInternalName = beanType.getName().replace('.', '/');
         String className = "com.alibaba.fastjson3.writer.gen.OW_"
                 + beanType.getSimpleName() + "_" + SEED.getAndIncrement();
@@ -249,147 +261,267 @@ public final class ObjectWriterCreatorASM {
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        // generator.writeNameInt32(nl, nn, nb, nc, bean.field)
-        mw.aload(1); // generator
-        loadNameFields(mw, classInternalName, namePrefix);
-        mw.aload(7); // bean
+        boolean isBoxed = (fi.fieldClass == Integer.class);
 
-        if (fi.field != null && fi.fieldClass == int.class) {
-            mw.getfield(beanInternalName, fi.field.getName(), "I");
-        } else if (fi.getter != null) {
-            mw.invokevirtual(beanInternalName, fi.getter.getName(),
-                    "()" + getDescriptor(fi.fieldClass));
-            if (fi.fieldClass == Integer.class) {
-                mw.invokevirtual("java/lang/Integer", "intValue", "()I");
+        if (isBoxed) {
+            // Boxed type: need null check
+            // Load value to local var 8
+            mw.aload(7); // bean
+            if (fi.field != null) {
+                mw.getfield(beanInternalName, fi.field.getName(), "Ljava/lang/Integer;");
+            } else if (fi.getter != null) {
+                mw.invokevirtual(beanInternalName, fi.getter.getName(), "()Ljava/lang/Integer;");
+            } else {
+                throw new JSONException("no field or getter for int property: " + fi.jsonName);
             }
-        } else if (fi.field != null) {
-            // Boxed type field (e.g., Integer): getfield returns object, need unbox
-            mw.getfield(beanInternalName, fi.field.getName(), getDescriptor(fi.fieldClass));
-            if (fi.fieldClass == Integer.class) {
-                mw.invokevirtual("java/lang/Integer", "intValue", "()I");
-            }
+            mw.astore(8); // local 8 = Integer value
+
+            // if (value == null) skip
+            Label notNull = new Label();
+            mw.aload(8);
+            mw.ifnonnull(notNull);
+            Label end = new Label();
+            mw.goto_(end);
+
+            mw.visitLabel(notNull);
+            // generator.writeNameInt32(nl, nn, nb, nc, value.intValue())
+            mw.aload(1); // generator
+            loadNameFields(mw, classInternalName, namePrefix);
+            mw.aload(8);
+            mw.invokevirtual("java/lang/Integer", "intValue", "()I");
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt32", "([JI[B[CI)V");
+
+            mw.visitLabel(end);
         } else {
-            throw new JSONException("no field or getter for int property: " + fi.jsonName);
-        }
+            // Primitive int: direct write
+            mw.aload(1); // generator
+            loadNameFields(mw, classInternalName, namePrefix);
+            mw.aload(7); // bean
 
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt32",
-                "([JI[B[CI)V");
+            if (fi.field != null && fi.fieldClass == int.class) {
+                mw.getfield(beanInternalName, fi.field.getName(), "I");
+            } else if (fi.getter != null) {
+                mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                        "()" + getDescriptor(fi.fieldClass));
+            } else {
+                throw new JSONException("no field or getter for int property: " + fi.jsonName);
+            }
+
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt32",
+                    "([JI[B[CI)V");
+        }
     }
 
     private static void generateWriteLong(
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        // generator.writeNameInt64(nl, nn, nb, nc, bean.field)
-        mw.aload(1);
-        loadNameFields(mw, classInternalName, namePrefix);
-        mw.aload(7); // bean
-        if (fi.field != null && fi.fieldClass == long.class) {
-            mw.getfield(beanInternalName, fi.field.getName(), "J");
-        } else if (fi.getter != null) {
-            mw.invokevirtual(beanInternalName, fi.getter.getName(),
-                    "()" + getDescriptor(fi.fieldClass));
-            if (fi.fieldClass == Long.class) {
-                mw.invokevirtual("java/lang/Long", "longValue", "()J");
+        boolean isBoxed = (fi.fieldClass == Long.class);
+
+        if (isBoxed) {
+            // Boxed type: need null check
+            mw.aload(7); // bean
+            if (fi.field != null) {
+                mw.getfield(beanInternalName, fi.field.getName(), "Ljava/lang/Long;");
+            } else if (fi.getter != null) {
+                mw.invokevirtual(beanInternalName, fi.getter.getName(), "()Ljava/lang/Long;");
+            } else {
+                throw new JSONException("no field or getter for long property: " + fi.jsonName);
             }
-        } else if (fi.field != null) {
-            mw.getfield(beanInternalName, fi.field.getName(), getDescriptor(fi.fieldClass));
-            if (fi.fieldClass == Long.class) {
-                mw.invokevirtual("java/lang/Long", "longValue", "()J");
-            }
+            mw.astore(8); // local 8 = Long value
+
+            // if (value == null) skip
+            Label notNull = new Label();
+            mw.aload(8);
+            mw.ifnonnull(notNull);
+            Label end = new Label();
+            mw.goto_(end);
+
+            mw.visitLabel(notNull);
+            mw.aload(1); // generator
+            loadNameFields(mw, classInternalName, namePrefix);
+            mw.aload(8);
+            mw.invokevirtual("java/lang/Long", "longValue", "()J");
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt64", "([JI[B[CJ)V");
+
+            mw.visitLabel(end);
         } else {
-            throw new JSONException("no field or getter for long property: " + fi.jsonName);
+            // Primitive long: direct write
+            mw.aload(1);
+            loadNameFields(mw, classInternalName, namePrefix);
+            mw.aload(7); // bean
+            if (fi.field != null && fi.fieldClass == long.class) {
+                mw.getfield(beanInternalName, fi.field.getName(), "J");
+            } else if (fi.getter != null) {
+                mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                        "()" + getDescriptor(fi.fieldClass));
+            } else {
+                throw new JSONException("no field or getter for long property: " + fi.jsonName);
+            }
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt64",
+                    "([JI[B[CJ)V");
         }
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt64",
-                "([JI[B[CJ)V");
     }
 
     private static void generateWriteDouble(
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        mw.aload(1);
-        loadNameFields(mw, classInternalName, namePrefix);
-        mw.aload(7);
+        boolean isBoxed = (fi.fieldClass == Double.class);
 
-        if (fi.field != null && fi.fieldClass == double.class) {
-            mw.getfield(beanInternalName, fi.field.getName(), "D");
-        } else if (fi.getter != null) {
-            mw.invokevirtual(beanInternalName, fi.getter.getName(),
-                    "()" + getDescriptor(fi.fieldClass));
-            if (fi.fieldClass == Double.class) {
-                mw.invokevirtual("java/lang/Double", "doubleValue", "()D");
+        if (isBoxed) {
+            // Boxed type: need null check
+            mw.aload(7); // bean
+            if (fi.field != null) {
+                mw.getfield(beanInternalName, fi.field.getName(), "Ljava/lang/Double;");
+            } else if (fi.getter != null) {
+                mw.invokevirtual(beanInternalName, fi.getter.getName(), "()Ljava/lang/Double;");
+            } else {
+                throw new JSONException("no field or getter for double property: " + fi.jsonName);
             }
-        } else if (fi.field != null) {
-            mw.getfield(beanInternalName, fi.field.getName(), getDescriptor(fi.fieldClass));
-            if (fi.fieldClass == Double.class) {
-                mw.invokevirtual("java/lang/Double", "doubleValue", "()D");
-            }
+            mw.astore(8); // local 8 = Double value
+
+            // if (value == null) skip
+            Label notNull = new Label();
+            mw.aload(8);
+            mw.ifnonnull(notNull);
+            Label end = new Label();
+            mw.goto_(end);
+
+            mw.visitLabel(notNull);
+            mw.aload(1); // generator
+            loadNameFields(mw, classInternalName, namePrefix);
+            mw.aload(8);
+            mw.invokevirtual("java/lang/Double", "doubleValue", "()D");
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameDouble", "([JI[B[CD)V");
+
+            mw.visitLabel(end);
         } else {
-            throw new JSONException("no field or getter for double property: " + fi.jsonName);
-        }
+            // Primitive double: direct write
+            mw.aload(1);
+            loadNameFields(mw, classInternalName, namePrefix);
+            mw.aload(7);
 
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameDouble",
-                "([JI[B[CD)V");
+            if (fi.field != null && fi.fieldClass == double.class) {
+                mw.getfield(beanInternalName, fi.field.getName(), "D");
+            } else if (fi.getter != null) {
+                mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                        "()" + getDescriptor(fi.fieldClass));
+            } else {
+                throw new JSONException("no field or getter for double property: " + fi.jsonName);
+            }
+
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameDouble",
+                    "([JI[B[CD)V");
+        }
     }
 
     private static void generateWriteFloat(
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        mw.aload(1);
-        loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
-                "([JI[C[B)V");
+        boolean isBoxed = (fi.fieldClass == Float.class);
 
-        mw.aload(1);
-        mw.aload(7);
-        if (fi.field != null && fi.fieldClass == float.class) {
-            mw.getfield(beanInternalName, fi.field.getName(), "F");
-        } else if (fi.getter != null) {
-            mw.invokevirtual(beanInternalName, fi.getter.getName(),
-                    "()" + getDescriptor(fi.fieldClass));
-            if (fi.fieldClass == Float.class) {
-                mw.invokevirtual("java/lang/Float", "floatValue", "()F");
+        if (isBoxed) {
+            // Boxed type: need null check
+            mw.aload(7); // bean
+            if (fi.field != null) {
+                mw.getfield(beanInternalName, fi.field.getName(), "Ljava/lang/Float;");
+            } else if (fi.getter != null) {
+                mw.invokevirtual(beanInternalName, fi.getter.getName(), "()Ljava/lang/Float;");
+            } else {
+                throw new JSONException("no field or getter for float property: " + fi.jsonName);
             }
-        } else if (fi.field != null) {
-            mw.getfield(beanInternalName, fi.field.getName(), getDescriptor(fi.fieldClass));
-            if (fi.fieldClass == Float.class) {
-                mw.invokevirtual("java/lang/Float", "floatValue", "()F");
-            }
+            mw.astore(8); // local 8 = Float value
+
+            // if (value == null) skip
+            Label notNull = new Label();
+            mw.aload(8);
+            mw.ifnonnull(notNull);
+            Label end = new Label();
+            mw.goto_(end);
+
+            mw.visitLabel(notNull);
+            mw.aload(1);
+            loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+                    "([JI[C[B)V");
+            mw.aload(1);
+            mw.aload(8);
+            mw.invokevirtual("java/lang/Float", "floatValue", "()F");
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeFloat", "(F)V");
+
+            mw.visitLabel(end);
         } else {
-            throw new JSONException("no field or getter for float property: " + fi.jsonName);
+            // Primitive float: direct write
+            mw.aload(1);
+            loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+                    "([JI[C[B)V");
+
+            mw.aload(1);
+            mw.aload(7);
+            if (fi.field != null && fi.fieldClass == float.class) {
+                mw.getfield(beanInternalName, fi.field.getName(), "F");
+            } else if (fi.getter != null) {
+                mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                        "()" + getDescriptor(fi.fieldClass));
+            } else {
+                throw new JSONException("no field or getter for float property: " + fi.jsonName);
+            }
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeFloat", "(F)V");
         }
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeFloat", "(F)V");
     }
 
     private static void generateWriteBool(
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        mw.aload(1);
-        loadNameFields(mw, classInternalName, namePrefix);
-        mw.aload(7);
+        boolean isBoxed = (fi.fieldClass == Boolean.class);
 
-        if (fi.field != null && fi.fieldClass == boolean.class) {
-            mw.getfield(beanInternalName, fi.field.getName(), "Z");
-        } else if (fi.getter != null) {
-            mw.invokevirtual(beanInternalName, fi.getter.getName(),
-                    "()" + getDescriptor(fi.fieldClass));
-            if (fi.fieldClass == Boolean.class) {
-                mw.invokevirtual("java/lang/Boolean", "booleanValue", "()Z");
+        if (isBoxed) {
+            // Boxed type: need null check
+            mw.aload(7); // bean
+            if (fi.field != null) {
+                mw.getfield(beanInternalName, fi.field.getName(), "Ljava/lang/Boolean;");
+            } else if (fi.getter != null) {
+                mw.invokevirtual(beanInternalName, fi.getter.getName(), "()Ljava/lang/Boolean;");
+            } else {
+                throw new JSONException("no field or getter for boolean property: " + fi.jsonName);
             }
-        } else if (fi.field != null) {
-            mw.getfield(beanInternalName, fi.field.getName(), getDescriptor(fi.fieldClass));
-            if (fi.fieldClass == Boolean.class) {
-                mw.invokevirtual("java/lang/Boolean", "booleanValue", "()Z");
-            }
+            mw.astore(8); // local 8 = Boolean value
+
+            // if (value == null) skip
+            Label notNull = new Label();
+            mw.aload(8);
+            mw.ifnonnull(notNull);
+            Label end = new Label();
+            mw.goto_(end);
+
+            mw.visitLabel(notNull);
+            mw.aload(1); // generator
+            loadNameFields(mw, classInternalName, namePrefix);
+            mw.aload(8);
+            mw.invokevirtual("java/lang/Boolean", "booleanValue", "()Z");
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameBool", "([JI[B[CZ)V");
+
+            mw.visitLabel(end);
         } else {
-            throw new JSONException("no field or getter for boolean property: " + fi.jsonName);
-        }
+            // Primitive boolean: direct write
+            mw.aload(1);
+            loadNameFields(mw, classInternalName, namePrefix);
+            mw.aload(7);
 
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameBool",
-                "([JI[B[CZ)V");
+            if (fi.field != null && fi.fieldClass == boolean.class) {
+                mw.getfield(beanInternalName, fi.field.getName(), "Z");
+            } else if (fi.getter != null) {
+                mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                        "()" + getDescriptor(fi.fieldClass));
+            } else {
+                throw new JSONException("no field or getter for boolean property: " + fi.jsonName);
+            }
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameBool", "([JI[B[CZ)V");
+        }
     }
 
     private static void generateWriteString(
