@@ -88,6 +88,23 @@ static final ThreadLocal<byte[]> BUFFER_POOL =
 
 ## 总体性能提升
 
+### JJB 场景性能对比 (vs fastjson2)
+
+| 操作 | fastjson2 | fastjson3 | wast | fastjson3 提升 |
+|------|-----------|-----------|------|----------------|
+| **Parse Client** | 1921 ops/ms | **5645 ops/ms** | 4899 ops/ms | **+193.7%** |
+| **Parse User** | 907 ops/ms | **5331 ops/ms** | 4675 ops/ms | **+487.5%** |
+| **Write Client** | 3226 ops/ms | **6430 ops/ms** | **6748 ops/ms** | **+99.3%** |
+| **Write User** | 3205 ops/ms | **5462 ops/ms** | **6555 ops/ms** | **+70.4%** |
+
+> 测试环境: JDK 25.0.2, 16 线程并发
+>
+> **关键发现**:
+> - fastjson3 在 Parse 场景下性能优势显著，尤其是复杂嵌套结构 (Parse User 提升 ~5 倍)
+> - fastjson3 在 Write 场景下与 wast 相当，都明显优于 fastjson2
+
+### 历史数据
+
 | 基准 | fastjson2 | fastjson3 | 提升 |
 |------|-----------|-----------|------|
 | UsersWriteUTF8 | 100% | 136% | **+36%** |
