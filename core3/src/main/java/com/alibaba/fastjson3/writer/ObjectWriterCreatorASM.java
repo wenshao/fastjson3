@@ -24,12 +24,17 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.DESC_JSON_GENERATOR;
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.TYPE_JSON_GENERATOR;
+import static com.alibaba.fastjson3.internal.asm.ASMUtils.TYPE_JDK_UTILS;
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.TYPE_OBJECT_WRITER;
 
 /**
  * Creates {@link ObjectWriter} instances via ASM bytecode generation.
- * Generated classes directly access bean fields (getfield) and call
+ * Generated writers use Unsafe to read bean fields (via JDKUtils) and call
  * JSONGenerator methods, avoiding FieldWriter switch dispatch and reflection.
+ *
+ * <p>Using Unsafe instead of getfield allows the generated code to work
+ * across ClassLoader boundaries, enabling ASM optimization for user classes
+ * loaded by different classloaders.</p>
  *
  * <p>Fallback: if ASM generation fails for a type, delegates to
  * {@link ObjectWriterCreator#createObjectWriter(Class)} (reflection).</p>
@@ -83,29 +88,14 @@ public final class ObjectWriterCreatorASM {
         }
 
         // ClassLoader compatibility check:
-        // ASM-generated classes are loaded by DynamicClassLoader.
-        // For getfield/putfield to work, target class must be accessible.
-        // Named modules are always blocked (strong encapsulation).
-        // Unnamed modules from different classloaders also fail at runtime.
+        // Using Unsafe instead of getfield allows cross-ClassLoader access
+        // Named modules are still blocked (strong encapsulation).
         Module targetModule = type.getModule();
         if (targetModule.isNamed()) {
             return false;
         }
 
-        // Even in unnamed module, different classloaders can cause IllegalAccessError
-        ClassLoader targetLoader = type.getClassLoader();
-        ClassLoader asmLoader = CLASS_LOADER;
-        // Only skip check for null classloader (bootstrap/platform classes)
-        // or when target is loaded by the same DynamicClassLoader
-        if (targetLoader != null && targetLoader != asmLoader) {
-            // Different classloader - check if it's a JDK class
-            String typeName = type.getName();
-            if (!typeName.startsWith("java.") && !typeName.startsWith("javax.")) {
-                return false;
-            }
-        }
-
-        // Check if class is accessible for ASM getfield/putfield operations
+        // Check if class is accessible for ASM field access operations
         // 1. Public classes are always accessible
         if (Modifier.isPublic(type.getModifiers())) {
             // continue to other checks
@@ -181,6 +171,13 @@ public final class ObjectWriterCreatorASM {
                 // Has boxed primitive field - use reflection for proper null handling
                 return ObjectWriterCreator.createObjectWriter(beanType);
             }
+            // Check that all fields have direct field access (no getter-only properties)
+            // This avoids cross-ClassLoader issues with invokevirtual calls
+            if (fi.field == null) {
+                // No field access available - would need to call getter method
+                // which requires class reference that may fail across ClassLoaders
+                return ObjectWriterCreator.createObjectWriter(beanType);
+            }
         }
 
         // 3. Generate bytecode
@@ -193,6 +190,11 @@ public final class ObjectWriterCreatorASM {
         cw.visit(Opcodes.V1_8,
                 Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_SUPER,
                 classInternalName, "java/lang/Object", INTERFACES);
+
+        // Generate static fields for field offsets (for Unsafe access)
+        for (int i = 0; i < fields.size(); i++) {
+            cw.visitField(Opcodes.ACC_STATIC | Opcodes.ACC_FINAL, "fo" + i, "J");  // fieldOffset
+        }
 
         // Generate static fields for pre-encoded name data
         for (int i = 0; i < fields.size(); i++) {
@@ -230,6 +232,10 @@ public final class ObjectWriterCreatorASM {
         for (int i = 0; i < fields.size(); i++) {
             FieldWriterInfo fi = fields.get(i);
             String encodedName = "\"" + fi.jsonName + "\":";
+
+            // fieldOffset: foN = <constant offset>
+            mw.visitLdcInsn(fi.fieldOffset);
+            mw.putstatic(classInternalName, "fo" + i, "J");
 
             // nameChars: char[]
             pushString(mw, encodedName);
@@ -276,11 +282,10 @@ public final class ObjectWriterCreatorASM {
     ) {
         MethodWriter mw = cw.visitMethod(Opcodes.ACC_PUBLIC, "write", METHOD_DESC_WRITE, 64);
         // Locals: 0=this, 1=generator, 2=object, 3=fieldName, 4=fieldType, 5-6=features(long)
-        // 7=bean (cast result)
+        // 7=bean (object reference, no cast needed for Unsafe access)
 
-        // Cast object to bean type
+        // Store object reference directly (no cast - Unsafe accepts Object)
         mw.aload(2);
-        mw.checkcast(beanInternalName);
         mw.astore(7);
 
         // Pre-compute total estimated capacity: sum of all name bytes + 48 per field + 2 for {}
@@ -340,55 +345,24 @@ public final class ObjectWriterCreatorASM {
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        boolean isBoxed = (fi.fieldClass == Integer.class);
+        // Primitive int: direct write using Unsafe
+        mw.aload(1); // generator
+        loadNameFields(mw, classInternalName, namePrefix);
+        mw.aload(7); // bean
 
-        if (isBoxed) {
-            // Boxed type: need null check
-            // Load value to local var 8
-            mw.aload(7); // bean
-            if (fi.field != null) {
-                mw.getfield(beanInternalName, fi.field.getName(), "Ljava/lang/Integer;");
-            } else if (fi.getter != null) {
-                mw.invokevirtual(beanInternalName, fi.getter.getName(), "()Ljava/lang/Integer;");
-            } else {
-                throw new JSONException("no field or getter for int property: " + fi.jsonName);
-            }
-            mw.astore(8); // local 8 = Integer value
-
-            // if (value == null) skip
-            Label notNull = new Label();
-            mw.aload(8);
-            mw.ifnonnull(notNull);
-            Label end = new Label();
-            mw.goto_(end);
-
-            mw.visitLabel(notNull);
-            // generator.writeNameInt32(nl, nn, nb, nc, value.intValue())
-            mw.aload(1); // generator
-            loadNameFields(mw, classInternalName, namePrefix);
-            mw.aload(8);
-            mw.invokevirtual("java/lang/Integer", "intValue", "()I");
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt32", "([JI[B[CI)V");
-
-            mw.visitLabel(end);
+        if (fi.field != null && fi.fieldClass == int.class) {
+            // Use Unsafe to read field
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+            mw.invokestatic(TYPE_JDK_UTILS, "getInt", "(Ljava/lang/Object;J)I");
+        } else if (fi.getter != null) {
+            mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                    "()" + getDescriptor(fi.fieldClass));
         } else {
-            // Primitive int: direct write
-            mw.aload(1); // generator
-            loadNameFields(mw, classInternalName, namePrefix);
-            mw.aload(7); // bean
-
-            if (fi.field != null && fi.fieldClass == int.class) {
-                mw.getfield(beanInternalName, fi.field.getName(), "I");
-            } else if (fi.getter != null) {
-                mw.invokevirtual(beanInternalName, fi.getter.getName(),
-                        "()" + getDescriptor(fi.fieldClass));
-            } else {
-                throw new JSONException("no field or getter for int property: " + fi.jsonName);
-            }
-
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt32",
-                    "([JI[B[CI)V");
+            throw new JSONException("no field or getter for int property: " + fi.jsonName);
         }
+
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt32",
+                "([JI[B[CI)V");
     }
 
     private static void generateWriteLong(
@@ -425,12 +399,14 @@ public final class ObjectWriterCreatorASM {
 
             mw.visitLabel(end);
         } else {
-            // Primitive long: direct write
+            // Primitive long: direct write using Unsafe
             mw.aload(1);
             loadNameFields(mw, classInternalName, namePrefix);
             mw.aload(7); // bean
             if (fi.field != null && fi.fieldClass == long.class) {
-                mw.getfield(beanInternalName, fi.field.getName(), "J");
+                // Use Unsafe to read field
+                mw.getstatic(classInternalName, "fo" + namePrefix.substring(2), "J");  // field offset
+                mw.invokestatic(TYPE_JDK_UTILS, "getLongField", "(Ljava/lang/Object;J)J");
             } else if (fi.getter != null) {
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
                         "()" + getDescriptor(fi.fieldClass));
@@ -476,13 +452,15 @@ public final class ObjectWriterCreatorASM {
 
             mw.visitLabel(end);
         } else {
-            // Primitive double: direct write
+            // Primitive double: direct write using Unsafe
             mw.aload(1);
             loadNameFields(mw, classInternalName, namePrefix);
             mw.aload(7);
 
             if (fi.field != null && fi.fieldClass == double.class) {
-                mw.getfield(beanInternalName, fi.field.getName(), "D");
+                // Use Unsafe to read field
+                mw.getstatic(classInternalName, "fo" + namePrefix.substring(2), "J");  // field offset
+                mw.invokestatic(TYPE_JDK_UTILS, "getDouble", "(Ljava/lang/Object;J)D");
             } else if (fi.getter != null) {
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
                         "()" + getDescriptor(fi.fieldClass));
@@ -532,7 +510,7 @@ public final class ObjectWriterCreatorASM {
 
             mw.visitLabel(end);
         } else {
-            // Primitive float: direct write
+            // Primitive float: direct write using Unsafe
             mw.aload(1);
             loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
             mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
@@ -541,7 +519,9 @@ public final class ObjectWriterCreatorASM {
             mw.aload(1);
             mw.aload(7);
             if (fi.field != null && fi.fieldClass == float.class) {
-                mw.getfield(beanInternalName, fi.field.getName(), "F");
+                // Use Unsafe to read field
+                mw.getstatic(classInternalName, "fo" + namePrefix.substring(2), "J");  // field offset
+                mw.invokestatic(TYPE_JDK_UTILS, "getFloat", "(Ljava/lang/Object;J)F");
             } else if (fi.getter != null) {
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
                         "()" + getDescriptor(fi.fieldClass));
@@ -586,13 +566,15 @@ public final class ObjectWriterCreatorASM {
 
             mw.visitLabel(end);
         } else {
-            // Primitive boolean: direct write
+            // Primitive boolean: direct write using Unsafe
             mw.aload(1);
             loadNameFields(mw, classInternalName, namePrefix);
             mw.aload(7);
 
             if (fi.field != null && fi.fieldClass == boolean.class) {
-                mw.getfield(beanInternalName, fi.field.getName(), "Z");
+                // Use Unsafe to read field
+                mw.getstatic(classInternalName, "fo" + namePrefix.substring(2), "J");  // field offset
+                mw.invokestatic(TYPE_JDK_UTILS, "getBoolean", "(Ljava/lang/Object;J)Z");
             } else if (fi.getter != null) {
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
                         "()" + getDescriptor(fi.fieldClass));
@@ -607,11 +589,13 @@ public final class ObjectWriterCreatorASM {
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        // String value = bean.field;
+        // String value = JDKUtils.getObject(bean, fieldOffset);
         mw.aload(7);
         if (fi.field != null) {
-            mw.getfield(beanInternalName, fi.field.getName(),
-                    "Ljava/lang/String;");
+            // Use Unsafe to read field
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+            mw.invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
+            mw.checkcast("java/lang/String");
         } else {
             mw.invokevirtual(beanInternalName, fi.getter.getName(),
                     "()Ljava/lang/String;");
@@ -640,7 +624,7 @@ public final class ObjectWriterCreatorASM {
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        // Object value = bean.getField() or bean.field
+        // Object value = bean.getField() or bean.field (using Unsafe)
         mw.aload(7);
         if (fi.getter != null) {
             String retDesc = getDescriptor(fi.fieldClass);
@@ -651,11 +635,9 @@ public final class ObjectWriterCreatorASM {
                 boxPrimitive(mw, fi.fieldClass);
             }
         } else {
-            mw.getfield(beanInternalName, fi.field.getName(),
-                    getDescriptor(fi.fieldClass));
-            if (fi.fieldClass.isPrimitive()) {
-                boxPrimitive(mw, fi.fieldClass);
-            }
+            // Use Unsafe to read field
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+            mw.invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
         }
         mw.astore(8);
 
@@ -691,7 +673,11 @@ public final class ObjectWriterCreatorASM {
         if (fi.getter != null) {
             mw.invokevirtual(beanInternalName, fi.getter.getName(), "()" + arrayDescriptor);
         } else {
-            mw.getfield(beanInternalName, fi.field.getName(), arrayDescriptor);
+            // Use Unsafe to read field
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+            mw.invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
+            // For array types, descriptor is the same as internal name for checkcast
+            mw.checkcast(arrayDescriptor);
         }
         mw.astore(8);
 
@@ -937,6 +923,7 @@ public final class ObjectWriterCreatorASM {
         final Field field;
         final Method getter;
         final int typeTag;
+        final long fieldOffset;  // Unsafe field offset
 
         FieldWriterInfo(String jsonName, int ordinal, Class<?> fieldClass, Field field, Method getter) {
             this.jsonName = jsonName;
@@ -945,6 +932,12 @@ public final class ObjectWriterCreatorASM {
             this.field = field;
             this.getter = getter;
             this.typeTag = resolveTypeTag(fieldClass);
+            // Calculate field offset for Unsafe access
+            if (field != null) {
+                this.fieldOffset = com.alibaba.fastjson3.util.JDKUtils.objectFieldOffset(field);
+            } else {
+                this.fieldOffset = -1;
+            }
         }
 
         private static int resolveTypeTag(Class<?> type) {
