@@ -103,6 +103,20 @@ public interface ObjectReaderProvider {
     }
 
     /**
+     * Create a new provider with the specified creator type.
+     *
+     * @param creatorType the creator type strategy
+     * @return a new provider instance
+     */
+    static ObjectReaderProvider of(ReaderCreatorType creatorType) {
+        return switch (creatorType) {
+            case AUTO -> AutoObjectReaderProvider.INSTANCE;
+            case ASM -> ASMObjectReaderProvider.INSTANCE;
+            case REFLECT -> ReflectObjectReaderProvider.INSTANCE;
+        };
+    }
+
+    /**
      * Get the default provider (uses REFLECT strategy on Android).
      */
     static ObjectReaderProvider defaultProvider() {

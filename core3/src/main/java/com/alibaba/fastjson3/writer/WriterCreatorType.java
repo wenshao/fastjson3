@@ -7,8 +7,9 @@ package com.alibaba.fastjson3.writer;
 public enum WriterCreatorType {
     /**
      * Automatically choose the best strategy based on the type.
-     * - Uses ASM for simple POJOs (public, non-abstract, no schema)
-     * - Falls back to reflection for complex types (records, sealed classes, etc.)
+     * - Uses ASM for simple POJOs (public, non-abstract, no schema configuration)
+     * - Records and sealed classes are treated as simple POJOs (ASM-compatible)
+     * - Falls back to reflection for types with complex configuration
      */
     AUTO,
 

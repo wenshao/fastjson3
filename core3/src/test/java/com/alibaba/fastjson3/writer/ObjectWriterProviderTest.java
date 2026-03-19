@@ -96,12 +96,13 @@ class ObjectWriterProviderTest {
     @Test
     void testProviderCleanup() {
         // Test that cleanup doesn't throw for shared providers
-        AutoObjectWriterProvider.INSTANCE.cleanup();
-        ReflectObjectWriterProvider.INSTANCE.cleanup();
-        ASMObjectWriterProvider.INSTANCE.cleanup();
+        assertDoesNotThrow(() -> AutoObjectWriterProvider.INSTANCE.cleanup());
+        assertDoesNotThrow(() -> ReflectObjectWriterProvider.INSTANCE.cleanup());
+        assertDoesNotThrow(() -> ASMObjectWriterProvider.INSTANCE.cleanup());
 
-        // If we get here, cleanup works
-        assertTrue(true);
+        // Verify providers still work after cleanup
+        ObjectWriter<?> writer = AutoObjectWriterProvider.INSTANCE.getObjectWriter(TestBean.class);
+        assertNotNull(writer);
     }
 
     @Test
@@ -245,6 +246,9 @@ class ObjectWriterProviderTest {
         ObjectWriter<?> writer = provider.getObjectWriter(String[].class);
         // May be null or a writer depending on implementation
         // The important thing is it doesn't crash
+        assertDoesNotThrow(() -> provider.getObjectWriter(String[].class));
+        assertDoesNotThrow(() -> provider.getObjectWriter(int[].class));
+        assertDoesNotThrow(() -> provider.getObjectWriter(boolean[].class));
     }
 
     @Test
@@ -321,7 +325,7 @@ class ObjectWriterProviderTest {
 
         // Interfaces should return null (handled by builtin serializers)
         ObjectWriter<?> writer = provider.getObjectWriter(Runnable.class);
-        // May be null or handled specially
+        assertNull(writer, "Interface types should return null");
     }
 
     @Test
@@ -330,7 +334,7 @@ class ObjectWriterProviderTest {
 
         // Abstract classes should return null (handled by builtin serializers)
         ObjectWriter<?> writer = provider.getObjectWriter(AbstractTest.class);
-        // May be null or handled specially
+        assertNull(writer, "Abstract classes should return null");
     }
 
     abstract static class AbstractTest {

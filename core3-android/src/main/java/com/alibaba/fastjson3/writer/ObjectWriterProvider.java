@@ -165,9 +165,7 @@ public interface ObjectWriterProvider {
             case ASM -> {
                 // On Android, ASM is not available, use AUTO instead
                 try {
-                    Class.forName(
-                            "com.alibaba.fastjson3.writer"
-                                    + ".ObjectWriterCreatorASM");
+                    Class.forName("com.alibaba.fastjson3.internal.asm.ASMUtils");
                     // If we get here, we're on JVM with ASM available
                     yield new ASMObjectWriterProvider();
                 } catch (final ClassNotFoundException e) {
