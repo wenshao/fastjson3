@@ -82,19 +82,37 @@ public final class ObjectWriterCreatorASM {
             return false;
         }
 
-        // Java 9+ module access check:
-        // ASM-generated classes are loaded by DynamicClassLoader (unnamed module).
-        // If target class is in a named module, unnamed module can't access it
-        // unless the named module explicitly opens the package.
-        try {
-            Module targetModule = type.getModule();
-            if (targetModule.isNamed() && !targetModule.isOpen(type.getPackageName())) {
-                // Target class is in a named module with package not opened
-                // ASM-generated code (in unnamed module) won't be able to access it
+        // Classloader compatibility check:
+        // ASM-generated classes are loaded by DynamicClassLoader.
+        // For ASM bytecode getfield/putfield to work at runtime, the target class
+        // must be loaded by the SAME classloader (or a parent that allows access).
+        //
+        // In practice, due to Java's strong encapsulation, we can only reliably
+        // use ASM when:
+        // 1. Target class is loaded by DynamicClassLoader itself, OR
+        // 2. Target class is a JDK class (java.*, javax.* in platform module)
+        //
+        // User classes from app classloader (even unnamed module) will fail
+        // with IllegalAccessError when accessed from DynamicClassLoader-generated code.
+        ClassLoader targetLoader = type.getClassLoader();
+        ClassLoader asmLoader = CLASS_LOADER;
+
+        // Only use ASM if target is loaded by DynamicClassLoader itself
+        if (targetLoader != null && targetLoader != asmLoader) {
+            // Different classloader - check if it's a JDK class
+            String typeName = type.getName();
+            if (!typeName.startsWith("java.") && !typeName.startsWith("javax.")
+                && !typeName.startsWith("sun.")) {
+                // User class from different classloader - use reflection
                 return false;
             }
-        } catch (Exception e) {
-            // Module API not available (Java 8) or error checking - continue
+        }
+
+        // Named module check: even with correct classloader, named modules
+        // may not be accessible from unnamed module (DynamicClassLoader)
+        Module targetModule = type.getModule();
+        if (targetModule.isNamed() && !targetModule.isOpen(type.getPackageName())) {
+            return false;
         }
 
         // Check if class is accessible for ASM getfield/putfield operations
@@ -104,7 +122,6 @@ public final class ObjectWriterCreatorASM {
         }
 
         // 2. Static inner classes of public classes are also accessible
-        // (getModifiers on static inner class returns only static, not public)
         if (type.isMemberClass() && Modifier.isStatic(type.getModifiers())) {
             Class<?> enclosing = type.getEnclosingClass();
             if (enclosing != null && Modifier.isPublic(enclosing.getModifiers())) {
@@ -112,8 +129,7 @@ public final class ObjectWriterCreatorASM {
             }
         }
 
-        // 3. Non-public static member classes (like benchmark classes) can be accessed
-        // via reflection from ASM code if they're in a context that allows access
+        // 3. Non-public static member classes can be accessed
         if (Modifier.isStatic(type.getModifiers())) {
             return true;
         }

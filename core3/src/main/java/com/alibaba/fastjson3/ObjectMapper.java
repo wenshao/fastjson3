@@ -1547,11 +1547,11 @@ public final class ObjectMapper {
                     writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
                 } else if (writerCreator != null) {
                     writer = writerCreator.apply(rawType);
-                } else if (writerProvider != null && writerProvider.getClass() != com.alibaba.fastjson3.writer.AutoObjectWriterProvider.class) {
-                    // Only use custom providers (not AutoObjectWriterProvider, to preserve annotation support)
+                } else if (writerProvider != null) {
+                    // Use writerProvider (AutoObjectWriterProvider will use ASM when possible)
                     writer = writerProvider.getObjectWriter(rawType);
                 } else {
-                    // Use ObjectWriterCreator for annotation support
+                    // Fallback to ObjectWriterCreator
                     Class<?> mixIn = mixInCache.get(rawType);
                     writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
                 }
