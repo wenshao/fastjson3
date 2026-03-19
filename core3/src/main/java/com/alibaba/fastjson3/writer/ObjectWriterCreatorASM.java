@@ -82,59 +82,86 @@ public final class ObjectWriterCreatorASM {
             return false;
         }
 
-        // Classloader compatibility check:
+        // ClassLoader compatibility check:
         // ASM-generated classes are loaded by DynamicClassLoader.
-        // For ASM bytecode getfield/putfield to work at runtime, the target class
-        // must be loaded by the SAME classloader (or a parent that allows access).
-        //
-        // In practice, due to Java's strong encapsulation, we can only reliably
-        // use ASM when:
-        // 1. Target class is loaded by DynamicClassLoader itself, OR
-        // 2. Target class is a JDK class (java.*, javax.* in platform module)
-        //
-        // User classes from app classloader (even unnamed module) will fail
-        // with IllegalAccessError when accessed from DynamicClassLoader-generated code.
+        // For getfield/putfield to work, target class must be accessible.
+        // Named modules are always blocked (strong encapsulation).
+        // Unnamed modules from different classloaders also fail at runtime.
+        Module targetModule = type.getModule();
+        if (targetModule.isNamed()) {
+            return false;
+        }
+
+        // Even in unnamed module, different classloaders can cause IllegalAccessError
         ClassLoader targetLoader = type.getClassLoader();
         ClassLoader asmLoader = CLASS_LOADER;
-
-        // Only use ASM if target is loaded by DynamicClassLoader itself
+        // Only skip check for null classloader (bootstrap/platform classes)
+        // or when target is loaded by the same DynamicClassLoader
         if (targetLoader != null && targetLoader != asmLoader) {
             // Different classloader - check if it's a JDK class
             String typeName = type.getName();
-            if (!typeName.startsWith("java.") && !typeName.startsWith("javax.")
-                && !typeName.startsWith("sun.")) {
-                // User class from different classloader - use reflection
+            if (!typeName.startsWith("java.") && !typeName.startsWith("javax.")) {
                 return false;
             }
-        }
-
-        // Named module check: even with correct classloader, named modules
-        // may not be accessible from unnamed module (DynamicClassLoader)
-        Module targetModule = type.getModule();
-        if (targetModule.isNamed() && !targetModule.isOpen(type.getPackageName())) {
-            return false;
         }
 
         // Check if class is accessible for ASM getfield/putfield operations
         // 1. Public classes are always accessible
         if (Modifier.isPublic(type.getModifiers())) {
-            return true;
+            // continue to other checks
+        } else if (type.isMemberClass() && Modifier.isStatic(type.getModifiers())) {
+            // 2. Static inner classes of public classes are also accessible
+            Class<?> enclosing = type.getEnclosingClass();
+            if (enclosing == null || !Modifier.isPublic(enclosing.getModifiers())) {
+                // 3. Non-public static member classes can be accessed
+                // via reflection from ASM code - allow them
+            }
+        } else {
+            // Non-public non-static class - not accessible
+            return false;
         }
 
-        // 2. Static inner classes of public classes are also accessible
-        if (type.isMemberClass() && Modifier.isStatic(type.getModifiers())) {
-            Class<?> enclosing = type.getEnclosingClass();
-            if (enclosing != null && Modifier.isPublic(enclosing.getModifiers())) {
-                return true;
+        // @JSONType(schema=) requires reflection path for special handling
+        com.alibaba.fastjson3.annotation.JSONType jsonType = type.getAnnotation(
+                com.alibaba.fastjson3.annotation.JSONType.class);
+        if (jsonType != null && !jsonType.schema().isEmpty()) {
+            return false;
+        }
+
+        // @JSONField(format=) requires reflection path for custom formatting
+        // @JSONField(inclusion=) requires reflection path for custom inclusion logic
+        for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+            com.alibaba.fastjson3.annotation.JSONField jsonField = field.getAnnotation(
+                    com.alibaba.fastjson3.annotation.JSONField.class);
+            if (jsonField != null) {
+                if (!jsonField.format().isEmpty()) {
+                    return false;
+                }
+                if (jsonField.inclusion() != com.alibaba.fastjson3.annotation.Inclusion.ALWAYS) {
+                    return false;
+                }
+            }
+        }
+        // Also check methods for @JSONField(format=) and @JSONField(inclusion=)
+        for (java.lang.reflect.Method method : type.getMethods()) {
+            com.alibaba.fastjson3.annotation.JSONField jsonField = method.getAnnotation(
+                    com.alibaba.fastjson3.annotation.JSONField.class);
+            if (jsonField != null) {
+                if (!jsonField.format().isEmpty()) {
+                    return false;
+                }
+                if (jsonField.inclusion() != com.alibaba.fastjson3.annotation.Inclusion.ALWAYS) {
+                    return false;
+                }
             }
         }
 
-        // 3. Non-public static member classes can be accessed
-        if (Modifier.isStatic(type.getModifiers())) {
-            return true;
+        // @JSONType(inclusion=) requires reflection path for custom inclusion logic
+        if (jsonType != null && jsonType.inclusion() != com.alibaba.fastjson3.annotation.Inclusion.ALWAYS) {
+            return false;
         }
 
-        return false;
+        return true;
     }
 
     private static ObjectWriter<?> generateWriter(Class<?> beanType) {

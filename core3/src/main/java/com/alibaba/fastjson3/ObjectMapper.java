@@ -1548,8 +1548,19 @@ public final class ObjectMapper {
                 } else if (writerCreator != null) {
                     writer = writerCreator.apply(rawType);
                 } else if (writerProvider != null) {
-                    // Use writerProvider (AutoObjectWriterProvider will use ASM when possible)
-                    writer = writerProvider.getObjectWriter(rawType);
+                    // Check if filters are configured - ASM doesn't support runtime filters
+                    boolean hasFilters = (propertyFilters != null && propertyFilters.length > 0) ||
+                                        (valueFilters != null && valueFilters.length > 0) ||
+                                        (nameFilters != null && nameFilters.length > 0) ||
+                                        labelFilter != null;
+                    if (hasFilters) {
+                        // Use reflection for filter support
+                        Class<?> mixIn = mixInCache.get(rawType);
+                        writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
+                    } else {
+                        // Use writerProvider (AutoObjectWriterProvider will use ASM when possible)
+                        writer = writerProvider.getObjectWriter(rawType);
+                    }
                 } else {
                     // Fallback to ObjectWriterCreator
                     Class<?> mixIn = mixInCache.get(rawType);
