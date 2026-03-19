@@ -1533,19 +1533,35 @@ public final class ObjectReaderCreator {
                     if (fr.formatter != null) {
                         // objReaders[i] remains null, will fall through to convertValue path
                     } else if (fr.typeTag == FieldReader.TAG_GENERIC) {
-                        // Use context provider if available, otherwise create directly
-                        ObjectReader<?> r = (contextProvider != null)
-                            ? contextProvider.getObjectReader(fr.fieldClass)
-                            : createObjectReader(fr.fieldClass);
+                        // For POJO fields (not basic types), get ObjectReader
+                        ObjectReader<?> r;
+                        if (contextProvider != null) {
+                            r = contextProvider.getObjectReader(fr.fieldClass);
+                        } else {
+                            // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
+                            r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.fieldClass);
+                            if (r == null) {
+                                r = createObjectReader(fr.fieldClass);
+                            }
+                        }
                         if (r != null) {
                             objReaders[i] = r;
                             // Don't modify fr.typeTag - it may be shared across readers
                         }
                     }
                     if (fr.elementClass != null && fr.elementClass != String.class) {
-                        elemReaders[i] = (contextProvider != null)
-                            ? contextProvider.getObjectReader(fr.elementClass)
-                            : createObjectReader(fr.elementClass);
+                        ObjectReader<?> r;
+                        if (contextProvider != null) {
+                            r = contextProvider.getObjectReader(fr.elementClass);
+                        } else {
+                            r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.elementClass);
+                            if (r == null) {
+                                r = createObjectReader(fr.elementClass);
+                            }
+                        }
+                        if (r != null) {
+                            elemReaders[i] = r;
+                        }
                     }
                 }
                 this.fieldElementReaders = elemReaders;
