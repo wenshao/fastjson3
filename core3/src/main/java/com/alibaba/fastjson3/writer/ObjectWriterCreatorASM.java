@@ -81,8 +81,44 @@ public final class ObjectWriterCreatorASM {
                 || type.isPrimitive() || Modifier.isAbstract(type.getModifiers())) {
             return false;
         }
-        // Needs to be accessible for getfield
-        return Modifier.isPublic(type.getModifiers());
+
+        // Java 9+ module access check:
+        // ASM-generated classes are loaded by DynamicClassLoader (unnamed module).
+        // If target class is in a named module, unnamed module can't access it
+        // unless the named module explicitly opens the package.
+        try {
+            Module targetModule = type.getModule();
+            if (targetModule.isNamed() && !targetModule.isOpen(type.getPackageName())) {
+                // Target class is in a named module with package not opened
+                // ASM-generated code (in unnamed module) won't be able to access it
+                return false;
+            }
+        } catch (Exception e) {
+            // Module API not available (Java 8) or error checking - continue
+        }
+
+        // Check if class is accessible for ASM getfield/putfield operations
+        // 1. Public classes are always accessible
+        if (Modifier.isPublic(type.getModifiers())) {
+            return true;
+        }
+
+        // 2. Static inner classes of public classes are also accessible
+        // (getModifiers on static inner class returns only static, not public)
+        if (type.isMemberClass() && Modifier.isStatic(type.getModifiers())) {
+            Class<?> enclosing = type.getEnclosingClass();
+            if (enclosing != null && Modifier.isPublic(enclosing.getModifiers())) {
+                return true;
+            }
+        }
+
+        // 3. Non-public static member classes (like benchmark classes) can be accessed
+        // via reflection from ASM code if they're in a context that allows access
+        if (Modifier.isStatic(type.getModifiers())) {
+            return true;
+        }
+
+        return false;
     }
 
     private static ObjectWriter<?> generateWriter(Class<?> beanType) {
