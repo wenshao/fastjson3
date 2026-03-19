@@ -697,7 +697,10 @@ public final class ObjectReaderCreator {
                             // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
                             r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fc);
                             if (r == null) {
-                                r = createObjectReader(fc);
+                                // Skip interfaces and abstract classes - they don't have constructors
+                                if (!fc.isInterface() && !java.lang.reflect.Modifier.isAbstract(fc.getModifiers())) {
+                                    r = createObjectReader(fc);
+                                }
                             }
                         }
                         if (r != null) {
@@ -712,7 +715,10 @@ public final class ObjectReaderCreator {
                         } else {
                             r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.elementClass);
                             if (r == null) {
-                                r = createObjectReader(fr.elementClass);
+                                // Skip interfaces and abstract classes - they don't have constructors
+                                if (!fr.elementClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.elementClass.getModifiers())) {
+                                    r = createObjectReader(fr.elementClass);
+                                }
                             }
                         }
                         if (r != null) {
@@ -1541,7 +1547,10 @@ public final class ObjectReaderCreator {
                             // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
                             r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.fieldClass);
                             if (r == null) {
-                                r = createObjectReader(fr.fieldClass);
+                                // Skip interfaces and abstract classes - they don't have constructors
+                                if (!fr.fieldClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.fieldClass.getModifiers())) {
+                                    r = createObjectReader(fr.fieldClass);
+                                }
                             }
                         }
                         if (r != null) {
@@ -1556,7 +1565,10 @@ public final class ObjectReaderCreator {
                         } else {
                             r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.elementClass);
                             if (r == null) {
-                                r = createObjectReader(fr.elementClass);
+                                // Skip interfaces and abstract classes - they don't have constructors
+                                if (!fr.elementClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.elementClass.getModifiers())) {
+                                    r = createObjectReader(fr.elementClass);
+                                }
                             }
                         }
                         if (r != null) {
