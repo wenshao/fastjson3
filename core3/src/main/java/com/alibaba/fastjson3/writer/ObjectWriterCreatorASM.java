@@ -77,6 +77,8 @@ public final class ObjectWriterCreatorASM {
         try {
             return (ObjectWriter<T>) generateWriter(type);
         } catch (Throwable e) {
+            // Log fallback for debugging
+            com.alibaba.fastjson3.util.Logger.warn("ASM generation failed for " + type.getName() + ", using reflection: " + e.getMessage());
             return ObjectWriterCreator.createObjectWriter(type);
         }
     }
@@ -405,7 +407,7 @@ public final class ObjectWriterCreatorASM {
             mw.aload(7); // bean
             if (fi.field != null && fi.fieldClass == long.class) {
                 // Use Unsafe to read field
-                mw.getstatic(classInternalName, "fo" + namePrefix.substring(2), "J");  // field offset
+                mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
                 mw.invokestatic(TYPE_JDK_UTILS, "getLongField", "(Ljava/lang/Object;J)J");
             } else if (fi.getter != null) {
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -459,7 +461,7 @@ public final class ObjectWriterCreatorASM {
 
             if (fi.field != null && fi.fieldClass == double.class) {
                 // Use Unsafe to read field
-                mw.getstatic(classInternalName, "fo" + namePrefix.substring(2), "J");  // field offset
+                mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
                 mw.invokestatic(TYPE_JDK_UTILS, "getDouble", "(Ljava/lang/Object;J)D");
             } else if (fi.getter != null) {
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -520,7 +522,7 @@ public final class ObjectWriterCreatorASM {
             mw.aload(7);
             if (fi.field != null && fi.fieldClass == float.class) {
                 // Use Unsafe to read field
-                mw.getstatic(classInternalName, "fo" + namePrefix.substring(2), "J");  // field offset
+                mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
                 mw.invokestatic(TYPE_JDK_UTILS, "getFloat", "(Ljava/lang/Object;J)F");
             } else if (fi.getter != null) {
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -573,7 +575,7 @@ public final class ObjectWriterCreatorASM {
 
             if (fi.field != null && fi.fieldClass == boolean.class) {
                 // Use Unsafe to read field
-                mw.getstatic(classInternalName, "fo" + namePrefix.substring(2), "J");  // field offset
+                mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
                 mw.invokestatic(TYPE_JDK_UTILS, "getBoolean", "(Ljava/lang/Object;J)Z");
             } else if (fi.getter != null) {
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
