@@ -858,11 +858,24 @@ public final class ObjectReaderCreator {
                     int fi = reader.index;
                     int tt = reader.typeTag;
                     // Inline primitive types — avoid heap sync (setOffset/getOffset)
-                    if (tt == FieldReader.TAG_STRING) {
+                    // Exception: if field has custom deserializeUsing, use the generic path
+                    if (tt == FieldReader.TAG_STRING && (fi < 0 || objReaders == null || objReaders[fi] == null)) {
                         if (b[off] == '"') {
                             off = utf8.readStringOff(off, instance, reader);
                         } else if (off + 3 < end && b[off] == 'n' && b[off + 1] == 'u' && b[off + 2] == 'l' && b[off + 3] == 'l') {
                             off += 4;
+                        } else if (b[off] == '-' || (b[off] >= '0' && b[off] <= '9')) {
+                            // Numeric value - read as String to preserve precision
+                            utf8.setOffset(off);
+                            String numStr = readNumberString(utf8);
+                            reader.setObjectValue(instance, numStr);
+                            off = utf8.getOffset();
+                        } else if (b[off] == 't' || b[off] == 'f') {
+                            // Boolean value - convert to String
+                            utf8.setOffset(off);
+                            boolean val = utf8.readBoolean() ? true : false;
+                            reader.setObjectValue(instance, Boolean.toString(val));
+                            off = utf8.getOffset();
                         } else {
                             utf8.setOffset(off);
                             reader.setObjectValue(instance, utf8.readStringDirect());
@@ -886,6 +899,7 @@ public final class ObjectReaderCreator {
                         off = utf8.getOffset();
                     } else {
                         // Sync offset for complex types (POJO, LIST, ARRAY, etc.)
+                        // Also handles TAG_STRING with custom deserializeUsing
                         utf8.setOffset(off);
                         readAndSetFieldUTF8Inline(utf8, instance, reader, fi, features, objReaders, elemReaders);
                         off = utf8.getOffset();
@@ -1029,7 +1043,20 @@ public final class ObjectReaderCreator {
                     if (peek == 'n' && utf8.readNull()) {
                         return;
                     }
-                    reader.setObjectValue(instance, utf8.readStringDirect());
+                    if (peek == '"') {
+                        reader.setObjectValue(instance, utf8.readStringDirect());
+                    } else if (peek == '-' || (peek >= '0' && peek <= '9')) {
+                        // Numeric value - read as String to preserve precision
+                        String numStr = readNumberString(utf8);
+                        reader.setObjectValue(instance, numStr);
+                    } else if (peek == 't' || peek == 'f') {
+                        // Boolean value - convert to String
+                        boolean val = utf8.readBoolean() ? true : false;
+                        reader.setObjectValue(instance, Boolean.toString(val));
+                    } else {
+                        // Fallback to readStringDirect for any other type
+                        reader.setObjectValue(instance, utf8.readStringDirect());
+                    }
                 }
                 case FieldReader.TAG_INT -> reader.setIntValue(instance, utf8.readIntDirect());
                 case FieldReader.TAG_LONG -> reader.setLongValue(instance, utf8.readLongDirect());
@@ -1107,7 +1134,39 @@ public final class ObjectReaderCreator {
                 return;
             }
             switch (reader.typeTag) {
-                case FieldReader.TAG_STRING -> reader.setFieldValue(instance, parser.readString());
+                case FieldReader.TAG_STRING -> {
+                    // Handle string values, including numeric values that should be converted to strings
+                    parser.skipWS();
+                    int c = parser.charAt(parser.getOffset());
+                    if (c == '"') {
+                        reader.setFieldValue(instance, parser.readString());
+                    } else if (c == '\'' && parser.isEnabled(ReadFeature.AllowSingleQuotes)) {
+                        // Single-quoted string (non-standard but supported)
+                        Object value = parser.readAny();
+                        reader.setFieldValue(instance, value != null ? value.toString() : null);
+                    } else if (c == 'n' && parser.readNull()) {
+                        // null value, leave field as default
+                    } else if (c == '-' || (c >= '0' && c <= '9')) {
+                        // Numeric value, read as string with precise conversion
+                        Object value = parser.readAny();
+                        if (value instanceof Double || value instanceof Float) {
+                            // Use BigDecimal for precise floating-point to string conversion
+                            reader.setFieldValue(instance, java.math.BigDecimal.valueOf(((Number) value).doubleValue()).toPlainString());
+                        } else if (value instanceof Number) {
+                            reader.setFieldValue(instance, value.toString());
+                        } else {
+                            reader.setFieldValue(instance, value != null ? value.toString() : null);
+                        }
+                    } else if (c == 't' || c == 'f') {
+                        // Boolean value, read as string
+                        boolean bool = parser.readBoolean();
+                        reader.setFieldValue(instance, Boolean.toString(bool));
+                    } else {
+                        // Fallback to readAny for any other type (e.g., single-quoted strings)
+                        Object value = parser.readAny();
+                        reader.setFieldValue(instance, value != null ? value.toString() : null);
+                    }
+                }
                 case FieldReader.TAG_INT -> reader.setIntValue(instance, parser.readInt());
                 case FieldReader.TAG_LONG -> reader.setLongValue(instance, parser.readLong());
                 case FieldReader.TAG_DOUBLE -> reader.setDoubleValue(instance, parser.readDouble());
@@ -1116,6 +1175,10 @@ public final class ObjectReaderCreator {
                 case FieldReader.TAG_LONG_OBJ -> reader.setFieldValue(instance, parser.readLong());
                 case FieldReader.TAG_DOUBLE_OBJ -> reader.setFieldValue(instance, parser.readDouble());
                 case FieldReader.TAG_BOOLEAN_OBJ -> reader.setFieldValue(instance, parser.readBoolean());
+                case FieldReader.TAG_LIST -> {
+                    Object value = readListGeneric(parser, reader, fi, features);
+                    reader.setObjectValue(instance, value);
+                }
                 default -> {
                     // Check for registered ObjectReader (e.g., Guava ImmutableList, custom POJO)
                     ObjectReader<?> objReader = (fi >= 0 && fieldObjectReaders != null)
@@ -1235,6 +1298,99 @@ public final class ObjectReaderCreator {
                 }
                 if (sep == 1) {
                     return list;
+                }
+                throw new JSONException("expected ',' or ']'");
+            }
+        }
+
+        private ArrayList<Object> readListGeneric(JSONParser parser, FieldReader reader, int fieldIndex, long features) {
+            Class<?> elemClass = reader.elementClass;
+
+            parser.skipWS();
+            if (parser.charAt(parser.getOffset()) != '[') {
+                throw new JSONException("expected '[' at offset " + parser.getOffset());
+            }
+            parser.advance(1);
+
+            parser.skipWS();
+            if (parser.charAt(parser.getOffset()) == ']') {
+                parser.advance(1);
+                return new ArrayList<>(0);
+            }
+
+            // Get element reader for POJO lists
+            ObjectReader<?> elemReader = (fieldIndex >= 0 && fieldElementReaders != null)
+                    ? fieldElementReaders[fieldIndex] : null;
+
+            if (elemClass == String.class) {
+                return readListStringGeneric(parser);
+            }
+
+            if (elemReader != null) {
+                return readListPojoGeneric(parser, elemReader, elemClass, features);
+            }
+
+            // Fallback to generic list
+            ArrayList<Object> list = new ArrayList<>();
+            for (;;) {
+                list.add(parser.readAny());
+                parser.skipWS();
+                int c = parser.charAt(parser.getOffset());
+                if (c == ']') {
+                    parser.advance(1);
+                    return list;
+                }
+                if (c == ',') {
+                    parser.advance(1);
+                    continue;
+                }
+                throw new JSONException("expected ',' or ']'");
+            }
+        }
+
+        private ArrayList<Object> readListStringGeneric(JSONParser parser) {
+            ArrayList<Object> list = new ArrayList<>();
+            for (;;) {
+                parser.skipWS();
+                int c = parser.charAt(parser.getOffset());
+                if (c == 'n' && parser.readNull()) {
+                    list.add(null);
+                } else if (c == '"') {
+                    list.add(parser.readString());
+                } else {
+                    throw new JSONException("expected string or null at offset " + parser.getOffset());
+                }
+                parser.skipWS();
+                c = parser.charAt(parser.getOffset());
+                if (c == ']') {
+                    parser.advance(1);
+                    return list;
+                }
+                if (c == ',') {
+                    parser.advance(1);
+                    continue;
+                }
+                throw new JSONException("expected ',' or ']'");
+            }
+        }
+
+        private ArrayList<Object> readListPojoGeneric(JSONParser parser, ObjectReader<?> elemReader, Class<?> elemClass, long features) {
+            ArrayList<Object> list = new ArrayList<>();
+            for (;;) {
+                parser.skipWS();
+                if (parser.charAt(parser.getOffset()) == 'n' && parser.readNull()) {
+                    list.add(null);
+                } else {
+                    list.add(elemReader.readObject(parser, elemClass, null, features));
+                }
+                parser.skipWS();
+                if (parser.charAt(parser.getOffset()) == ']') {
+                    parser.advance(1);
+                    return list;
+                }
+                if (parser.charAt(parser.getOffset()) == ',') {
+                    parser.advance(1);
+                    continue;
                 }
                 throw new JSONException("expected ',' or ']'");
             }
@@ -1465,6 +1621,50 @@ public final class ObjectReaderCreator {
                 return Boolean.parseBoolean(defaultValue);
             }
             return defaultValue;
+        }
+
+        /**
+         * Read a numeric value directly as a String, preserving precision.
+         * This method reads the number characters from the byte array without
+         * parsing to double/float, avoiding precision loss.
+         */
+        private String readNumberString(JSONParser.UTF8 utf8) {
+            final byte[] b = utf8.getBytes();
+            int off = utf8.getOffset();
+            final int end = utf8.getEnd();
+            int start = off;
+
+            // Skip sign
+            if (off < end && b[off] == '-') {
+                off++;
+            }
+
+            // Integer part
+            while (off < end && b[off] >= '0' && b[off] <= '9') {
+                off++;
+            }
+
+            // Fraction part
+            if (off < end && b[off] == '.') {
+                off++;
+                while (off < end && b[off] >= '0' && b[off] <= '9') {
+                    off++;
+                }
+            }
+
+            // Exponent part
+            if (off < end && (b[off] == 'e' || b[off] == 'E')) {
+                off++;
+                if (off < end && (b[off] == '+' || b[off] == '-')) {
+                    off++;
+                }
+                while (off < end && b[off] >= '0' && b[off] <= '9') {
+                    off++;
+                }
+            }
+
+            utf8.setOffset(off);
+            return new String(b, start, off - start, java.nio.charset.StandardCharsets.ISO_8859_1);
         }
     }
 

@@ -447,7 +447,8 @@ class AnnotationTest {
         assertEquals("A", team.name);
         assertNotNull(team.members);
         assertEquals(2, team.members.size());
-        assertEquals("M1", ((java.util.Map<?, ?>) team.members.get(0)).get("name").toString());
+        assertEquals("M1", ((Member) team.members.get(0)).name);
+        assertEquals(10, ((Member) team.members.get(0)).score);
     }
 
     // ==================== Inheritance ====================

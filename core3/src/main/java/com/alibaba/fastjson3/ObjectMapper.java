@@ -537,29 +537,9 @@ public final class ObjectMapper {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
-        if (objectReader != null) {
-            if (needsReaderContext) {
-                try (JSONParser parser = JSONParser.of(json, readFeatures);
-                     ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                    return objectReader.readObject(parser, type, null, readFeatures);
-                }
-            } else {
-                try (JSONParser parser = JSONParser.of(json, readFeatures)) {
-                    return objectReader.readObject(parser, type, null, readFeatures);
-                }
-            }
-        }
-        if (needsReaderContext) {
-            try (JSONParser parser = JSONParser.of(json, readFeatures);
-                 ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                return parser.read(type);
-            }
-        } else {
-            try (JSONParser parser = JSONParser.of(json, readFeatures)) {
-                return parser.read(type);
-            }
-        }
+        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
+        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return readValue(jsonBytes, type);
     }
 
     /**
@@ -574,29 +554,9 @@ public final class ObjectMapper {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
-        if (objectReader != null) {
-            if (needsReaderContext) {
-                try (JSONParser parser = JSONParser.of(json, readFeatures);
-                     ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                    return objectReader.readObject(parser, type, null, readFeatures);
-                }
-            } else {
-                try (JSONParser parser = JSONParser.of(json, readFeatures)) {
-                    return objectReader.readObject(parser, type, null, readFeatures);
-                }
-            }
-        }
-        if (needsReaderContext) {
-            try (JSONParser parser = JSONParser.of(json, readFeatures);
-                 ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                return parser.read(type);
-            }
-        } else {
-            try (JSONParser parser = JSONParser.of(json, readFeatures)) {
-                return parser.read(type);
-            }
-        }
+        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
+        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return readValue(jsonBytes, type);
     }
 
     /**
@@ -607,7 +567,12 @@ public final class ObjectMapper {
      * </pre>
      */
     public <T> T readValue(String json, TypeReference<T> typeRef) {
-        return readValue(json, typeRef.getType());
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
+        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return readValue(jsonBytes, typeRef.getType());
     }
 
     // ==================== Read: byte[] input ====================
