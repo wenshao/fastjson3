@@ -83,7 +83,12 @@ public final class JSON {
      * Parse JSON string to typed Java object.
      */
     public static <T> T parseObject(String json, Class<T> type) {
-        return ObjectMapper.shared().readValue(json, type);
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
+        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return parseObject(jsonBytes, type);
     }
 
     /**
@@ -102,14 +107,24 @@ public final class JSON {
      * Parse JSON string to generic type.
      */
     public static <T> T parseObject(String json, Type type) {
-        return ObjectMapper.shared().readValue(json, type);
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
+        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return ObjectMapper.shared().readValue(jsonBytes, type);
     }
 
     /**
      * Parse JSON string to generic type using TypeReference.
      */
     public static <T> T parseObject(String json, TypeReference<T> typeRef) {
-        return ObjectMapper.shared().readValue(json, typeRef);
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
+        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return ObjectMapper.shared().readValue(jsonBytes, typeRef.getType());
     }
 
     /**
@@ -142,7 +157,12 @@ public final class JSON {
      * Parse JSON string to JSONArray.
      */
     public static JSONArray parseArray(String json) {
-        return ObjectMapper.shared().readArray(json);
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
+        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return parseArray(jsonBytes);
     }
 
     /**
@@ -156,7 +176,12 @@ public final class JSON {
      * Parse JSON string to typed list.
      */
     public static <T> List<T> parseArray(String json, Class<T> type) {
-        return ObjectMapper.shared().readList(json, type);
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
+        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return ObjectMapper.shared().readList(jsonBytes, type);
     }
 
     // ==================== Serialize ====================

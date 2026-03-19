@@ -98,9 +98,18 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
                 || type.isPrimitive() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
             return false;
         }
+
+        // Check if class is accessible for ASM
+        // 1. Public classes are always accessible
         if (!java.lang.reflect.Modifier.isPublic(type.getModifiers())) {
-            return false;
+            // 2. Static inner classes of public classes are also accessible
+            // 3. Non-public static member classes (like benchmark classes) can be accessed
+            if (!java.lang.reflect.Modifier.isStatic(type.getModifiers())) {
+                // Non-public non-static class - not accessible
+                return false;
+            }
         }
+
         // Skip types with special JSON configuration
         com.alibaba.fastjson3.annotation.JSONType jsonType = type.getAnnotation(
                 com.alibaba.fastjson3.annotation.JSONType.class);

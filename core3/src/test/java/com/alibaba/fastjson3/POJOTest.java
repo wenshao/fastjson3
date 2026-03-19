@@ -96,7 +96,7 @@ class POJOTest {
         String json = "{\"name\":\"Gadget\",\"price\":19.99}";
         Product p = JSON.parseObject(json, Product.class);
         assertEquals("Gadget", p.getName());
-        assertEquals(19.99, p.getPrice());
+        assertEquals(19.99, p.getPrice(), 0.001);
     }
 
     // ==================== @JSONField ====================

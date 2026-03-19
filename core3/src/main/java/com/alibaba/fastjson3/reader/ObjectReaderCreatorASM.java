@@ -74,10 +74,23 @@ public final class ObjectReaderCreatorASM {
                 || type.isPrimitive() || Modifier.isAbstract(type.getModifiers())) {
             return false;
         }
-        if (!Modifier.isPublic(type.getModifiers())) {
+        if (fields.length == 0) {
             return false;
         }
-        if (fields.length == 0) {
+
+        // Check if class is accessible for ASM field access
+        // 1. Public classes are always accessible
+        if (Modifier.isPublic(type.getModifiers())) {
+            // continue to other checks
+        } else if (type.isMemberClass() && Modifier.isStatic(type.getModifiers())) {
+            // 2. Static inner classes of public classes are also accessible
+            Class<?> enclosing = type.getEnclosingClass();
+            if (enclosing == null || !Modifier.isPublic(enclosing.getModifiers())) {
+                // 3. Non-public static member classes (like benchmark classes) can be accessed
+                // via reflection from ASM code - allow them
+            }
+        } else {
+            // Non-public non-static class - not accessible
             return false;
         }
         // @JSONType(schema=) requires reflection path for post-construction validation

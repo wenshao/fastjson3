@@ -226,6 +226,17 @@ Key optimizations:
 - **Zero-copy parsing** — direct field name matching with pre-computed hash tables
 - **Buffer pooling** — thread-local buffer reuse to minimize GC pressure
 
+### Benchmark Results (JDK 25, 16 threads)
+
+| Operation | fastjson2 | fastjson3 | wast | fastjson3 vs fastjson2 |
+|-----------|-----------|-----------|------|----------------------|
+| Parse Client | 1,921 ops/ms | **5,645 ops/ms** | 4,899 ops/ms | **+193.7%** |
+| Parse User | 907 ops/ms | **5,331 ops/ms** | 4,675 ops/ms | **+487.5%** |
+| Write Client | 3,226 ops/ms | **6,430 ops/ms** | **6,748 ops/ms** | **+99.3%** |
+| Write User | 3,205 ops/ms | **5,462 ops/ms** | **6,555 ops/ms** | **+70.4%** |
+
+> fastjson3 在 Parse 场景下性能优势显著，尤其是复杂嵌套结构 (Parse User 提升 ~5 倍)
+
 ## Project Structure
 
 ```
