@@ -35,6 +35,12 @@ public final class ReflectObjectReaderProvider extends AbstractObjectReaderProvi
         if (builtin != null) {
             return builtin;
         }
+
+        // Skip interfaces and abstract classes - they don't have constructors
+        if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
+            return null;
+        }
+
         return ObjectReaderCreator.createObjectReader(type);
     }
 }

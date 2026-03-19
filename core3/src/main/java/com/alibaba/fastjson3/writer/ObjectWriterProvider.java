@@ -1,20 +1,20 @@
-package com.alibaba.fastjson3.reader;
+package com.alibaba.fastjson3.writer;
 
-import com.alibaba.fastjson3.ObjectReader;
+import com.alibaba.fastjson3.ObjectWriter;
 
 import java.lang.reflect.Type;
 import java.util.function.Supplier;
 
 /**
- * Provider for creating {@link ObjectReader} instances.
- * Allows customization of the reader creation strategy (ASM vs Reflection).
+ * Provider for creating {@link ObjectWriter} instances.
+ * Allows customization of the writer creation strategy (ASM vs Reflection).
  *
- * @see ReaderCreatorType
+ * @see WriterCreatorType
  */
-public interface ObjectReaderProvider {
+public interface ObjectWriterProvider {
 
     /**
-     * Thread-local context for the current ObjectReaderProvider.
+     * Thread-local context for the current ObjectWriterProvider.
      *
      * <p><b>Memory leak prevention:</b> Always use try-finally or try-with-resources
      * pattern to ensure the ThreadLocal is cleared. The SafeContext wrapper guarantees
@@ -27,10 +27,10 @@ public interface ObjectReaderProvider {
      *   <li>ThreadLocal is only set during short-lived withContext() calls</li>
      * </ul></p>
      */
-    ThreadLocal<ObjectReaderProvider> CONTEXT = new ThreadLocal<>();
+    ThreadLocal<ObjectWriterProvider> CONTEXT = new ThreadLocal<>();
 
     /**
-     * Set this provider as the context for nested ObjectReader creation.
+     * Set this provider as the context for nested ObjectWriter creation.
      *
      * <p><b>Important:</b> Always call close() in a finally block:</p>
      * <pre>
@@ -54,7 +54,7 @@ public interface ObjectReaderProvider {
      * @return a SafeContext that must be closed when done
      */
     default SafeContext openContext() {
-        ObjectReaderProvider previous = CONTEXT.get();
+        ObjectWriterProvider previous = CONTEXT.get();
         CONTEXT.set(this);
         return new SafeContext(previous);
     }
@@ -79,7 +79,7 @@ public interface ObjectReaderProvider {
     /**
      * Get the current context provider, or null if none is set.
      */
-    static ObjectReaderProvider getContext() {
+    static ObjectWriterProvider getContext() {
         return CONTEXT.get();
     }
 
@@ -92,18 +92,18 @@ public interface ObjectReaderProvider {
      * of contexts from different providers.</p>
      */
     class SafeContext implements AutoCloseable {
-        private boolean closed = false;
-        private final ObjectReaderProvider previousContext;
+        private boolean closed;
+        private final ObjectWriterProvider previous;
 
-        private SafeContext(ObjectReaderProvider previousContext) {
-            this.previousContext = previousContext;
+        SafeContext(final ObjectWriterProvider previousContext) {
+            this.previous = previousContext;
         }
 
         @Override
         public void close() {
             if (!closed) {
-                if (previousContext != null) {
-                    CONTEXT.set(previousContext);
+                if (previous != null) {
+                    CONTEXT.set(previous);
                 } else {
                     CONTEXT.remove();
                 }
@@ -113,28 +113,28 @@ public interface ObjectReaderProvider {
     }
 
     /**
-     * Get or create an ObjectReader for the given type.
+     * Get or create an ObjectWriter for the given type.
      *
      * @param type the target type
      * @param <T>  the type parameter
-     * @return the ObjectReader instance
+     * @return the ObjectWriter instance
      */
-    <T> ObjectReader<T> getObjectReader(Class<T> type);
+    <T> ObjectWriter<T> getObjectWriter(Class<T> type);
 
     /**
-     * Get or create an ObjectReader for the given type.
+     * Get or create an ObjectWriter for the given type.
      *
      * @param type the target type
      * @param <T>  the type parameter
-     * @return the ObjectReader instance
+     * @return the ObjectWriter instance
      */
     @SuppressWarnings("unchecked")
-    default <T> ObjectReader<T> getObjectReader(Type type) {
+    default <T> ObjectWriter<T> getObjectWriter(Type type) {
         if (type == null) {
             throw new IllegalArgumentException("type cannot be null");
         }
         if (type instanceof Class) {
-            return getObjectReader((Class<T>) type);
+            return getObjectWriter((Class<T>) type);
         }
         throw new IllegalArgumentException("Unsupported type: " + type);
     }
@@ -142,12 +142,12 @@ public interface ObjectReaderProvider {
     /**
      * Get the creator type strategy used by this provider.
      */
-    ReaderCreatorType getCreatorType();
+    WriterCreatorType getCreatorType();
 
     /**
      * Clean up resources to support ClassLoader unloading.
      *
-     * <p>Clears all cached ObjectReader instances and generated ASM classes.
+     * <p>Clears all cached ObjectWriter instances and generated ASM classes.
      * Call this method when the provider is no longer needed to allow
      * the ClassLoader to be garbage collected.</p>
      *
@@ -163,33 +163,18 @@ public interface ObjectReaderProvider {
      * @param creatorType the creator type strategy
      * @return a new provider instance
      */
-    static ObjectReaderProvider of(ReaderCreatorType creatorType) {
+    static ObjectWriterProvider of(WriterCreatorType creatorType) {
         return switch (creatorType) {
-            case AUTO -> AutoObjectReaderProvider.INSTANCE;
-            case ASM -> ASMObjectReaderProvider.INSTANCE;
-            case REFLECT -> ReflectObjectReaderProvider.INSTANCE;
+            case AUTO -> AutoObjectWriterProvider.INSTANCE;
+            case ASM -> ASMObjectWriterProvider.INSTANCE;
+            case REFLECT -> ReflectObjectWriterProvider.INSTANCE;
         };
     }
 
     /**
-     * Get the default provider (uses REFLECT strategy).
-     * <p>
-     * Note: ASM strategy currently shows mixed performance results.
-     * For simple POJOs with only primitive fields, ASM can be ~16% faster.
-     * However, for objects with nested POJO fields, the current ASM implementation
-     * falls back to reflection for those fields, creating overhead that makes it
-     * ~10% slower than pure reflection.
-     * </p>
-     * <p>
-     * To use ASM for specific use cases where it's beneficial:
-     * <pre>
-     * ObjectMapper mapper = ObjectMapper.builder()
-     *         .readerCreatorType(ReaderCreatorType.ASM)
-     *         .build();
-     * </pre>
-     * </p>
+     * Get the default provider (uses AUTO strategy).
      */
-    static ObjectReaderProvider defaultProvider() {
-        return ReflectObjectReaderProvider.INSTANCE;
+    static ObjectWriterProvider defaultProvider() {
+        return AutoObjectWriterProvider.INSTANCE;
     }
 }

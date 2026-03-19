@@ -29,6 +29,12 @@ public final class ObjectReaderCreator {
     }
 
     public static <T> ObjectReader<T> createObjectReader(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        // java.time types (LocalDate, LocalDateTime, etc.) are records in Java 17+
+        // but should be handled by built-in date codecs, not RecordObjectReader
+        if (type.getPackage() != null && type.getPackage().getName().equals("java.time")) {
+            return null;
+        }
+
         if (JDKUtils.isRecord(type)) {
             return createRecordReader(type, mixIn, useJacksonAnnotation);
         }
