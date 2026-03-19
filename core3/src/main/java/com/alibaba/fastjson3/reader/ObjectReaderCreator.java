@@ -690,19 +690,34 @@ public final class ObjectReaderCreator {
                         objReaders[i] = null;
                     } else if (fr.typeTag == FieldReader.TAG_GENERIC) {
                         // For POJO fields (not basic types), get ObjectReader
-                        // Use context provider if available, otherwise create directly
-                        ObjectReader<?> r = (contextProvider != null)
-                            ? contextProvider.getObjectReader(fc)
-                            : createObjectReader(fc);
+                        ObjectReader<?> r;
+                        if (contextProvider != null) {
+                            r = contextProvider.getObjectReader(fc);
+                        } else {
+                            // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
+                            r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fc);
+                            if (r == null) {
+                                r = createObjectReader(fc);
+                            }
+                        }
                         if (r != null) {
                             objReaders[i] = r;
                         }
                     }
                     // For List fields, get element ObjectReader
                     if (fr.elementClass != null && fr.elementClass != String.class) {
-                        elemReaders[i] = (contextProvider != null)
-                            ? contextProvider.getObjectReader(fr.elementClass)
-                            : createObjectReader(fr.elementClass);
+                        ObjectReader<?> r;
+                        if (contextProvider != null) {
+                            r = contextProvider.getObjectReader(fr.elementClass);
+                        } else {
+                            r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.elementClass);
+                            if (r == null) {
+                                r = createObjectReader(fr.elementClass);
+                            }
+                        }
+                        if (r != null) {
+                            elemReaders[i] = r;
+                        }
                     }
                 }
                 this.fieldElementReaders = elemReaders;
