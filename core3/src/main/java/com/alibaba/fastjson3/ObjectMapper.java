@@ -139,6 +139,10 @@ public final class ObjectMapper {
     // ObjectReaderProvider for ASM/Reflection strategy control
     private final ObjectReaderProvider readerProvider;
 
+    // Fast-path flag: true only for custom providers that need context propagation
+    // Default providers (ReflectObjectReaderProvider, AutoObjectReaderProvider) don't need context
+    private final boolean needsReaderContext;
+
     // ObjectWriterProvider for ASM/Reflection strategy control
     private final ObjectWriterProvider writerProvider;
 
@@ -310,8 +314,32 @@ public final class ObjectMapper {
             ? writerProvider
             : ObjectWriterProvider.defaultProvider();
 
+        // Fast-path: context propagation only needed for custom ASM providers
+        // Default providers don't need context since they don't do recursive ASM generation
+        this.needsReaderContext = needsContext(this.readerProvider);
+
         this.readerCache = new ConcurrentHashMap<Type, ObjectReader<?>>();
         this.writerCache = new ConcurrentHashMap<Type, ObjectWriter<?>>();
+    }
+
+    /**
+     * Check if a provider needs context propagation.
+     * Only custom ASM providers need context for recursive nested type generation.
+     * Default singleton providers don't need context.
+     */
+    private static boolean needsContext(ObjectReaderProvider provider) {
+        if (provider == null) {
+            return false;
+        }
+        // Check if it's a default singleton provider (no context needed)
+        if (provider == ReflectObjectReaderProvider.INSTANCE) {
+            return false;
+        }
+        if (provider == AutoObjectReaderProvider.INSTANCE) {
+            return false;
+        }
+        // ASM provider and custom instances need context
+        return true;
     }
 
     /**
@@ -511,14 +539,26 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(json, readFeatures);
-                 com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                return objectReader.readObject(parser, type, null, readFeatures);
+            if (needsReaderContext) {
+                try (JSONParser parser = JSONParser.of(json, readFeatures);
+                     ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                    return objectReader.readObject(parser, type, null, readFeatures);
+                }
+            } else {
+                try (JSONParser parser = JSONParser.of(json, readFeatures)) {
+                    return objectReader.readObject(parser, type, null, readFeatures);
+                }
             }
         }
-        try (JSONParser parser = JSONParser.of(json, readFeatures);
-             com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-            return parser.read(type);
+        if (needsReaderContext) {
+            try (JSONParser parser = JSONParser.of(json, readFeatures);
+                 ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                return parser.read(type);
+            }
+        } else {
+            try (JSONParser parser = JSONParser.of(json, readFeatures)) {
+                return parser.read(type);
+            }
         }
     }
 
@@ -536,14 +576,26 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(json, readFeatures);
-                 com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                return objectReader.readObject(parser, type, null, readFeatures);
+            if (needsReaderContext) {
+                try (JSONParser parser = JSONParser.of(json, readFeatures);
+                     ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                    return objectReader.readObject(parser, type, null, readFeatures);
+                }
+            } else {
+                try (JSONParser parser = JSONParser.of(json, readFeatures)) {
+                    return objectReader.readObject(parser, type, null, readFeatures);
+                }
             }
         }
-        try (JSONParser parser = JSONParser.of(json, readFeatures);
-             com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-            return parser.read(type);
+        if (needsReaderContext) {
+            try (JSONParser parser = JSONParser.of(json, readFeatures);
+                 ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                return parser.read(type);
+            }
+        } else {
+            try (JSONParser parser = JSONParser.of(json, readFeatures)) {
+                return parser.read(type);
+            }
         }
     }
 
@@ -570,14 +622,26 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
-                 com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                return objectReader.readObject(parser, type, null, readFeatures);
+            if (needsReaderContext) {
+                try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
+                     ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                    return objectReader.readObject(parser, type, null, readFeatures);
+                }
+            } else {
+                try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+                    return objectReader.readObject(parser, type, null, readFeatures);
+                }
             }
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
-             com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-            return parser.read(type);
+        if (needsReaderContext) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
+                 ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                return parser.read(type);
+            }
+        } else {
+            try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+                return parser.read(type);
+            }
         }
     }
 
@@ -591,14 +655,26 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
-                 com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                return objectReader.readObject(parser, type, null, readFeatures);
+            if (needsReaderContext) {
+                try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
+                     ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                    return objectReader.readObject(parser, type, null, readFeatures);
+                }
+            } else {
+                try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+                    return objectReader.readObject(parser, type, null, readFeatures);
+                }
             }
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
-             com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-            return parser.read(type);
+        if (needsReaderContext) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
+                 ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                return parser.read(type);
+            }
+        } else {
+            try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+                return parser.read(type);
+            }
         }
     }
 
@@ -934,14 +1010,26 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(json, features);
-                 com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                return objectReader.readObject(parser, type, null, features);
+            if (needsReaderContext) {
+                try (JSONParser parser = JSONParser.of(json, features);
+                     ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                    return objectReader.readObject(parser, type, null, features);
+                }
+            } else {
+                try (JSONParser parser = JSONParser.of(json, features)) {
+                    return objectReader.readObject(parser, type, null, features);
+                }
             }
         }
-        try (JSONParser parser = JSONParser.of(json, features);
-             com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-            return parser.read(type);
+        if (needsReaderContext) {
+            try (JSONParser parser = JSONParser.of(json, features);
+                 ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                return parser.read(type);
+            }
+        } else {
+            try (JSONParser parser = JSONParser.of(json, features)) {
+                return parser.read(type);
+            }
         }
     }
 
@@ -955,14 +1043,26 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(jsonBytes, features);
-                 com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                return objectReader.readObject(parser, type, null, features);
+            if (needsReaderContext) {
+                try (JSONParser parser = JSONParser.of(jsonBytes, features);
+                     ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                    return objectReader.readObject(parser, type, null, features);
+                }
+            } else {
+                try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+                    return objectReader.readObject(parser, type, null, features);
+                }
             }
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes, features);
-             com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-            return parser.read(type);
+        if (needsReaderContext) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, features);
+                 ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                return parser.read(type);
+            }
+        } else {
+            try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+                return parser.read(type);
+            }
         }
     }
 
@@ -976,14 +1076,26 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(json, features);
-                 com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                return objectReader.readObject(parser, type, null, features);
+            if (needsReaderContext) {
+                try (JSONParser parser = JSONParser.of(json, features);
+                     ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                    return objectReader.readObject(parser, type, null, features);
+                }
+            } else {
+                try (JSONParser parser = JSONParser.of(json, features)) {
+                    return objectReader.readObject(parser, type, null, features);
+                }
             }
         }
-        try (JSONParser parser = JSONParser.of(json, features);
-             com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-            return parser.read(type);
+        if (needsReaderContext) {
+            try (JSONParser parser = JSONParser.of(json, features);
+                 ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                return parser.read(type);
+            }
+        } else {
+            try (JSONParser parser = JSONParser.of(json, features)) {
+                return parser.read(type);
+            }
         }
     }
 
@@ -997,14 +1109,26 @@ public final class ObjectMapper {
         }
         ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
         if (objectReader != null) {
-            try (JSONParser parser = JSONParser.of(jsonBytes, features);
-                 com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-                return objectReader.readObject(parser, type, null, features);
+            if (needsReaderContext) {
+                try (JSONParser parser = JSONParser.of(jsonBytes, features);
+                     ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                    return objectReader.readObject(parser, type, null, features);
+                }
+            } else {
+                try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+                    return objectReader.readObject(parser, type, null, features);
+                }
             }
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes, features);
-             com.alibaba.fastjson3.reader.ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-            return parser.read(type);
+        if (needsReaderContext) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, features);
+                 ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+                return parser.read(type);
+            }
+        } else {
+            try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+                return parser.read(type);
+            }
         }
     }
 
@@ -1223,17 +1347,26 @@ public final class ObjectMapper {
     }
 
     /**
-     * Get ObjectReader for a Class type with version checking and context propagation.
+     * Get ObjectReader for a Class type with version checking and optional context propagation.
      */
     @SuppressWarnings("unchecked")
     private <T> ObjectReader<T> getReaderForClass(Class<?> cls) {
         ReaderHolder holder = readerClassCache.get(cls);
         if (holder == null) {
-            // First-time creation - use context for nested types
-            return readerProvider.withContext(() -> {
+            // First-time creation - use context only for custom providers
+            if (needsReaderContext) {
+                return readerProvider.withContext(() -> {
+                    ReaderHolder h = readerClassCache.get(cls);
+                    return h != null ? (ObjectReader<T>) h.get() : (ObjectReader<T>) createAndCacheReader(cls);
+                });
+            } else {
+                // Fast path: no context needed
                 ReaderHolder h = readerClassCache.get(cls);
-                return h != null ? (ObjectReader<T>) h.get() : (ObjectReader<T>) createAndCacheReader(cls);
-            });
+                if (h != null) {
+                    return (ObjectReader<T>) h.get();
+                }
+                return (ObjectReader<T>) createAndCacheReader(cls);
+            }
         }
 
         // Check if holder is stale (post-cleanup)
@@ -1244,8 +1377,12 @@ public final class ObjectMapper {
             if (freshHolder != null && freshHolder.cacheVersion == currentVersion) {
                 return (ObjectReader<T>) freshHolder.get();
             }
-            // Fully recompute with context
-            return readerProvider.withContext(() -> (ObjectReader<T>) recomputeReader(cls));
+            // Fully recompute with context if needed
+            if (needsReaderContext) {
+                return readerProvider.withContext(() -> (ObjectReader<T>) recomputeReader(cls));
+            } else {
+                return (ObjectReader<T>) recomputeReader(cls);
+            }
         }
 
         return (ObjectReader<T>) holder.get();
