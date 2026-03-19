@@ -33,8 +33,8 @@ public class ObjectReaderProviderTest {
     public static void main(String[] args) {
         System.out.println("=== ObjectReaderProvider Test ===\n");
 
-        // Test 1: Default (AUTO)
-        System.out.println("1. Testing AUTO (default)...");
+        // Test 1: Default (REFLECT)
+        System.out.println("1. Testing REFLECT (default)...");
         long start = System.nanoTime();
         SimpleUser user1 = JSON.parseObject(USER_JSON, SimpleUser.class);
         long autoTime = System.nanoTime() - start;

@@ -6,9 +6,9 @@ ObjectReader/ObjectWriter 的可插拔创建策略。
 
 fastjson3 提供了 `ObjectReaderProvider` 和 `ObjectWriterProvider` 接口来控制 Reader/Writer 的创建策略：
 
-- **AUTO**: 自动选择最佳策略（默认）
+- **REFLECT**: 反射 + Unsafe（默认）
+- **AUTO**: 自动选择最佳策略
 - **ASM**: 强制使用 ASM 字节码生成
-- **REFLECT**: 强制使用反射
 
 ## Provider 接口
 
@@ -57,7 +57,7 @@ ObjectMapper mapper = ObjectMapper.builder()
 ```
 
 ```java
-// 自动选择（默认）
+// 自动选择
 ObjectMapper mapper = ObjectMapper.builder()
     .readerCreatorType(ReaderCreatorType.AUTO)
     .build();
@@ -117,20 +117,41 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 ## 性能对比
 
-| 操作 | 反射 | ASM | 提升 |
-|------|------|-----|------|
-| Read (POJO) | 100% | 107-120% | +7-20% |
-| Write (POJO) | 100% | 100% | 持平 |
+### Writer（序列化）
 
-**Write 持平原因：** 反射 Writer 已通过 Unsafe 高度优化。
+| 场景 | 反射 | ASM | 提升 |
+|------|------|-----|------|
+| 简单 POJO | 100% | ~120% | +20% |
+| 嵌套 POJO | 100% | ~120% | +20% |
+
+**Writer 结论：** ASM 显著更快，推荐使用。
+
+### Reader（反序列化）
+
+| 场景 | 反射 | ASM | 差异 |
+|------|------|-----|------|
+| 简单 POJO | 100% | ~116% | **快 16%** |
+| 嵌套 POJO | 100% | ~91% | **慢 9%** |
+
+**Reader 结论：**
+- 对于只包含基本类型的简单 POJO，ASM 更快
+- 对于包含嵌套对象的 POJO，当前 ASM 实现比反射慢
+
+**原因分析：** 当前 ASM 实现对嵌套对象字段会 fallback 到反射路径，产生额外开销（接口调用、offset 同步）。这是"伪 ASM"问题，未来优化后可能会改善。
+
+### 建议
+
+- **默认使用 REFLECT**：稳定可靠，性能一致
+- **Writer 可使用 ASM**：序列化性能提升明显
+- **特定场景 ASM**：如果确认只有基本类型字段，可以尝试 ASM
 
 ## 平台差异
 
-| 平台 | 默认策略 | 说明 |
-|------|----------|------|
-| JDK 21+ | AUTO | 优先 ASM，回退反射 |
-| Android | REFLECT | ASM 不可用 |
-| Native Image | REFLECT | ASM 不可用 |
+| 平台 | 默认 Reader 策略 | 默认 Writer 策略 | 说明 |
+|------|------------------|------------------|------|
+| JDK 21+ | REFLECT | AUTO | Reader 当前反射更稳定；Writer ASM 更快 |
+| Android | REFLECT | AUTO | ASM 不可用 |
+| Native Image | REFLECT | AUTO | ASM 不可用 |
 
 ## 自定义 Provider
 

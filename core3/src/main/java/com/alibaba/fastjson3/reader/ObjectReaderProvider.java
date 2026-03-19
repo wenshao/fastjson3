@@ -172,9 +172,24 @@ public interface ObjectReaderProvider {
     }
 
     /**
-     * Get the default provider (uses AUTO strategy).
+     * Get the default provider (uses REFLECT strategy).
+     * <p>
+     * Note: ASM strategy currently shows mixed performance results.
+     * For simple POJOs with only primitive fields, ASM can be ~16% faster.
+     * However, for objects with nested POJO fields, the current ASM implementation
+     * falls back to reflection for those fields, creating overhead that makes it
+     * ~10% slower than pure reflection.
+     * </p>
+     * <p>
+     * To use ASM for specific use cases where it's beneficial:
+     * <pre>
+     * ObjectMapper mapper = ObjectMapper.builder()
+     *         .readerCreatorType(ReaderCreatorType.ASM)
+     *         .build();
+     * </pre>
+     * </p>
      */
     static ObjectReaderProvider defaultProvider() {
-        return AutoObjectReaderProvider.INSTANCE;
+        return ReflectObjectReaderProvider.INSTANCE;
     }
 }
