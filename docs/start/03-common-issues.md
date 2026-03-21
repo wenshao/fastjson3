@@ -179,11 +179,11 @@ mapper.writeValue(new FileOutputStream("out.json"), obj);
 ### 性能优化
 
 ```java
-// 启用 ASM（生产环境）
-ObjectMapper mapper = ObjectMapper.builder()
-    .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-    .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
-    .build();
+// 默认配置已是最优（反射路径 JIT 深度内联）
+ObjectMapper mapper = ObjectMapper.shared();
+
+// 使用 byte[] 而非 String 进一步提升
+byte[] json = mapper.writeValueAsBytes(obj);
 ```
 
 ### Jackson 注解兼容
@@ -207,5 +207,5 @@ public class User {
 
 **快速提示：**
 - 大多数问题通过注解 `@JSONField` 可以解决
-- 性能问题：复用 ObjectMapper、使用 byte[]、启用 ASM
+- 性能问题：复用 ObjectMapper、使用 byte[]、预热 JIT
 - 查看 [guides/](../guides/) 目录获取完整场景指南

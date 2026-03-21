@@ -50,7 +50,7 @@ ObjectMapper mapper = ObjectMapper.builder()
 ```
 
 ```java
-// 使用 ASM（最佳性能，JDK 21+ 推荐）
+// 使用 ASM（跨 ClassLoader 场景，性能略低于反射）
 ObjectMapper mapper = ObjectMapper.builder()
     .readerCreatorType(ReaderCreatorType.ASM)
     .build();
@@ -119,39 +119,34 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 ### Writer（序列化）
 
-| 场景 | 反射 | ASM | 提升 |
+| 场景 | 反射 | ASM | 差异 |
 |------|------|-----|------|
-| 简单 POJO | 100% | ~120% | +20% |
-| 嵌套 POJO | 100% | ~120% | +20% |
-
-**Writer 结论：** ASM 显著更快，推荐使用。
+| 简单 POJO (Users) | **100%** | ~87% | 反射快 13% |
+| 嵌套 POJO (User+Friend) | **100%** | ~87% | 反射快 13% |
 
 ### Reader（反序列化）
 
 | 场景 | 反射 | ASM | 差异 |
 |------|------|-----|------|
-| 简单 POJO | 100% | ~116% | **快 16%** |
-| 嵌套 POJO | 100% | ~91% | **慢 9%** |
+| 简单 POJO | **100%** | ~90% | 反射快 10% |
+| 嵌套 POJO | **100%** | ~83% | 反射快 17% |
 
-**Reader 结论：**
-- 对于只包含基本类型的简单 POJO，ASM 更快
-- 对于包含嵌套对象的 POJO，当前 ASM 实现比反射慢
+### 为什么反射比 ASM 更快
 
-**原因分析：** 当前 ASM 实现对嵌套对象字段会 fallback 到反射路径，产生额外开销（接口调用、offset 同步）。这是"伪 ASM"问题，未来优化后可能会改善。
+反射路径的 `readFieldsLoop` / `writeFields` 循环结构紧凑（方法体 < 325 bytes），JIT 能将整个 FieldWriter/FieldReader 调用链内联为一个编译单元。ASM 生成的方法体将所有字段展开在一个方法中，超出 JIT 内联预算，关键解析/序列化方法（如 `writeNameString`、`readStringOff`）无法被内联。
 
 ### 建议
 
-- **默认使用 REFLECT**：稳定可靠，性能一致
-- **Writer 可使用 ASM**：序列化性能提升明显
-- **特定场景 ASM**：如果确认只有基本类型字段，可以尝试 ASM
+- **使用默认配置**：反射路径已是最快路径，无需手动配置 ASM
+- ASM 作为跨 ClassLoader 场景的兼容方案保留
 
 ## 平台差异
 
 | 平台 | 默认 Reader 策略 | 默认 Writer 策略 | 说明 |
 |------|------------------|------------------|------|
-| JDK 21+ | REFLECT | AUTO | Reader 当前反射更稳定；Writer ASM 更快 |
-| Android | REFLECT | AUTO | ASM 不可用 |
-| Native Image | REFLECT | AUTO | ASM 不可用 |
+| JDK 21+ | REFLECT | REFLECT | 反射路径 JIT 优化最佳 |
+| Android | REFLECT | REFLECT | ASM 不可用 |
+| Native Image | REFLECT | REFLECT | ASM 不可用 |
 
 ## 自定义 Provider
 

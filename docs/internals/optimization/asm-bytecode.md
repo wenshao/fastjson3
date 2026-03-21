@@ -97,9 +97,12 @@ field.setAccessible(true);
 String value = (String) field.get(user);
 // 字节码：invokevirtual Field.get (虚方法调用)
 
-// ASM 生成方式（快）
-String value = user.name;
-// 字节码：getfield User.name (直接访问)
+// Unsafe 方式（当前实际使用，快）
+String value = (String) JDKUtils.getObject(user, NAME_OFFSET);
+// 字节码：invokestatic JDKUtils.getObject (Unsafe 直接内存读取)
+
+// 注意：虽然 ASM 能消除反射开销，但实测中反射路径的
+// 紧凑循环结构让 JIT 能深度内联，整体性能优于 ASM 展开代码。
 ```
 
 ## ASM 基础

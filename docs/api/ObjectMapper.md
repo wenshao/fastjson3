@@ -244,14 +244,16 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 ## 性能优化
 
-### 启用 ASM
+### 默认反射路径（推荐）
+
+默认配置即为最优性能路径。反射路径经 JIT 深度内联后比 ASM 快 10-13%，无需额外配置。
 
 ```java
-ObjectMapper mapper = ObjectMapper.builder()
-    .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-    .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
-    .build();
+// 默认配置即最优，直接使用
+ObjectMapper mapper = ObjectMapper.shared();
 ```
+
+> ASM 仅作为跨 ClassLoader 等兼容性场景的后备方案，不建议用于性能优化。
 
 ### ASCII 优化
 

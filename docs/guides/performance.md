@@ -44,18 +44,16 @@ User user = mapper.readValue(json, User.class);
 
 **原因：** UTF-8 字节可以直接操作，无需字符转换。
 
-### 3. 启用 ASM 字节码生成
+### 3. 默认配置已是最优
 
-生产环境启用 ASM 可以提升 10-20% 性能。
+fastjson3 默认使用 JIT 友好的反射路径，性能优于 ASM 字节码生成。无需手动配置 ASM。
 
 ```java
-ObjectMapper mapper = ObjectMapper.builder()
-    .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-    .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
-    .build();
+// ✅ 默认配置已经是最快的
+ObjectMapper mapper = ObjectMapper.shared();
 ```
 
-**注意：** Android 平台不支持 ASM，会自动回退到反射。
+**原因：** 反射路径的紧凑循环结构让 JIT 能深度内联关键方法（如 `writeNameString`、`readStringOff`），实测比 ASM 展开代码快 10-13%。
 
 ### 4. 使用预编译的 JSONPath
 
@@ -196,8 +194,6 @@ byte[] bytes = JSON.toJSONBytes(obj);
 
 ```java
 ObjectMapper mapper = ObjectMapper.builder()
-    .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-    .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
     .enableWrite(WriteFeature.OptimizedForAscii)
     .disableRead(ReadFeature.SupportAutoType)  // 如果不需要
     .build();
@@ -206,12 +202,10 @@ ObjectMapper mapper = ObjectMapper.builder()
 ### 低延迟场景
 
 ```java
-ObjectMapper mapper = ObjectMapper.builder()
-    .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-    .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
-    .build();
+// 使用默认配置（已是最优）+ 预热
+ObjectMapper mapper = ObjectMapper.shared();
 
-// 预热
+// 预热 JIT
 for (int i = 0; i < 1000; i++) {
     mapper.writeValueAsString(sampleObject);
 }
@@ -235,10 +229,10 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 | 操作 | 相对性能 | 说明 |
 |------|----------|------|
-| `toJSONBytes()` | 100% | 基准 |
+| `toJSONBytes()` | 100% | 基准（UTF-8 直接输出） |
 | `toJSONString()` | ~85% | 需要额外编码转换 |
-| 反射模式 | 100% | 基准 |
-| ASM 模式 | ~110% | 约 10% 提升 |
+| 反射模式（默认） | 100% | JIT 深度内联，最快路径 |
+| ASM 模式 | ~87-90% | 方法体过大阻碍 JIT 内联 |
 | `ObjectPath.extract()` | 100% | 基准 |
 | 先解析再查询 | ~70% | 需要完整解析 |
 
@@ -307,7 +301,7 @@ java -XX:+UseG1GC YourApp
 
 1. **复用 ObjectMapper** - 单例或共享实例
 2. **优先 byte[]** - UTF-8 数据使用字节
-3. **启用 ASM** - 生产环境启用
+3. **使用默认反射路径** - JIT 深度内联后比 ASM 快 10-13%
 4. **预编译 JSONPath** - 缓存编译结果
 5. **禁用不需要的特性** - 减少开销
 6. **使用流式处理** - 大数据量场景

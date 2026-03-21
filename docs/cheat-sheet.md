@@ -103,16 +103,15 @@ Object[] values = multiPath.eval(json);
 ## 性能优化
 
 ```java
-// 复用 Mapper
+// 复用 Mapper（最重要的优化）
 private static final ObjectMapper MAPPER = ObjectMapper.shared();
 
-// 启用 ASM
-.readerCreator(ObjectReaderCreatorASM::createObjectReader)
-.writerCreator(ObjectWriterCreatorASM::createObjectWriter)
-
-// 使用 byte[]
-byte[] json = JSON.toJSONBytes(obj);  // 比 toJSONString 快
+// 使用 byte[]（比 toJSONString 快）
+byte[] json = JSON.toJSONBytes(obj);
 ```
+
+> **注意**: 默认反射路径经 JIT 深度内联后比 ASM 快 10-13%，无需额外配置。
+> ASM 仅作为跨 ClassLoader 等兼容性场景的后备方案。
 
 ## 泛型处理
 

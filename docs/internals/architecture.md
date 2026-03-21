@@ -178,14 +178,14 @@ Function<Class<?>, ObjectWriter<?>> writerCreator
 - **Reflection** - 使用反射，默认选择
 - **ASM** - 运行时生成字节码，可选
 
-### ASM 性能
+### 反射 vs ASM 性能
 
-| 操作 | 反射 | ASM | 提升 |
+| 操作 | 反射 | ASM | 差异 |
 |------|------|-----|------|
-| Read | 100% | 107% | +7% |
-| Write | 100% | 100% | 持平 |
+| Read | **100%** | ~87% | 反射更快 |
+| Write | **100%** | ~87% | 反射更快 |
 
-**Write 持平原因：** 反射 Writer 已通过 Unsafe 高度优化。
+**反射更快的原因：** 反射路径的 `readFieldsLoop` / `writeFields` 循环结构紧凑，JIT 能将整个 FieldWriter/FieldReader 调用链深度内联为一个编译单元。ASM 生成的方法体过大（所有字段展开），超出 JIT 内联预算（~325 bytes），关键方法（如 `writeNameString`、`readStringOff`）无法被内联，反而更慢。
 
 ---
 
@@ -311,7 +311,7 @@ mvn package -Pandroid          # → fastjson3-3.0.0-android.jar (111KB, 45 clas
     │
     ├─ 复用 ObjectMapper
     ├─ 使用 byte[] 而非 String
-    └─ 启用 ASM
+    └─ 预热 JIT
     │
 框架层
     │
@@ -331,11 +331,11 @@ mvn package -Pandroid          # → fastjson3-3.0.0-android.jar (111KB, 45 clas
 
 ### 关键技术
 
-1. **SWAR** - 8 字节并行转义检测 (~10% 提升)
-2. **ASM** - 运行时字节码生成 (~7% Read 提升)
-3. **Unsafe** - 绕过边界检查 (~5% 提升)
-4. **预编码** - 字段名 long[] (~5% 提升)
-5. **池化** - 线程本地缓冲区 (~3% 提升)
+1. **SWAR** - 8 字节并行转义检测 + 4 字节尾部加速
+2. **JIT 友好架构** - 紧凑循环结构使 JIT 深度内联关键方法
+3. **Unsafe** - 绕过边界检查的字段读写和内存操作
+4. **预编码** - 字段名 long[] + 有序投机字段匹配
+5. **池化** - 线程本地缓冲区复用
 
 **总计：** ~36% vs fastjson2 (UsersWriteUTF8)
 

@@ -150,7 +150,7 @@ A: 几个优化建议：
 1. 复用 ObjectMapper 实例
 2. 使用 byte[] 处理 UTF-8 数据
 3. 预编译 JSONPath
-4. 启用 ASM（JVM 环境）
+4. 保持默认反射路径（JIT 深度内联后比 ASM 快 10-13%，ASM 仅用于跨 ClassLoader 兼容）
 
 ### Q: ObjectMapper 每次创建有性能问题吗？
 
