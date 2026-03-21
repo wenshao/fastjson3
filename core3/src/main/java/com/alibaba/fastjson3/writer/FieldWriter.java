@@ -590,6 +590,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         
         for (int i = 0; i < size; i++) {
+            generator.beforeArrayValue();
             String s = (String) list.get(i);
             if (s == null) {
                 generator.writeNull();
@@ -631,6 +632,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             }
             
             for (int i = 0; i < size; i++) {
+                generator.beforeArrayValue();
                 Object item = list.get(i);
                 if (item == null) {
                     generator.writeNull();
@@ -726,6 +728,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             // Container types still need writeAny for complex nested structures
             // but we inline common cases
             if (value instanceof java.util.List<?> list) {
+                generator.pushReference(list);
                 generator.startArray();
                 // Optimization: cache previous class and its ObjectWriter (fastjson2-style)
                 Class<?> previousClass = null;
@@ -762,7 +765,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                     }
                 }
                 generator.endArray();
+                generator.popReference(list);
             } else if (value instanceof java.util.Map<?, ?> map) {
+                generator.pushReference(map);
                 generator.startObject();
                 // Optimization: cache previous class and its ObjectWriter (fastjson2-style)
                 Class<?> previousClass = null;
@@ -800,6 +805,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                     }
                 }
                 generator.endObject();
+                generator.popReference(map);
             } else {
                 generator.writeAny(value);
             }
@@ -824,13 +830,17 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     }
 
     private void writeObjectWithWriter(JSONGenerator generator, Object value, long features) {
-        Class<?> valueClass = value.getClass();
-        ObjectWriter<Object> writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(valueClass);
-        if (writer != null) {
-            writer.write(generator, value, fieldName, fieldType, features);
-        } else {
-            // Fallback to writeAny only if no writer found
-            generator.writeAny(value);
+        generator.pushReference(value);
+        try {
+            Class<?> valueClass = value.getClass();
+            ObjectWriter<Object> writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(valueClass);
+            if (writer != null) {
+                writer.write(generator, value, fieldName, fieldType, features);
+            } else {
+                generator.writeAny(value);
+            }
+        } finally {
+            generator.popReference(value);
         }
     }
 

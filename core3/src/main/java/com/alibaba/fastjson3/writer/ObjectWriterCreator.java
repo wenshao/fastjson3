@@ -334,16 +334,34 @@ public final class ObjectWriterCreator {
             String label = resolveLabel(jsonField, backingField, mixIn);
 
             // Prefer backing field for Unsafe direct access (avoids Method.invoke overhead)
+            Type fieldType = method.getGenericReturnType();
+            Class<?> fieldClass = method.getReturnType();
+            // Detect List<T> element type for specialized List serialization
+            if (List.class.isAssignableFrom(fieldClass)) {
+                Class<?> elemClass = extractListElementClass(fieldType);
+                if (elemClass != null) {
+                    if (backingField != null) {
+                        backingField.setAccessible(true);
+                        writerMap.put(propertyName, FieldWriter.ofList(
+                                jsonName, ordinal, fieldType, fieldClass, elemClass, backingField, fieldInclusion));
+                    } else {
+                        method.setAccessible(true);
+                        writerMap.put(propertyName, FieldWriter.ofList(
+                                jsonName, ordinal, fieldType, fieldClass, elemClass, method, fieldInclusion));
+                    }
+                    continue;
+                }
+            }
             if (backingField != null) {
                 backingField.setAccessible(true);
                 writerMap.put(propertyName, FieldWriter.ofField(
-                        jsonName, ordinal, method.getGenericReturnType(), method.getReturnType(),
+                        jsonName, ordinal, fieldType, fieldClass,
                         backingField, fieldInclusion, format, customWriter, label
                 ));
             } else {
                 method.setAccessible(true);
                 writerMap.put(propertyName, FieldWriter.ofGetter(
-                        jsonName, ordinal, method.getGenericReturnType(), method.getReturnType(),
+                        jsonName, ordinal, fieldType, fieldClass,
                         method, fieldInclusion, format, customWriter, label
                 ));
             }
