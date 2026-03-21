@@ -36,7 +36,10 @@ public final class JSONPointer {
      * @throws JSONException if the pointer syntax is invalid
      */
     public static JSONPointer of(String pointer) {
-        if (pointer == null || pointer.isEmpty()) {
+        if (pointer == null) {
+            throw new JSONException("JSON Pointer must not be null");
+        }
+        if (pointer.isEmpty()) {
             return ROOT;
         }
         if (pointer.charAt(0) != '/') {
@@ -99,6 +102,12 @@ public final class JSONPointer {
             return (T) Double.valueOf(((Number) value).doubleValue());
         }
         if (type == Boolean.class || type == boolean.class) {
+            if (value instanceof String s) {
+                return (T) Boolean.valueOf(s);
+            }
+            if (value instanceof Number n) {
+                return (T) Boolean.valueOf(n.intValue() != 0);
+            }
             return (T) value;
         }
         throw new JSONException("Cannot convert " + value.getClass().getName() + " to " + type.getName());
@@ -106,7 +115,6 @@ public final class JSONPointer {
 
     /**
      * Set the value at this pointer location.
-     * Creates intermediate objects/arrays as needed.
      *
      * @param root  the root JSON document
      * @param value the value to set
@@ -211,6 +219,9 @@ public final class JSONPointer {
             return child;
         } else if (current instanceof JSONArray arr) {
             int index = parseIndex(token, arr.size());
+            if (index < 0 || index >= arr.size()) {
+                throw new JSONException("Array index out of bounds: " + token);
+            }
             return arr.get(index);
         }
         throw new JSONException("Cannot traverse non-container at: " + token);
@@ -264,7 +275,11 @@ public final class JSONPointer {
             throw new JSONException("Invalid array index (leading zero): " + token);
         }
         try {
-            return Integer.parseInt(token);
+            int index = Integer.parseInt(token);
+            if (index < 0) {
+                throw new JSONException("Invalid array index (negative): " + token);
+            }
+            return index;
         } catch (NumberFormatException e) {
             throw new JSONException("Invalid array index: " + token);
         }
@@ -295,7 +310,10 @@ public final class JSONPointer {
         StringBuilder sb = new StringBuilder(token.length());
         for (int i = 0; i < token.length(); i++) {
             char c = token.charAt(i);
-            if (c == '~' && i + 1 < token.length()) {
+            if (c == '~') {
+                if (i + 1 >= token.length()) {
+                    throw new JSONException("Invalid escape sequence: trailing '~' at end of token");
+                }
                 char next = token.charAt(i + 1);
                 if (next == '1') {
                     sb.append('/');

@@ -151,8 +151,14 @@ class JSONPatchTest {
                 "{\"a\":{\"b\":[1,2]}}",
                 "[{\"op\":\"copy\",\"from\":\"/a\",\"path\":\"/c\"}]");
         JSONObject obj = JSON.parseObject(result);
-        // Modify original should not affect copy
+        // Verify top-level objects are independent
         assertNotSame(obj.getJSONObject("a"), obj.getJSONObject("c"));
+        // Verify nested structures are also independent (deep copy, not shallow)
+        assertNotSame(obj.getJSONObject("a").getJSONArray("b"), obj.getJSONObject("c").getJSONArray("b"));
+        // Modify the nested array in original; copy should be unaffected
+        obj.getJSONObject("a").getJSONArray("b").add(3);
+        assertEquals(3, obj.getJSONObject("a").getJSONArray("b").size());
+        assertEquals(2, obj.getJSONObject("c").getJSONArray("b").size());
     }
 
     // ==================== test ====================
@@ -315,8 +321,10 @@ class JSONPatchTest {
         String result = JSONPatch.apply(
                 "{\"/\":9,\"~1\":10}",
                 "[{\"op\":\"test\",\"path\":\"/~01\",\"value\":10}]");
-        // ~01 → ~1 (key is "~1")
-        assertNotNull(result);
+        // ~01 → ~1 (key is "~1"), test op verifies value equals 10
+        JSONObject obj = JSON.parseObject(result);
+        assertEquals(10, obj.getIntValue("~1"));
+        assertEquals(9, obj.getIntValue("/"));
     }
 
     @Test

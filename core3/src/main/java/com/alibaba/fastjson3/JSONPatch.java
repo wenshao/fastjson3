@@ -95,7 +95,7 @@ public final class JSONPatch {
     private static Object applyAdd(Object target, String path, Object value) {
         if (path.isEmpty()) {
             // Replace the entire document
-            return value;
+            return deepCopy(value);
         }
         JSONPointer pointer = JSONPointer.of(path);
         pointer.set(target, deepCopy(value));
@@ -151,7 +151,7 @@ public final class JSONPatch {
         if (value == null && !fromPointer.exists(target)) {
             throw new JSONException("JSON Patch copy: source path does not exist: " + from);
         }
-        return applyAdd(target, path, deepCopy(value));
+        return applyAdd(target, path, value);
     }
 
     private static Object applyTest(Object target, String path, Object expected) {
