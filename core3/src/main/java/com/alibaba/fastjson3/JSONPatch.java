@@ -222,6 +222,10 @@ public final class JSONPatch {
             return true;
         }
         if (a instanceof Number na && b instanceof Number nb) {
+            if ((na instanceof Integer || na instanceof Long || na instanceof Short || na instanceof Byte)
+                    && (nb instanceof Integer || nb instanceof Long || nb instanceof Short || nb instanceof Byte)) {
+                return na.longValue() == nb.longValue();
+            }
             return na.doubleValue() == nb.doubleValue();
         }
         return a.equals(b);
