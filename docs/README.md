@@ -99,10 +99,10 @@ run.bat               # Windows
 |---------|--------|
 | 解析 JSON 字符串 | [start/01-basic-parse.md](start/01-basic-parse.md) |
 | 转换为 JSON 字符串 | [start/02-basic-serialize.md](start/02-basic-serialize.md) |
-| 处理日期 | [guides/pojo.md#dates](guides/pojo.md#dates) |
-| 忽略字段 | [guides/pojo.md#ignoring-fields](guides/pojo.md#ignoring-fields) |
-| 重命名字段 | [guides/pojo.md#renaming-fields](guides/pojo.md#renaming-fields) |
-| 处理泛型 | [guides/pojo.md#generics](guides/pojo.md#generics) |
+| 处理日期 | [guides/pojo.md#日期处理](guides/pojo.md#日期处理) |
+| 忽略字段 | [guides/pojo.md#忽略字段](guides/pojo.md#忽略字段) |
+| 重命名字段 | [guides/pojo.md#jsonfield---字段级注解](guides/pojo.md#jsonfield---字段级注解) |
+| 处理泛型 | [guides/pojo.md#泛型处理](guides/pojo.md#泛型处理) |
 | 查询 JSON 路径 | [guides/jsonpath.md](guides/jsonpath.md) |
 | 验证 JSON | [guides/validation.md](guides/validation.md) |
 | 自定义序列化 | [advanced/custom-serializer.md](advanced/custom-serializer.md) |
@@ -165,4 +165,4 @@ English documentation contributions are welcome.
 
 ---
 
-*最后更新: 2026-03-17*
+*最后更新: 2026-03-22*
