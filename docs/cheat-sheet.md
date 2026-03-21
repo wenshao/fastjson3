@@ -89,7 +89,7 @@ JSONPath multiPath = JSONPath.of(paths, types);
 Object[] values = multiPath.eval(json);
 ```
 
-## JSON Pointer / Patch / Merge Patch
+## JSON Pointer / Patch
 
 ```java
 // JSON Pointer (RFC 6901) — 定位值
@@ -99,11 +99,8 @@ ptr.set(doc, "New Title");
 ptr.remove(doc);
 
 // JSON Patch (RFC 6902) — 批量修改
-String result = JSONPatch.apply(target,
+String patchResult = JSONPatch.apply(target,
     "[{\"op\":\"add\",\"path\":\"/x\",\"value\":1}]");
-
-// JSON Merge Patch (RFC 7396) — 合并
-String result = JSON.mergePatch(target, patch);
 ```
 
 ## 常见问题快速解决

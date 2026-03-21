@@ -43,8 +43,8 @@
 | [JSONObject.md](api/JSONObject.md) | 动态 JSON 对象 |
 | [JSONArray.md](api/JSONArray.md) | 动态 JSON 数组 |
 | [JSONPath.md](api/JSONPath.md) | JSONPath API (RFC 9535) |
-| JSONPointer | JSON Pointer (RFC 6901) |
-| JSONPatch | JSON Patch (RFC 6902) |
+| [JSONPointer.md](api/JSONPointer.md) | JSON Pointer (RFC 6901) |
+| [JSONPatch.md](api/JSONPatch.md) | JSON Patch (RFC 6902) |
 | [annotations.md](api/annotations.md) | 注解参考 |
 | [features.md](api/features.md) | 特性枚举 |
 | [filters.md](api/filters.md) | 过滤器 API |
@@ -108,7 +108,6 @@ run.bat               # Windows
 | 查询 JSON 路径 | [guides/jsonpath.md](guides/jsonpath.md) |
 | 定位 JSON 值 (Pointer) | `JSONPointer.of("/a/b").eval(doc)` |
 | 修改 JSON (Patch) | `JSONPatch.apply(target, patch)` |
-| 合并 JSON (Merge Patch) | `JSON.mergePatch(target, patch)` |
 | 验证 JSON | [guides/validation.md](guides/validation.md) |
 | 自定义序列化 | [advanced/custom-serializer.md](advanced/custom-serializer.md) |
 | 提升性能 | [guides/performance.md](guides/performance.md) |

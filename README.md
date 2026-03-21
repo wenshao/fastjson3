@@ -219,15 +219,6 @@ String result = JSONPatch.apply(target, patch);
 
 Supported operations: `add`, `remove`, `replace`, `move`, `copy`, `test`
 
-## JSON Merge Patch (RFC 7396)
-
-```java
-String target = "{\"a\":1,\"b\":2,\"c\":{\"d\":3}}";
-String patch = "{\"b\":null,\"c\":{\"e\":4}}";
-String result = JSON.mergePatch(target, patch);
-// {"a":1,"c":{"d":3,"e":4}}
-```
-
 ## Annotations
 
 ```java
