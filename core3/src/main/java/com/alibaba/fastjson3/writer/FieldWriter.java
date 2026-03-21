@@ -773,41 +773,40 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 generator.pushReference(map);
                 try {
                     generator.startObject();
-                // Optimization: cache previous class and its ObjectWriter (fastjson2-style)
-                Class<?> previousClass = null;
-                ObjectWriter<Object> previousWriter = null;
-                for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
-                    generator.writeName(String.valueOf(entry.getKey()));
-                    Object item = entry.getValue();
-                    if (item == null) {
-                        generator.writeNull();
-                    } else if (item instanceof String s) {
-                        generator.writeString(s);
-                    } else if (item instanceof Integer in) {
-                        generator.writeInt32(in);
-                    } else if (item instanceof Long lo) {
-                        generator.writeInt64(lo);
-                    } else if (item instanceof Boolean bo) {
-                        generator.writeBool(bo);
-                    } else if (item instanceof Double dou) {
-                        generator.writeDouble(dou);
-                    } else {
-                        Class<?> itemClass = item.getClass();
-                        ObjectWriter<Object> writer;
-                        if (itemClass == previousClass) {
-                            writer = previousWriter;
+                    Class<?> previousClass = null;
+                    ObjectWriter<Object> previousWriter = null;
+                    for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
+                        generator.writeName(String.valueOf(entry.getKey()));
+                        Object item = entry.getValue();
+                        if (item == null) {
+                            generator.writeNull();
+                        } else if (item instanceof String s) {
+                            generator.writeString(s);
+                        } else if (item instanceof Integer in) {
+                            generator.writeInt32(in);
+                        } else if (item instanceof Long lo) {
+                            generator.writeInt64(lo);
+                        } else if (item instanceof Boolean bo) {
+                            generator.writeBool(bo);
+                        } else if (item instanceof Double dou) {
+                            generator.writeDouble(dou);
                         } else {
-                            writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(itemClass);
-                            previousClass = itemClass;
-                            previousWriter = writer;
-                        }
-                        if (writer != null) {
-                            writer.write(generator, item, null, null, features);
-                        } else {
-                            generator.writeAny(item);
+                            Class<?> itemClass = item.getClass();
+                            ObjectWriter<Object> writer;
+                            if (itemClass == previousClass) {
+                                writer = previousWriter;
+                            } else {
+                                writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(itemClass);
+                                previousClass = itemClass;
+                                previousWriter = writer;
+                            }
+                            if (writer != null) {
+                                writer.write(generator, item, null, null, features);
+                            } else {
+                                generator.writeAny(item);
+                            }
                         }
                     }
-                }
                     generator.endObject();
                 } finally {
                     generator.popReference(map);
