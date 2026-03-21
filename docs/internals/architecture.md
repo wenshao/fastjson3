@@ -385,10 +385,14 @@ core3/src/main/java/com/alibaba/fastjson3/
 ├── modules/
 │   ├── ObjectReaderModule.java
 │   └── ObjectWriterModule.java
-├── schema/
-│   └── JSONSchema.java
-├── jsonpath/
-│   └── JSONPath.java
+├── schema/                        # (简化视图)
+│   ├── JSONSchema.java
+│   ├── ObjectSchema.java
+│   └── ValidateResult.java
+├── jsonpath/                      # (简化视图)
+│   ├── JSONPathCompiler.java
+│   ├── JSONPathSegment.java
+│   └── JSONPathFilter.java
 ├── filter/
 │   ├── NameFilter.java
 │   ├── ValueFilter.java

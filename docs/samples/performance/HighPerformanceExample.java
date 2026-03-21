@@ -2,7 +2,6 @@ package com.alibaba.fastjson3.samples.performance;
 
 import com.alibaba.fastjson3.JSON;
 import com.alibaba.fastjson3.ObjectMapper;
-import com.alibaba.fastjson3.TypeToken;
 import com.alibaba.fastjson3.annotation.JSONField;
 import com.alibaba.fastjson3.annotation.JSONType;
 
@@ -47,8 +46,8 @@ public class HighPerformanceExample {
         // 2. 预编译 JSONPath
         useCompiledPath();
 
-        // 3. 启用 ASM（注意：Android 不支持）
-        useASM();
+        // 3. 默认反射路径（JIT 最优）
+        useDefaultReflect();
 
         // 4. 使用类型化缓存
         useTypeTokenCaching();
@@ -105,7 +104,7 @@ public class HighPerformanceExample {
     /**
      * 3. 默认配置已是最优
      */
-    private static void useASM() {
+    private static void useDefaultReflect() {
         System.out.println("3. 默认反射路径（JIT 最优）");
 
         // 默认配置使用反射路径，JIT 深度内联后比 ASM 快 10-13%

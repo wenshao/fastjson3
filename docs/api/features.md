@@ -209,7 +209,6 @@ WriteFeature[] FAST_WRITE = {
 | `BrowserCompatible` | 中等 | 需要额外转义 |
 | `WriteNulls` | 轻微 | 增加输出大小 |
 | `OptimizedForAscii` | 提升 | ASCII 内容更快 |
-| 默认反射模式 | 最快 | JIT 深度内联，优于 ASM |
 
 ## 最佳实践
 

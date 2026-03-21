@@ -2,7 +2,6 @@ package com.alibaba.fastjson3.samples.jsonpath;
 
 import com.alibaba.fastjson3.JSON;
 import com.alibaba.fastjson3.JSONObject;
-import java.util.List;
 import com.alibaba.fastjson3.JSONPath;
 
 import java.util.List;

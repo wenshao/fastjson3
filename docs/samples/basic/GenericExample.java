@@ -1,12 +1,9 @@
 package com.alibaba.fastjson3.samples.basic;
 
 import com.alibaba.fastjson3.JSON;
-import com.alibaba.fastjson3.TypeToken;
-import com.alibaba.fastjson3.TypeReference;
 import com.alibaba.fastjson3.JSONObject;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 泛型示例：演示处理复杂泛型类型
@@ -58,7 +55,7 @@ public class GenericExample {
         JSONObject userMapObj = JSON.parseObject(userMapJson);
         for (String key : userMapObj.keySet()) {
             // 从 JSONObject 值转换为 User
-            User u = JSON.parseObject(userMapObj.getJSONObject(key).toJSONString(), User.class);
+            User u = userMapObj.getJSONObject(key).toJavaObject(User.class);
             System.out.println("  " + key + " -> " + u);
         }
 
