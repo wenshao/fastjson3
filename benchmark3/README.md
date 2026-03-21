@@ -84,7 +84,7 @@ Results are stored in `results/` directory by date.
 | ClientsParseUTF8Bytes | **+98-102%** | **+8-10%** |
 | UserParseUTF8Bytes | **+131-144%** | **+28-35%** |
 
-**Write 场景 - wast 领先**
+**Write 场景 - fastjson3 领先**
 
 | Benchmark | fastjson3 vs fastjson2 | fastjson3 vs wast |
 |-----------|------------------------|-------------------|
