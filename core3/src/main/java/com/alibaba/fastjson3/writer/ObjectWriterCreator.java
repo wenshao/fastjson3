@@ -334,16 +334,34 @@ public final class ObjectWriterCreator {
             String label = resolveLabel(jsonField, backingField, mixIn);
 
             // Prefer backing field for Unsafe direct access (avoids Method.invoke overhead)
+            Type fieldType = method.getGenericReturnType();
+            Class<?> fieldClass = method.getReturnType();
+            // Detect List<T> element type for specialized List serialization
+            if (List.class.isAssignableFrom(fieldClass)) {
+                Class<?> elemClass = extractListElementClass(fieldType);
+                if (elemClass != null) {
+                    if (backingField != null) {
+                        backingField.setAccessible(true);
+                        writerMap.put(propertyName, FieldWriter.ofList(
+                                jsonName, ordinal, fieldType, fieldClass, elemClass, backingField, fieldInclusion));
+                    } else {
+                        method.setAccessible(true);
+                        writerMap.put(propertyName, FieldWriter.ofList(
+                                jsonName, ordinal, fieldType, fieldClass, elemClass, method, fieldInclusion));
+                    }
+                    continue;
+                }
+            }
             if (backingField != null) {
                 backingField.setAccessible(true);
                 writerMap.put(propertyName, FieldWriter.ofField(
-                        jsonName, ordinal, method.getGenericReturnType(), method.getReturnType(),
+                        jsonName, ordinal, fieldType, fieldClass,
                         backingField, fieldInclusion, format, customWriter, label
                 ));
             } else {
                 method.setAccessible(true);
                 writerMap.put(propertyName, FieldWriter.ofGetter(
-                        jsonName, ordinal, method.getGenericReturnType(), method.getReturnType(),
+                        jsonName, ordinal, fieldType, fieldClass,
                         method, fieldInclusion, format, customWriter, label
                 ));
             }
@@ -484,7 +502,12 @@ public final class ObjectWriterCreator {
     }
 
     static void writeFields(com.alibaba.fastjson3.JSONGenerator generator, FieldWriter[] writers, Object object, long features) {
-        if (generator.hasFilters() || generator.labelFilter != null) {
+        // Fast path: no filters
+        if (!generator.hasFilters() && generator.labelFilter == null) {
+            for (FieldWriter fw : writers) {
+                fw.writeField(generator, object, features);
+            }
+        } else {
             com.alibaba.fastjson3.filter.LabelFilter lf = generator.labelFilter;
             for (FieldWriter fw : writers) {
                 if (lf != null && fw.label != null && !lf.apply(fw.label)) continue;
@@ -494,10 +517,6 @@ public final class ObjectWriterCreator {
                 } else {
                     fw.writeField(generator, object, features);
                 }
-            }
-        } else {
-            for (FieldWriter fw : writers) {
-                fw.writeField(generator, object, features);
             }
         }
     }
@@ -509,16 +528,18 @@ public final class ObjectWriterCreator {
      */
     public static final class ReflectObjectWriter implements com.alibaba.fastjson3.ObjectWriter<Object> {
         public final FieldWriter[] writers;
+        private final int estimatedSize;
 
         ReflectObjectWriter(FieldWriter[] writers) {
             this.writers = writers;
+            this.estimatedSize = writers.length * 32 + 16;
         }
 
         @Override
         public void write(com.alibaba.fastjson3.JSONGenerator generator, Object object,
                           Object fieldName, java.lang.reflect.Type fieldType, long features) {
-            // Note: static path (writeObjectStaticUTF8) tested but virtual dispatch is faster
-            // due to JIT devirtualization being cheaper than switch dispatch in the static path.
+            // Pre-allocate capacity for the entire object
+            generator.ensureCapacityPublic(estimatedSize);
             generator.startObject();
             writeFields(generator, writers, object, features);
             generator.endObject();

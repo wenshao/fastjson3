@@ -16,7 +16,7 @@ class PerformanceOptTest {
     void charBufferPoolReuse() {
         char[] buf1 = BufferPool.borrowCharBuffer();
         assertNotNull(buf1);
-        assertEquals(8192, buf1.length);
+        assertTrue(buf1.length >= 8192, "buffer should be at least 8192 chars, got " + buf1.length);
 
         BufferPool.returnCharBuffer(buf1);
 

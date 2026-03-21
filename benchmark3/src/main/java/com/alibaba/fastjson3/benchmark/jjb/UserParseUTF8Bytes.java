@@ -11,8 +11,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 直接测试 User 类（23个字段）的 ASM vs Reflection 性能
- * 这才是真正的性能瓶颈所在
+ * 测试单个 User 类（23个字段）的解析性能
+ * 对比 fastjson2, fastjson3, wast 的性能
  */
 public class UserParseUTF8Bytes {
     static byte[] utf8Bytes;
@@ -56,6 +56,16 @@ public class UserParseUTF8Bytes {
     }
 
     @Benchmark
+    public void fastjson2(Blackhole bh) {
+        bh.consume(com.alibaba.fastjson2.JSON.parseObject(utf8Bytes, Users.User.class));
+    }
+
+    @Benchmark
+    public void fastjson3(Blackhole bh) {
+        bh.consume(com.alibaba.fastjson3.JSON.parseObject(utf8Bytes, Users.User.class));
+    }
+
+    @Benchmark
     public void fastjson3_reflect(Blackhole bh) {
         try (com.alibaba.fastjson3.JSONParser parser = com.alibaba.fastjson3.JSONParser.of(utf8Bytes)) {
             bh.consume(reflectReader.readObject(parser, null, null, 0));
@@ -67,6 +77,11 @@ public class UserParseUTF8Bytes {
         try (com.alibaba.fastjson3.JSONParser parser = com.alibaba.fastjson3.JSONParser.of(utf8Bytes)) {
             bh.consume(asmReader.readObject(parser, null, null, 0));
         }
+    }
+
+    @Benchmark
+    public void wast(Blackhole bh) {
+        bh.consume(io.github.wycst.wast.json.JSON.parseObject(utf8Bytes, Users.User.class));
     }
 
     public static void main(String[] args) throws RunnerException {

@@ -37,7 +37,7 @@
         <dependency>
             <groupId>io.github.wycst</groupId>
             <artifactId>wast</artifactId>
-            <version>0.0.28</version>
+            <version>0.0.29.1</version>
         </dependency>
 
         <!-- JMH -->

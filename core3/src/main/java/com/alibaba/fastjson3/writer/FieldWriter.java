@@ -519,7 +519,8 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 generator.writeString(formatter.format(
                         d.toInstant().atZone(com.alibaba.fastjson3.util.DateUtils.DEFAULT_ZONE_ID)));
             } else {
-                generator.writeAny(value);
+                // Fallback: use ObjectWriter instead of writeAny
+                writeObjectWithWriter(generator, value, features);
             }
             return;
         }
@@ -546,7 +547,20 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             if (writer != null) {
                 writer.write(generator, value, fieldName, fieldType, features);
             } else {
-                generator.writeAny(value);
+                // Fallback: inline common types instead of writeAny
+                if (value instanceof String s) {
+                    generator.writeString(s);
+                } else if (value instanceof Integer i) {
+                    generator.writeInt32(i);
+                } else if (value instanceof Long l) {
+                    generator.writeInt64(l);
+                } else if (value instanceof Boolean b) {
+                    generator.writeBool(b);
+                } else if (value instanceof Double d) {
+                    generator.writeDouble(d);
+                } else {
+                    generator.writeAny(value);
+                }
             }
         } finally {
             if (trackRef) {
@@ -567,7 +581,15 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         generator.startArray();
-        for (int i = 0, size = list.size(); i < size; i++) {
+        
+        int size = list.size();
+        // Capacity pre-calculation for List<String>
+        if (size > 0) {
+            // Estimate: average 16 bytes per string element
+            generator.ensureCapacityPublic(size * 16 + 16);
+        }
+        
+        for (int i = 0; i < size; i++) {
             generator.beforeArrayValue();
             String s = (String) list.get(i);
             if (s == null) {
@@ -589,6 +611,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && list.isEmpty()) {
             return;
         }
+        generator.incrementDepth();
         generator.pushReference(list);
         try {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
@@ -601,7 +624,15 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                     cachedWriter = elemWriter;
                 }
             }
-            for (int i = 0, size = list.size(); i < size; i++) {
+            
+            int size = list.size();
+            // Optimized: capacity pre-calculation for List<POJO>
+            if (size > 0 && elemWriter instanceof com.alibaba.fastjson3.writer.ObjectWriterCreator.ReflectObjectWriter) {
+                // Estimate capacity: roughly 64 bytes per POJO element
+                generator.ensureCapacityPublic(size * 64 + 16);
+            }
+            
+            for (int i = 0; i < size; i++) {
                 generator.beforeArrayValue();
                 Object item = list.get(i);
                 if (item == null) {
@@ -609,12 +640,13 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 } else if (elemWriter != null) {
                     elemWriter.write(generator, item, null, null, features);
                 } else {
-                    generator.writeAny(item);
+                    writeAnyItem(generator, item, features);
                 }
             }
             generator.endArray();
         } finally {
             generator.popReference(list);
+            generator.decrementDepth();
         }
     }
 
@@ -695,17 +727,131 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         } else if (value instanceof BigDecimal bd) {
             generator.writeDecimal(bd);
         } else if (isContainerType(value)) {
-            // Container types: writeAny handles its own pushReference/popReference
-            generator.writeAny(value);
-        } else {
-            // POJO types: need reference tracking here since writeAny's ObjectWriter
-            // branch does not do pushReference
-            generator.pushReference(value);
-            try {
+            // Container types still need writeAny for complex nested structures
+            // but we inline common cases
+            if (value instanceof java.util.List<?> list) {
+                generator.incrementDepth();
+                generator.pushReference(list);
+                try {
+                    generator.startArray();
+                    Class<?> previousClass = null;
+                    ObjectWriter<Object> previousWriter = null;
+                    for (int i = 0, size = list.size(); i < size; i++) {
+                        generator.beforeArrayValue();
+                        Object item = list.get(i);
+                        if (item == null) {
+                            generator.writeNull();
+                        } else if (item instanceof String s) {
+                            generator.writeString(s);
+                        } else if (item instanceof Integer in) {
+                            generator.writeInt32(in);
+                        } else if (item instanceof Long lo) {
+                            generator.writeInt64(lo);
+                        } else if (item instanceof Boolean bo) {
+                            generator.writeBool(bo);
+                        } else if (item instanceof Double dou) {
+                            generator.writeDouble(dou);
+                        } else {
+                            Class<?> itemClass = item.getClass();
+                            ObjectWriter<Object> writer;
+                            if (itemClass == previousClass) {
+                                writer = previousWriter;
+                            } else {
+                                writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(itemClass);
+                                previousClass = itemClass;
+                                previousWriter = writer;
+                            }
+                            if (writer != null) {
+                                writer.write(generator, item, null, null, features);
+                            } else {
+                                generator.writeAny(item);
+                            }
+                        }
+                    }
+                    generator.endArray();
+                } finally {
+                    generator.popReference(list);
+                    generator.decrementDepth();
+                }
+            } else if (value instanceof java.util.Map<?, ?> map) {
+                generator.incrementDepth();
+                generator.pushReference(map);
+                try {
+                    generator.startObject();
+                    Class<?> previousClass = null;
+                    ObjectWriter<Object> previousWriter = null;
+                    for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
+                        generator.writeName(String.valueOf(entry.getKey()));
+                        Object item = entry.getValue();
+                        if (item == null) {
+                            generator.writeNull();
+                        } else if (item instanceof String s) {
+                            generator.writeString(s);
+                        } else if (item instanceof Integer in) {
+                            generator.writeInt32(in);
+                        } else if (item instanceof Long lo) {
+                            generator.writeInt64(lo);
+                        } else if (item instanceof Boolean bo) {
+                            generator.writeBool(bo);
+                        } else if (item instanceof Double dou) {
+                            generator.writeDouble(dou);
+                        } else {
+                            Class<?> itemClass = item.getClass();
+                            ObjectWriter<Object> writer;
+                            if (itemClass == previousClass) {
+                                writer = previousWriter;
+                            } else {
+                                writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(itemClass);
+                                previousClass = itemClass;
+                                previousWriter = writer;
+                            }
+                            if (writer != null) {
+                                writer.write(generator, item, null, null, features);
+                            } else {
+                                generator.writeAny(item);
+                            }
+                        }
+                    }
+                    generator.endObject();
+                } finally {
+                    generator.popReference(map);
+                    generator.decrementDepth();
+                }
+            } else {
                 generator.writeAny(value);
-            } finally {
-                generator.popReference(value);
             }
+        } else {
+            // POJO types: use cached ObjectWriter instead of writeAny
+            writeObjectWithWriter(generator, value, features);
+        }
+    }
+
+    private void writeAnyItem(JSONGenerator generator, Object item, long features) {
+        if (item == null) {
+            generator.writeNull();
+            return;
+        }
+        Class<?> itemClass = item.getClass();
+        ObjectWriter<Object> writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(itemClass);
+        if (writer != null) {
+            writer.write(generator, item, null, null, features);
+        } else {
+            generator.writeAny(item);
+        }
+    }
+
+    private void writeObjectWithWriter(JSONGenerator generator, Object value, long features) {
+        generator.pushReference(value);
+        try {
+            Class<?> valueClass = value.getClass();
+            ObjectWriter<Object> writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(valueClass);
+            if (writer != null) {
+                writer.write(generator, value, fieldName, fieldType, features);
+            } else {
+                generator.writeAny(value);
+            }
+        } finally {
+            generator.popReference(value);
         }
     }
 
