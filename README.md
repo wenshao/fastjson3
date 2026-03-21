@@ -184,6 +184,41 @@ if (!result.isSuccess()) {
 }
 ```
 
+## JSON Pointer (RFC 6901)
+
+```java
+JSONPointer pointer = JSONPointer.of("/store/book/0/title");
+
+// Evaluate
+String title = pointer.eval(jsonObject, String.class);
+
+// Modify
+pointer.set(jsonObject, "New Title");
+
+// Remove
+JSONPointer.of("/store/book/0").remove(jsonObject);
+
+// Check existence
+boolean exists = pointer.exists(jsonObject);
+```
+
+## JSON Patch (RFC 6902)
+
+```java
+String target = "{\"foo\":\"bar\"}";
+String patch = """
+    [
+        {"op":"add","path":"/baz","value":"qux"},
+        {"op":"remove","path":"/foo"},
+        {"op":"replace","path":"/baz","value":"boo"}
+    ]
+    """;
+String result = JSONPatch.apply(target, patch);
+// {"baz":"boo"}
+```
+
+Supported operations: `add`, `remove`, `replace`, `move`, `copy`, `test`
+
 ## Annotations
 
 ```java

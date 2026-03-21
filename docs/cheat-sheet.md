@@ -89,6 +89,22 @@ JSONPath multiPath = JSONPath.of(paths, types);
 Object[] values = multiPath.eval(json);
 ```
 
+## JSON Pointer / Patch
+
+```java
+// JSON Pointer (RFC 6901) — 定位值
+JSONObject doc = JSON.parseObject("{\"store\":{\"book\":[{\"title\":\"Java\"}]}}");
+JSONPointer ptr = JSONPointer.of("/store/book/0/title");
+String title = ptr.eval(doc, String.class);
+ptr.set(doc, "New Title");
+ptr.remove(doc);
+
+// JSON Patch (RFC 6902) — 批量修改
+String target = "{\"a\":1,\"b\":2}";
+String patchResult = JSONPatch.apply(target,
+    "[{\"op\":\"add\",\"path\":\"/x\",\"value\":1}]");
+```
+
 ## 常见问题快速解决
 
 | 问题 | 解决方案 |
