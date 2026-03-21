@@ -185,7 +185,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
      * Decrement write depth after writing a nested container.
      */
     public void decrementDepth() {
-        writeDepth--;
+        if (writeDepth > 0) {
+            writeDepth--;
+        }
     }
 
     /**

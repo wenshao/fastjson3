@@ -88,15 +88,14 @@ Results are stored in `results/` directory by date.
 
 | Benchmark | fastjson3 vs fastjson2 | fastjson3 vs wast |
 |-----------|------------------------|-------------------|
-| ClientsWriteUTF8Bytes | **+36-37%** | **-15%** |
-| UsersWriteUTF8Bytes | **+14-15%** | **-15%** |
+| ClientsWriteUTF8Bytes | **+154%** | **+9%** |
+| UsersWriteUTF8Bytes | **+162%** | **+32%** |
 
 **Key Findings:**
 - **Parse:** fastjson3 > wast > fastjson2
-- **Write:** wast > fastjson3 > fastjson2
-- fastjson3 在 Parse 场景优势明显（8-35%）
-- wast 在 Write 场景优势明显（~15%）
-- fastjson3 相比 fastjson2 全面领先
+- **Write:** fastjson3 > wast > fastjson2
+- fastjson3 在 Parse 和 Write 场景均全面领先
+- Write 场景超越 wast 9-32%
 
 ## Running Benchmarks
 

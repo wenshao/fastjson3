@@ -532,7 +532,6 @@ public final class ObjectWriterCreator {
 
         ReflectObjectWriter(FieldWriter[] writers) {
             this.writers = writers;
-            // Estimate average object size: 8 fields * 32 bytes each = 256 bytes
             this.estimatedSize = writers.length * 32 + 16;
         }
 

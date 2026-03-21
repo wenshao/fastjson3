@@ -611,6 +611,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && list.isEmpty()) {
             return;
         }
+        generator.incrementDepth();
         generator.pushReference(list);
         try {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
@@ -645,6 +646,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             generator.endArray();
         } finally {
             generator.popReference(list);
+            generator.decrementDepth();
         }
     }
 
