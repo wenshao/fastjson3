@@ -216,6 +216,18 @@ String json = mapper.writeValueAsString(user);
 byte[] bytes = JSON.toJSONBytes(user);
 ```
 
+## JSON Merge Patch (RFC 7396)
+
+```java
+// 字符串 API
+String result = JSON.mergePatch(target, patch);
+
+// 对象 API
+Object result = JSON.mergePatch(targetObj, patchObj);
+```
+
+规则：patch 中的 `null` 值删除对应字段，对象值递归合并，其他值直接替换。
+
 ## 线程安全
 
 `JSON` 类的所有方法都是静态的，无状态，完全线程安全。
