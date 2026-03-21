@@ -30,11 +30,14 @@ public final class JSONPatch {
      * @throws JSONException if any operation fails
      */
     public static String apply(String target, String patch) {
-        if (patch == null) {
-            throw new JSONException("patch must not be null");
+        if (patch == null || patch.trim().isEmpty()) {
+            throw new JSONException("patch must not be null or empty");
         }
         Object targetObj = JSON.parse(target);
         JSONArray operations = JSON.parseArray(patch);
+        if (operations == null) {
+            throw new JSONException("patch must be a JSON array");
+        }
         Object result = apply(targetObj, operations);
         return JSON.toJSONString(result);
     }
