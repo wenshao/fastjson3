@@ -179,7 +179,7 @@ mapper.writeValue(new FileOutputStream("out.json"), obj);
 ### 性能优化
 
 ```java
-// 默认配置已是最优（反射路径 JIT 深度内联）
+// 默认配置已是最优（Reader 默认 REFLECT，Writer 默认 AUTO）
 ObjectMapper mapper = ObjectMapper.shared();
 
 // 使用 byte[] 而非 String 进一步提升

@@ -110,7 +110,7 @@ private static final ObjectMapper MAPPER = ObjectMapper.shared();
 byte[] json = JSON.toJSONBytes(obj);
 ```
 
-> **注意**: 默认反射路径经 JIT 深度内联后比 ASM 快 10-13%，无需额外配置。
+> **注意**: 默认配置经 JIT 深度内联后比 ASM 快 10-13%，无需额外配置。
 > ASM 仅作为跨 ClassLoader 等兼容性场景的后备方案。
 
 ## 泛型处理

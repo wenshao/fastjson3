@@ -46,7 +46,7 @@ User user = mapper.readValue(json, User.class);
 
 ### 3. 默认配置已是最优
 
-fastjson3 默认使用 JIT 友好的反射路径，性能优于 ASM 字节码生成。无需手动配置 ASM。
+fastjson3 默认配置已针对 JIT 优化（Reader 反射，Writer AUTO）。无需手动配置 ASM。
 
 ```java
 // ✅ 默认配置已经是最快的
@@ -301,7 +301,7 @@ java -XX:+UseG1GC YourApp
 
 1. **复用 ObjectMapper** - 单例或共享实例
 2. **优先 byte[]** - UTF-8 数据使用字节
-3. **使用默认反射路径** - JIT 深度内联后比 ASM 快 10-13%
+3. **使用默认配置** - JIT 深度内联后比 ASM 快 10-13%
 4. **预编译 JSONPath** - 缓存编译结果
 5. **禁用不需要的特性** - 减少开销
 6. **使用流式处理** - 大数据量场景

@@ -117,7 +117,7 @@ public class HighPerformanceExample {
     }
 
     /**
-     * 4. 使用类型化缓存
+     * 4. 使用 parseArray 处理列表
      */
     private static void useTypeTokenCaching() {
         System.out.println("4. 使用 parseArray 处理 List 类型");

@@ -113,7 +113,7 @@ public final void writeField(JSONGenerator gen, Object bean) {
 
 ### 决策
 
-ObjectReader/ObjectWriter 默认使用反射，ASM 需要显式启用。
+ObjectReader 默认使用 REFLECT；ObjectWriter 默认使用 AUTO（优先尝试 ASM，失败回退反射）。
 
 ### 原因
 

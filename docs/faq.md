@@ -133,7 +133,7 @@ JSON.toJSONString(obj, WriteFeature.PrettyFormat)
 
 1. 是否复用 ObjectMapper
 2. 是否使用 byte[] 而非 String
-3. 是否使用默认反射路径（比 ASM 快 10-13%）
+3. 是否使用默认配置（比 ASM 快 10-13%）
 4. 是否启用了不必要的特性
 
 ### Q: 如何提升性能？
@@ -143,7 +143,7 @@ JSON.toJSONString(obj, WriteFeature.PrettyFormat)
 关键点：
 - 复用 `ObjectMapper`
 - 使用 `toJSONBytes()`
-- 保持默认反射路径（JIT 内联后比 ASM 快 10-13%）
+- 保持默认配置（JIT 内联后比 ASM 快 10-13%）
 - 禁用不需要的特性
 
 ---
