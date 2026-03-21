@@ -5,8 +5,8 @@
 
 set -e
 
-# Build core3
-mvn -q clean package -DskipTests -pl core3 -q
+# Build core3 and benchmark3
+mvn -q clean package -DskipTests -pl core3,benchmark3 -am -q
 
 # Get classpath
 CP="core3/target/classes:benchmark3/target/classes:benchmark3/target/test-classes"

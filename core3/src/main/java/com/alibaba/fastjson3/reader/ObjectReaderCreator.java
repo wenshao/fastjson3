@@ -873,7 +873,7 @@ public final class ObjectReaderCreator {
                         } else if (b[off] == 't' || b[off] == 'f') {
                             // Boolean value - convert to String
                             utf8.setOffset(off);
-                            boolean val = utf8.readBoolean() ? true : false;
+                            boolean val = utf8.readBoolean();
                             reader.setObjectValue(instance, Boolean.toString(val));
                             off = utf8.getOffset();
                         } else {
@@ -1051,7 +1051,7 @@ public final class ObjectReaderCreator {
                         reader.setObjectValue(instance, numStr);
                     } else if (peek == 't' || peek == 'f') {
                         // Boolean value - convert to String
-                        boolean val = utf8.readBoolean() ? true : false;
+                        boolean val = utf8.readBoolean();
                         reader.setObjectValue(instance, Boolean.toString(val));
                     } else {
                         // Fallback to readStringDirect for any other type
