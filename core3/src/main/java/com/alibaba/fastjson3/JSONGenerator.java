@@ -1426,8 +1426,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 buf[count++] = '}';
                 buf[count++] = ',';
             } else {
-                // Optimized: always strip trailing comma (we always write one after each field)
-                count--;
+                // Strip trailing comma if present; handle empty object safely
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
                 buf[count++] = '}';
                 buf[count++] = ',';
             }
@@ -1457,8 +1459,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 buf[count++] = ']';
                 buf[count++] = ',';
             } else {
-                // Optimized: always strip trailing comma
-                count--;
+                // Strip trailing comma if present; handle empty array safely
+                if (count > 0 && buf[count - 1] == ',') {
+                    count--;
+                }
                 buf[count++] = ']';
                 buf[count++] = ',';
             }
