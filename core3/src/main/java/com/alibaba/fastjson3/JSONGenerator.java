@@ -1235,18 +1235,20 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             int len = val.length();
-            // Worst case: each char becomes \\uXXXX (6 chars) + 2 quotes + comma
-            ensureCapacity(count + len * 6 + 3);
+            // Conservative initial estimate: most chars are not escaped
+            ensureCapacity(count + len + 16);
             buf[count++] = '"';
             for (int i = 0; i < len; i++) {
                 char ch = val.charAt(i);
                 if (ch < 128) {
                     char escaped = ESCAPE_CHARS[ch];
                     if (escaped != 0 && ch != '/') {
+                        ensureCapacity(count + 2 + (len - i) + 3);
                         buf[count++] = '\\';
                         buf[count++] = escaped;
                     } else if (ch < 0x20) {
                         // control character
+                        ensureCapacity(count + 6 + (len - i) + 3);
                         buf[count++] = '\\';
                         buf[count++] = 'u';
                         buf[count++] = '0';

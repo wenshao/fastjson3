@@ -51,10 +51,13 @@ public final class JSONPointer {
 
     /**
      * Evaluate this pointer against a JSON document.
+     * <p>
+     * Returns {@code null} when the pointer path is not found in the document
+     * (e.g., missing key in an object, index out of bounds in an array,
+     * or traversal through a non-container value).
      *
      * @param root the root JSON document (JSONObject, JSONArray, or value)
-     * @return the value at the pointer location, or null if not found
-     * @throws JSONException if the pointer path is invalid for the document structure
+     * @return the value at the pointer location, or {@code null} if the path is not found
      */
     public Object eval(Object root) {
         Object current = root;
@@ -93,12 +96,21 @@ public final class JSONPointer {
             return (T) value.toString();
         }
         if (type == Integer.class || type == int.class) {
+            if (!(value instanceof Number)) {
+                throw new JSONException("Cannot convert " + value.getClass().getName() + " to " + type.getName());
+            }
             return (T) Integer.valueOf(((Number) value).intValue());
         }
         if (type == Long.class || type == long.class) {
+            if (!(value instanceof Number)) {
+                throw new JSONException("Cannot convert " + value.getClass().getName() + " to " + type.getName());
+            }
             return (T) Long.valueOf(((Number) value).longValue());
         }
         if (type == Double.class || type == double.class) {
+            if (!(value instanceof Number)) {
+                throw new JSONException("Cannot convert " + value.getClass().getName() + " to " + type.getName());
+            }
             return (T) Double.valueOf(((Number) value).doubleValue());
         }
         if (type == Boolean.class || type == boolean.class) {
@@ -108,7 +120,7 @@ public final class JSONPointer {
             if (value instanceof Number n) {
                 return (T) Boolean.valueOf(n.intValue() != 0);
             }
-            return (T) value;
+            throw new JSONException("Cannot convert " + value.getClass().getName() + " to " + type.getName());
         }
         throw new JSONException("Cannot convert " + value.getClass().getName() + " to " + type.getName());
     }
@@ -235,6 +247,9 @@ public final class JSONPointer {
                 arr.add(value);
             } else {
                 int index = parseIndex(token, arr.size() + 1);
+                if (index > arr.size()) {
+                    throw new JSONException("Array index out of bounds: " + token + " (size: " + arr.size() + ")");
+                }
                 if (index == arr.size()) {
                     arr.add(value);
                 } else {

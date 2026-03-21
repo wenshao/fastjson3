@@ -124,8 +124,8 @@ class StringEncodingEdgeTest {
 
     @Test
     void escapeNoneAscii_CJK() {
-        // EscapeNoneAscii is defined but not yet implemented in the generator,
-        // so non-ASCII chars are written directly. Verify round-trip works.
+        // TODO: EscapeNoneAscii is defined in WriteFeature but not yet implemented in the generator.
+        // Currently non-ASCII chars are passed through directly. Update these assertions when implemented.
         String input = "\u4e2d\u56fd";
         String json = JSON.toJSONString(input, WriteFeature.EscapeNoneAscii);
         String parsed = JSON.parseObject(json, String.class);
@@ -134,17 +134,17 @@ class StringEncodingEdgeTest {
 
     @Test
     void escapeNoneAscii_singleChar() {
-        // EscapeNoneAscii is defined but not yet implemented in the generator.
-        // Verify the CJK char is preserved in the output (written directly).
+        // TODO: EscapeNoneAscii is defined in WriteFeature but not yet implemented in the generator.
+        // Currently the CJK char is passed through directly (not escaped to \\uXXXX).
         String input = "\u4e2d";
         String json = JSON.toJSONString(input, WriteFeature.EscapeNoneAscii);
-        assertTrue(json.contains("\u4e2d"), "CJK char should be in output: " + json);
+        assertTrue(json.contains("\u4e2d"), "CJK char should be in output (pass-through): " + json);
     }
 
     @Test
     void escapeNoneAscii_mixedWithAscii() {
-        // EscapeNoneAscii is defined but not yet implemented in the generator.
-        // Verify round-trip works with mixed ASCII and non-ASCII.
+        // TODO: EscapeNoneAscii is defined in WriteFeature but not yet implemented in the generator.
+        // Currently non-ASCII chars are passed through directly. Verify round-trip works.
         String input = "Hello \u4e2d\u56fd World";
         String json = JSON.toJSONString(input, WriteFeature.EscapeNoneAscii);
         assertTrue(json.contains("Hello"), "ASCII should be preserved");

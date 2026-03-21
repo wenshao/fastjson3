@@ -1,5 +1,7 @@
 package com.alibaba.fastjson3;
 
+import java.math.BigDecimal;
+
 /**
  * JSON Patch (RFC 6902) implementation.
  * <p>
@@ -226,7 +228,7 @@ public final class JSONPatch {
                     && (nb instanceof Integer || nb instanceof Long || nb instanceof Short || nb instanceof Byte)) {
                 return na.longValue() == nb.longValue();
             }
-            return na.doubleValue() == nb.doubleValue();
+            return new BigDecimal(na.toString()).compareTo(new BigDecimal(nb.toString())) == 0;
         }
         return a.equals(b);
     }
