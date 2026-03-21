@@ -47,7 +47,7 @@ Quick links:
 <dependency>
     <groupId>com.alibaba.fastjson3</groupId>
     <artifactId>fastjson3</artifactId>
-    <version>3.0.0-SNAPSHOT</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
