@@ -1791,7 +1791,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         return;
                     }
                 }
-                // Remaining 0-7 bytes
+                // 4-byte tail acceleration
+                if (i + 3 < len) {
+                    int iv = JDKUtils.getIntDirect(value, i);
+                    if (noEscape4(iv)) {
+                        JDKUtils.putIntDirect(buf, pos, iv);
+                        pos += 4; i += 4;
+                    }
+                }
+                // Remaining 0-3 bytes
                 for (; i < len; i++) {
                     byte b = value[i];
                     if (b >= 0x20 && b != '"' && b != '\\') {
@@ -2008,6 +2016,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                             buf[pos++] = ',';
                             count = pos;
                             return;
+                        }
+                    }
+                    // 4-byte tail acceleration: handle 4+ remaining bytes with int ops
+                    if (i + 3 < valLen) {
+                        int iv = JDKUtils.getIntDirect(valBytes, i);
+                        if (noEscape4(iv)) {
+                            JDKUtils.putIntDirect(buf, pos, iv);
+                            pos += 4; i += 4;
                         }
                     }
                     for (; i < valLen; i++) {
@@ -2390,6 +2406,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     buf[pos++] = '"';
                     buf[pos++] = ',';
                     return pos;
+                }
+            }
+            // 4-byte tail acceleration
+            if (i + 3 < len) {
+                int iv = JDKUtils.getIntDirect(value, i);
+                if (noEscape4(iv)) {
+                    JDKUtils.putIntDirect(buf, pos, iv);
+                    pos += 4; i += 4;
                 }
             }
             for (; i < len; i++) {

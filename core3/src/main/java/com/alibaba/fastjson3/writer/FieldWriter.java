@@ -727,6 +727,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             // but we inline common cases
             if (value instanceof java.util.List<?> list) {
                 generator.startArray();
+                // Optimization: cache previous class and its ObjectWriter (fastjson2-style)
+                Class<?> previousClass = null;
+                ObjectWriter<Object> previousWriter = null;
                 for (int i = 0, size = list.size(); i < size; i++) {
                     Object item = list.get(i);
                     if (item == null) {
@@ -742,12 +745,28 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                     } else if (item instanceof Double dou) {
                         generator.writeDouble(dou);
                     } else {
-                        writeAnyItem(generator, item, features);
+                        Class<?> itemClass = item.getClass();
+                        ObjectWriter<Object> writer;
+                        if (itemClass == previousClass) {
+                            writer = previousWriter;
+                        } else {
+                            writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(itemClass);
+                            previousClass = itemClass;
+                            previousWriter = writer;
+                        }
+                        if (writer != null) {
+                            writer.write(generator, item, null, null, features);
+                        } else {
+                            generator.writeAny(item);
+                        }
                     }
                 }
                 generator.endArray();
             } else if (value instanceof java.util.Map<?, ?> map) {
                 generator.startObject();
+                // Optimization: cache previous class and its ObjectWriter (fastjson2-style)
+                Class<?> previousClass = null;
+                ObjectWriter<Object> previousWriter = null;
                 for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
                     generator.writeName(String.valueOf(entry.getKey()));
                     Object item = entry.getValue();
@@ -764,7 +783,20 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                     } else if (item instanceof Double dou) {
                         generator.writeDouble(dou);
                     } else {
-                        writeAnyItem(generator, item, features);
+                        Class<?> itemClass = item.getClass();
+                        ObjectWriter<Object> writer;
+                        if (itemClass == previousClass) {
+                            writer = previousWriter;
+                        } else {
+                            writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(itemClass);
+                            previousClass = itemClass;
+                            previousWriter = writer;
+                        }
+                        if (writer != null) {
+                            writer.write(generator, item, null, null, features);
+                        } else {
+                            generator.writeAny(item);
+                        }
                     }
                 }
                 generator.endObject();
