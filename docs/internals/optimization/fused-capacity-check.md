@@ -18,9 +18,9 @@ writeIntValue(value);  // ensureCapacity
 
 ```java
 // ✅ 一次检查
-void writeNameInt(long[] nameLongs, int nameLen, int value) {
-    ensureCapacity(nameLen + 12);  // name + int(最多11位) + comma(1)
-    writeNameLongs(nameLongs, nameLen);
+void writeNameInt(long[] nameByteLongs, int nameBytesLen, int value) {
+    ensureCapacity(nameBytesLen + 12);  // name + int(最多11位) + comma(1)
+    writeNameLongs(nameByteLongs, nameBytesLen);
     writeInt(value);
     buf[count++] = ',';
 }
@@ -51,11 +51,11 @@ public void writeInt(int value) {
 ```java
 // 一次检查，多次写入
 public void writeField(String name, int value) {
-    int nameLen = name.length() + 3;  // "" + name + :
+    int nameBytesLen = name.length() + 3;  // "" + name + :
     int intLen = 11;  // 最多 11 位
     int commaLen = 1;
 
-    ensureCapacity(nameLen + intLen + commaLen);  // 只检查 1 次
+    ensureCapacity(nameBytesLen + intLen + commaLen);  // 只检查 1 次
 
     writeNameEncoded(name);  // 预编码字段名
     writeInt(value);
@@ -69,7 +69,7 @@ public void writeField(String name, int value) {
 
 ```java
 // 精确计算需要的容量
-int requiredCapacity = pos + nameLen + valueLen + comma;
+int requiredCapacity = pos + nameBytesLen + valueLen + comma;
 
 // 一次性扩容
 if (requiredCapacity > buf.length) {
@@ -77,7 +77,7 @@ if (requiredCapacity > buf.length) {
 }
 
 // 后续写入无需检查
-writeNameLongs(nameLongs, nameLen);
+writeNameLongs(nameByteLongs, nameBytesLen);
 writeInt(value);
 buf[count++] = ',';
 ```
@@ -106,12 +106,12 @@ public class JSONGenerator {
     private int count;
 
     // 融合写入：字段名 + 字符串值
-    public void writeStringField(long[] nameLongs, int nameLen, String value) {
+    public void writeStringField(long[] nameByteLongs, int nameBytesLen, String value) {
         int valueLen = value.length() * 3;  // UTF-8 最坏情况：1 字符 = 3 字节
-        ensureCapacity(count + nameLen + valueLen + 3);  // +3 = "" + ,
+        ensureCapacity(count + nameBytesLen + valueLen + 3);  // +3 = "" + ,
 
         // 写入字段名
-        writeNameLongs(nameLongs, nameLen);
+        writeNameLongs(nameByteLongs, nameBytesLen);
 
         // 写入字符串值
         writeString(value);
@@ -121,21 +121,21 @@ public class JSONGenerator {
     }
 
     // 融合写入：字段名 + 整数值
-    public void writeIntField(long[] nameLongs, int nameLen, int value) {
+    public void writeIntField(long[] nameByteLongs, int nameBytesLen, int value) {
         // int 最大 11 位（-2147483648）
-        ensureCapacity(count + nameLen + 11 + 1);
+        ensureCapacity(count + nameBytesLen + 11 + 1);
 
-        writeNameLongs(nameLongs, nameLen);
+        writeNameLongs(nameByteLongs, nameBytesLen);
         writeInt(value);
         buf[count++] = ',';
     }
 
     // 融合写入：字段名 + 长整数值
-    public void writeLongField(long[] nameLongs, int nameLen, long value) {
+    public void writeLongField(long[] nameByteLongs, int nameBytesLen, long value) {
         // long 最大 20 位
-        ensureCapacity(count + nameLen + 20 + 1);
+        ensureCapacity(count + nameBytesLen + 20 + 1);
 
-        writeNameLongs(nameLongs, nameLen);
+        writeNameLongs(nameByteLongs, nameBytesLen);
         writeLong(value);
         buf[count++] = ',';
     }

@@ -414,9 +414,9 @@ writeIntValue(value);  // ensureCapacity
 
 ```java
 // ✅ 一次检查
-void writeNameInt(long[] nameLongs, int nameLen, int value) {
+void writeNameInt(long[] nameByteLongs, int nameLen, int value) {
     ensureCapacity(nameLen + 12);  // name + int(最多11位) + comma(1)
-    writeNameLongs(nameLongs, nameLen);
+    writeNameLongs(nameByteLongs, nameLen);
     writeInt(value);
     buf[count++] = ',';
 }

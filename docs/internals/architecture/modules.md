@@ -37,13 +37,9 @@ core3/src/main/java/com/alibaba/fastjson3/
 │   └── ObjectWriterModule.java    # Writer 扩展模块
 ├── schema/
 │   ├── JSONSchema.java            # JSONSchema 接口
-│   ├── JSONSchemaValidator.java   # Schema 验证器
-│   └── validator/
-│       ├── SchemaValidator.java
-│       └── formats/
+│   └── JSONSchemaValidator.java   # Schema 验证器
 ├── jsonpath/
 │   ├── JSONPath.java              # JSONPath 核心接口
-│   ├── segments/                  # 路径段实现
 │   └── compiler/                  # 路径编译器
 ├── filter/
 │   ├── Filter.java                # 过滤器接口

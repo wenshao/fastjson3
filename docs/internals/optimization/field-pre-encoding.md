@@ -87,11 +87,11 @@ writeNameLongs(NAME_USER_NAME, NAME_USER_NAME_LEN);
 
 ```java
 public class FieldWriter {
-    private final long[] nameLongs;  // 预编码的字段名
+    private final long[] nameByteLongs;  // 预编码的字段名
     private final int nameBytes;     // 实际字节数
 
     public FieldWriter(String fieldName) {
-        this.nameLongs = encodeFieldName(fieldName);
+        this.nameByteLongs = encodeFieldName(fieldName);
         this.nameBytes = ("\"" + fieldName + "\":").getBytes(StandardCharsets.UTF_8).length;
     }
 
@@ -115,7 +115,7 @@ public class FieldWriter {
 
     // 写入字段名
     public void writeFieldName(JSONGenerator gen) {
-        gen.writeNameLongs(nameLongs, nameBytes);
+        gen.writeNameLongs(nameByteLongs, nameBytes);
     }
 }
 ```
