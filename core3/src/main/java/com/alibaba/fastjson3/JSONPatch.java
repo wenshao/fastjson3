@@ -30,6 +30,9 @@ public final class JSONPatch {
      * @throws JSONException if any operation fails
      */
     public static String apply(String target, String patch) {
+        if (patch == null) {
+            throw new JSONException("patch must not be null");
+        }
         Object targetObj = JSON.parse(target);
         JSONArray operations = JSON.parseArray(patch);
         Object result = apply(targetObj, operations);
@@ -45,6 +48,9 @@ public final class JSONPatch {
      * @throws JSONException if any operation fails
      */
     public static Object apply(Object target, JSONArray operations) {
+        if (operations == null) {
+            return target;
+        }
         Object current = target;
         for (int i = 0; i < operations.size(); i++) {
             Object op = operations.get(i);
@@ -153,7 +159,12 @@ public final class JSONPatch {
             obj.put(lastToken, deepCopy(value));
         } else if (parent instanceof JSONArray arr) {
             int idx = JSONPointer.parseIndex(lastToken, arr.size());
+            if (idx < 0 || idx >= arr.size()) {
+                throw new JSONException("Array index out of bounds: " + lastToken + " (size: " + arr.size() + ")");
+            }
             arr.set(idx, deepCopy(value));
+        } else {
+            throw new JSONException("Cannot replace on non-container");
         }
         return target;
     }
@@ -195,6 +206,9 @@ public final class JSONPatch {
             return obj.get(token);
         } else if (current instanceof JSONArray arr) {
             int idx = JSONPointer.parseIndex(token, arr.size());
+            if (idx < 0 || idx >= arr.size()) {
+                throw new JSONException("Array index out of bounds: " + token + " (size: " + arr.size() + ")");
+            }
             return arr.get(idx);
         }
         throw new JSONException("Cannot traverse: " + token);

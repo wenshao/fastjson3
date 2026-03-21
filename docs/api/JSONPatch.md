@@ -7,6 +7,7 @@
 ```java
 public class JSONPatch {
     public static String apply(String target, String patch);
+    public static Object apply(Object target, JSONArray operations);
 }
 ```
 

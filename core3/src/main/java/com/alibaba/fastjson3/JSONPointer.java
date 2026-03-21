@@ -237,9 +237,12 @@ public final class JSONPointer {
 
     private Object resolveParent(Object current, String token) {
         if (current instanceof JSONObject obj) {
+            if (!obj.containsKey(token)) {
+                throw new JSONException("JSON Pointer path not found: " + token);
+            }
             Object child = obj.get(token);
             if (child == null) {
-                throw new JSONException("JSON Pointer path not found: " + token);
+                throw new JSONException("JSON Pointer path resolves to null: " + token);
             }
             return child;
         } else if (current instanceof JSONArray arr) {
