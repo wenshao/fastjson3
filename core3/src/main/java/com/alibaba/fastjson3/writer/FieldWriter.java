@@ -728,6 +728,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             // Container types still need writeAny for complex nested structures
             // but we inline common cases
             if (value instanceof java.util.List<?> list) {
+                generator.incrementDepth();
                 generator.pushReference(list);
                 try {
                     generator.startArray();
@@ -768,8 +769,10 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                     generator.endArray();
                 } finally {
                     generator.popReference(list);
+                    generator.decrementDepth();
                 }
             } else if (value instanceof java.util.Map<?, ?> map) {
+                generator.incrementDepth();
                 generator.pushReference(map);
                 try {
                     generator.startObject();
@@ -810,6 +813,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                     generator.endObject();
                 } finally {
                     generator.popReference(map);
+                    generator.decrementDepth();
                 }
             } else {
                 generator.writeAny(value);

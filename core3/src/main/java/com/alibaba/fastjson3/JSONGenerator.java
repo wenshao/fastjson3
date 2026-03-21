@@ -172,6 +172,23 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     }
 
     /**
+     * Increment write depth and check against MAX_WRITE_DEPTH.
+     * Call before writing a nested container; call {@link #decrementDepth()} after.
+     */
+    public void incrementDepth() {
+        if (++writeDepth > MAX_WRITE_DEPTH) {
+            throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
+        }
+    }
+
+    /**
+     * Decrement write depth after writing a nested container.
+     */
+    public void decrementDepth() {
+        writeDepth--;
+    }
+
+    /**
      * Called before each element in an array for pretty-format indentation.
      * No-op when PrettyFormat is not enabled (zero overhead).
      */
