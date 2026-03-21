@@ -258,7 +258,7 @@ public final class JSON {
      * @see <a href="https://tools.ietf.org/html/rfc7396">RFC 7396</a>
      */
     public static String mergePatch(String target, String patch) {
-        Object targetObj = target != null ? parseObject(target) : null;
+        Object targetObj = target != null ? parse(target) : null;
         Object patchObj = parse(patch);
         Object result = mergePatchValue(targetObj, patchObj);
         return toJSONString(result);

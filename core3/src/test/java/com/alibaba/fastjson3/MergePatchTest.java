@@ -103,6 +103,22 @@ class MergePatchTest {
         assertEquals(1, obj.getIntValue("a"));
     }
 
+    @Test
+    void testArrayTarget() {
+        // RFC 7396: non-object target is replaced entirely by patch
+        String result = JSON.mergePatch("[1,2,3]", "{\"a\":1}");
+        JSONObject obj = JSON.parseObject(result);
+        assertEquals(1, obj.getIntValue("a"));
+    }
+
+    @Test
+    void testPatchIsArray() {
+        // Non-object patch replaces target entirely
+        String result = JSON.mergePatch("{\"a\":1}", "[1,2]");
+        JSONArray arr = JSON.parseArray(result);
+        assertEquals(2, arr.size());
+    }
+
     // RFC 7396 Appendix A — Full test vector
     @Test
     void testRFCAppendixA() {
