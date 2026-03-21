@@ -265,11 +265,21 @@ public final class JSON {
     }
 
     /**
-     * Apply a JSON Merge Patch (RFC 7396) to a target JSONObject.
+     * Apply a JSON Merge Patch (RFC 7396) to a target value.
      *
-     * @param target the target object (modified in place if it's a JSONObject)
-     * @param patch  the merge patch object
+     * <p>Both {@code target} and {@code patch} may be any JSON-compatible type
+     * (JSONObject, JSONArray, String, Number, Boolean, or {@code null}).
+     * When {@code patch} is a {@link JSONObject} and {@code target} is not,
+     * {@code target} is treated as an empty JSONObject. When {@code target}
+     * is already a {@link JSONObject}, it is mutated in place during the merge
+     * (including nested JSONObjects reached through recursion).
+     * When {@code patch} is not a JSONObject, the patch value itself is returned,
+     * replacing the target entirely.</p>
+     *
+     * @param target the target value; may be any JSON-compatible type
+     * @param patch  the merge patch value; may be any JSON-compatible type
      * @return the merged result
+     * @see <a href="https://tools.ietf.org/html/rfc7396">RFC 7396</a>
      */
     public static Object mergePatch(Object target, Object patch) {
         return mergePatchValue(target, patch);

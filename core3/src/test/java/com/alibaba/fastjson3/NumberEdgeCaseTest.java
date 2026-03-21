@@ -214,8 +214,9 @@ class NumberEdgeCaseTest {
     @Test
     void parseNegativeZero_double() {
         Object result = JSON.parse("-0.0");
-        // -0.0 should be preserved as a double
-        assertEquals(-0.0, ((Number) result).doubleValue());
+        // -0.0 should be preserved as a double; use bit comparison since -0.0 == 0.0 in Java
+        double value = ((Number) result).doubleValue();
+        assertEquals(Double.doubleToRawLongBits(-0.0), Double.doubleToRawLongBits(value));
     }
 
     @Test
