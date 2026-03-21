@@ -232,10 +232,10 @@ Key optimizations:
 |-----------|-----------|-----------|------|----------------------|
 | Parse Client | 1,921 ops/ms | **5,645 ops/ms** | 4,899 ops/ms | **+193.7%** |
 | Parse User | 907 ops/ms | **5,331 ops/ms** | 4,675 ops/ms | **+487.5%** |
-| Write Client | 3,226 ops/ms | **6,430 ops/ms** | **6,748 ops/ms** | **+99.3%** |
-| Write User | 3,205 ops/ms | **5,462 ops/ms** | **6,555 ops/ms** | **+70.4%** |
+| Write Client | 3,091 ops/ms | **7,864 ops/ms** | 7,217 ops/ms | **+154.3%** |
+| Write User | 3,225 ops/ms | **8,446 ops/ms** | 6,378 ops/ms | **+161.9%** |
 
-> fastjson3 在 Parse 场景下性能优势显著，尤其是复杂嵌套结构 (Parse User 提升 ~5 倍)
+> fastjson3 在 Parse 和 Write 场景下均全面领先，Write 场景超越 wast 9-32%
 
 ## Project Structure
 
