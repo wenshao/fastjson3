@@ -195,24 +195,31 @@ Function<Class<?>, ObjectWriter<?>> writerCreator
 
 ```
 FieldReader
-├── typeTag (int)           // 类型标签
-├── fieldName (String)      // 字段名
-├── fieldNameHashCode (long) // 预计算哈希
-├── offset (long)           // Unsafe 偏移量
-└── readXxx() 方法
+├── typeTag (int)              // 类型标签 (TAG_STRING=1, TAG_INT=2, ...)
+├── fieldName (String)         // 字段名
+├── fieldOffset (long)         // Unsafe 字段偏移量
+├── fieldNameHeader (byte[])   // 预编码 "fieldName": 字节数组
+├── hdrWord0 / hdrMask0 (long) // 预计算 long-word 头部匹配值
+├── hdrWord1 / hdrMask1 (long) // 第二个 long-word（长字段名）
+└── setXxxValue() 方法          // setIntValue, setLongValue, setStringValue 等
 ```
 
-**Type Tag 分派：**
+**读取分派在 `readFieldsLoop`（ReflectionObjectReader 中）：**
 
 ```java
-public final void readField(JSONParser parser, Object bean) {
-    switch (typeTag) {  // 编译为跳转表
-        case TYPE_STRING -> readString(parser, bean);
-        case TYPE_INT -> readInt(parser, bean);
-        // ...
-    }
+// readFieldsLoop 内的 type tag switch 分派
+switch (reader.typeTag) {  // 编译为跳转表
+    case TAG_STRING -> off = utf8.readStringOff(reader, bean, off);
+    case TAG_INT -> off = utf8.readIntOff(reader, bean, off);
+    case TAG_LONG -> off = utf8.readLongOff(reader, bean, off);
+    // ...
 }
 ```
+
+读取分派不在 FieldReader 上，而是在 `readFieldsLoop` 循环中通过 type tag switch 调用
+`JSONParser.UTF8` 的 offset-passing 方法（如 `readIntOff`、`readLongOff`），offset 作为
+局部变量传递以保持在寄存器中。FieldReader 的 `setXxxValue()` 方法通过 Unsafe 直接写入
+目标对象字段。
 
 **避免 megamorphic callsite：**
 - 多态子类 >3 种时，JIT 退化为间接跳转
@@ -223,7 +230,7 @@ public final void readField(JSONParser parser, Object bean) {
 ```
 FieldWriter
 ├── typeTag (int)
-├── nameLongs (long[])      // 预编码字段名
+├── nameByteLongs (long[])  // 预编码字段名
 ├── nameBytes (byte[])      // 预编码字段名
 └── writeXxx() 方法
 ```
@@ -379,15 +386,14 @@ core3/src/main/java/com/alibaba/fastjson3/
 │   ├── ObjectReaderModule.java
 │   └── ObjectWriterModule.java
 ├── schema/
-│   ├── JSONSchema.java
-│   └── validator/
+│   └── JSONSchema.java
 ├── jsonpath/
-│   ├── JSONPath.java
-│   └── segments/
+│   └── JSONPath.java
 ├── filter/
 │   ├── NameFilter.java
 │   ├── ValueFilter.java
-│   └── PropertyFilter.java
+│   ├── PropertyFilter.java
+│   └── LabelFilter.java
 ├── util/
 │   ├── JDKUtils.java              # Unsafe + 平台检测
 │   ├── UnsafeAllocator.java
