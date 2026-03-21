@@ -209,7 +209,6 @@ WriteFeature[] FAST_WRITE = {
 | `BrowserCompatible` | 中等 | 需要额外转义 |
 | `WriteNulls` | 轻微 | 增加输出大小 |
 | `OptimizedForAscii` | 提升 | ASCII 内容更快 |
-| ASM Creator | 提升 10-20% | 字节码生成 |
 
 ## 最佳实践
 

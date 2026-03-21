@@ -244,14 +244,21 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 ## 性能优化
 
-### 启用 ASM
+### 默认配置（推荐）
+
+默认配置下：Reader 使用 REFLECT（反射路径，JIT 深度内联后最快）；Writer 使用 AUTO（会在满足条件时尝试 ASM，否则回退反射）。大部分场景下无需额外配置。
 
 ```java
-ObjectMapper mapper = ObjectMapper.builder()
-    .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-    .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
+// 默认配置，直接使用
+ObjectMapper mapper = ObjectMapper.shared();
+
+// 如需强制 Writer 也使用反射路径（避免 ASM 尝试开销）：
+ObjectMapper reflectOnly = ObjectMapper.builder()
+    .writerProvider(new com.alibaba.fastjson3.writer.ReflectObjectWriterProvider())
     .build();
 ```
+
+> 实测中反射路径经 JIT 深度内联后比 ASM 快 10-13%。AUTO 模式下 ASM 生成失败会自动回退反射，不影响正确性。
 
 ### ASCII 优化
 

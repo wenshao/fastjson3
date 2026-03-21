@@ -246,4 +246,4 @@ public String toJSON(User user) {
 **快速提示：**
 - 复用 `ObjectMapper` 实例
 - 优先使用 `toJSONBytes()` 而非 `toJSONString()`
-- 生产环境启用 ASM 提升性能
+- 默认配置已是最优，无需额外调整

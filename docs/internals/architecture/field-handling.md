@@ -10,7 +10,7 @@ FieldReader 和 FieldWriter 的设计。
 FieldReader
 ├── typeTag (int)           // 类型标签
 ├── fieldName (String)      // 字段名
-├── fieldNameHashCode (long) // 预计算哈希
+├── fieldNameHeader (byte[]) // 预编码 "fieldName": 字节数组
 ├── offset (long)           // Unsafe 偏移量
 └── readXxx() 方法
 ```
@@ -56,7 +56,7 @@ public final void readField(JSONParser parser, Object bean) {
 ```
 FieldWriter
 ├── typeTag (int)
-├── nameLongs (long[])      // 预编码字段名
+├── nameByteLongs (long[])  // 预编码字段名
 ├── nameBytes (byte[])      // 预编码字段名
 └── writeXxx() 方法
 ```

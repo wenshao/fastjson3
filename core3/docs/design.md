@@ -3,7 +3,7 @@
 ## 1. 项目定位
 
 fastjson3 是 fastjson2 的下一个大版本，目标：
-- Java 17+ baseline（sealed class、pattern matching、switch expression）
+- Java 21+ baseline（sealed class、pattern matching、switch expression、record patterns）
 - 性能超越 wast、fastjson2
 - API 对标 Jackson 3（不可变 ObjectMapper、Builder 模式）
 - 支持 GraalVM native-image 和 Android 8+
@@ -107,8 +107,9 @@ JIT 将其常量折叠，正常 JVM 零开销。
 
 ### 兼容性
 
-- Android 8+（API 26），AGP 8.1+ 支持 Java 17 语法（D8 脱糖）
-- 所有 Java 17 语法特性（sealed、switch expression、pattern matching）均可通过 D8 脱糖向下兼容到 minSdk 21
+- Android 8+（API 26），推荐使用 AGP 8.1+ 构建
+- `core3-android` 模块以 Java 17 字节码（`maven.compiler.source/target=17`）发布，以兼容 Android 运行时
+- 核心 `core3` 在标准 JVM 上以 Java 21+ 为基线；Android 侧可依赖 AGP/D8 对部分 Java 21 语法进行脱糖，实际可用语法以所用 AGP/D8 版本为准
 
 ### `@JVMOnly` 注解
 

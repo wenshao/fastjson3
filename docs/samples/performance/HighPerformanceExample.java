@@ -2,7 +2,6 @@ package com.alibaba.fastjson3.samples.performance;
 
 import com.alibaba.fastjson3.JSON;
 import com.alibaba.fastjson3.ObjectMapper;
-import com.alibaba.fastjson3.TypeToken;
 import com.alibaba.fastjson3.annotation.JSONField;
 import com.alibaba.fastjson3.annotation.JSONType;
 
@@ -47,8 +46,8 @@ public class HighPerformanceExample {
         // 2. 预编译 JSONPath
         useCompiledPath();
 
-        // 3. 启用 ASM（注意：Android 不支持）
-        useASM();
+        // 3. 默认反射路径（JIT 最优）
+        useDefaultReflect();
 
         // 4. 使用类型化缓存
         useTypeTokenCaching();
@@ -103,54 +102,35 @@ public class HighPerformanceExample {
     }
 
     /**
-     * 3. 启用 ASM（注意：Android 不支持）
+     * 3. 默认配置已是最优
      */
-    private static void useASM() {
-        System.out.println("3. 启用 ASM 字节码生成");
+    private static void useDefaultReflect() {
+        System.out.println("3. 默认反射路径（JIT 最优）");
 
-        // 检查平台
-        boolean isAndroid = "Dalvik".equals(System.getProperty("java.vm.name"));
-        if (isAndroid) {
-            System.out.println("  检测到 Android 环境，ASM 不可用");
-            System.out.println("  将使用反射模式");
-            return;
-        }
+        // 默认配置使用反射路径，JIT 深度内联后比 ASM 快 10-13%
+        ObjectMapper mapper = com.alibaba.fastjson3.ObjectMapper.shared();
 
-        // 启用 ASM
-        ObjectMapper mapper = com.alibaba.fastjson3.ObjectMapper.builder()
-            .readerCreator(com.alibaba.fastjson3.reader.ObjectReaderCreatorASM::createObjectReader)
-            .writerCreator(com.alibaba.fastjson3.writer.ObjectWriterCreatorASM::createObjectWriter)
-            .build();
-
-        System.out.println("  ASM 已启用");
-        System.out.println("  性能提升: ~7% (read), 持平 (write)");
-        System.out.println("  注意: 需要预热 1000+ 次调用");
+        System.out.println("  默认反射路径: 已启用");
+        System.out.println("  原因: JIT 对紧凑循环深度内联，比 ASM 展开代码快 10-13%");
+        System.out.println("  建议: 无需手动配置，预热 1000+ 次调用让 JIT 充分优化");
         System.out.println();
     }
 
     /**
-     * 4. 使用类型化缓存
+     * 4. 使用 parseArray 处理列表
      */
     private static void useTypeTokenCaching() {
-        System.out.println("4. 使用 TypeToken 缓存");
-
-        // ❌ 不好：每次创建新的 TypeToken
-        // for (int i = 0; i < 1000; i++) {
-        //     TypeToken.listOf(User.class);
-        // }
-
-        // ✅ 好：缓存 TypeToken
-        TypeToken<java.util.List<User>> userType = TypeToken.listOf(User.class);
+        System.out.println("4. 使用 parseArray 处理 List 类型");
 
         String json = "[{\"id\":1,\"name\":\"张三\",\"age\":25}]";
 
-        // 多次复用
+        // ✅ 推荐：直接使用 parseArray
         for (int i = 0; i < 100; i++) {
-            java.util.List<User> users = JSON.parse(json, userType);
+            java.util.List<User> users = JSON.parseArray(json, User.class);
         }
 
-        System.out.println("  缓存 TypeToken: " + userType.typeName());
-        System.out.println("  优势: 避免重复创建 TypeToken 对象");
+        System.out.println("  parseArray 简洁高效");
+        System.out.println("  优势: 无需 TypeToken，直接获取强类型 List");
         System.out.println();
     }
 

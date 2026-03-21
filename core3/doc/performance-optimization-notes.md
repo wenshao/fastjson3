@@ -136,15 +136,16 @@ int lo = (int) (val - (long) hi * 1000000000L);
 
 ## 三、尝试但未生效的优化
 
-### 3. Long-word 头部匹配（无提升，已回退热路径）
+### 3. Long-word 头部匹配（已启用，作为主快速路径）
 
-**尝试**：用 `Unsafe.getLong` 一次比较 8 字节替代逐字节比较字段头。预计算 `hdrWord0/hdrMask0`。
+**方案**：用 `Unsafe.getLong` 一次比较 8 字节替代逐字节比较字段头。预计算 `hdrWord0/hdrMask0`。
 
-**结果**：无提升。JIT 编译器已经很好地优化了逐字节比较循环（loop unrolling + 寄存器分配）。
+**结果**：已在 `readFieldsLoop` 中作为 PRIMARY 快速路径使用。`hdrWord0/hdrMask0` 是有序推测匹配的
+第一步——先用 long-word 比较快速确认或排除候选字段，减少后续逐字节比较的次数。
 
-**教训**：
-- JIT 优化能力常常超出预期，手动"优化"可能反而增加指令（mask 计算、条件分支）
-- 先用 perfnorm/perfasm 确认瓶颈，再优化，不要凭直觉
+**注意**：
+- 早期实测无提升是因为当时的循环结构不同，后续优化 readFieldsLoop 整体架构后 long-word 匹配成为有效手段
+- `hdrWord0/hdrMask0` 对短字段名（<= 8 字节）可以一次 long 比较完成匹配
 
 ### 4. ASM 代码生成路径（多次尝试，均回退）
 
@@ -218,7 +219,7 @@ javap -c -p 'io/github/wycst/wast/json/JSONPojoOptimizeDeserializer.class'
 ### readFieldsLoop 的设计原则
 
 1. **offset 作为局部变量**：`int off` 在整个循环中保持在 CPU 寄存器，仅在调用非内联方法时同步到 `this.offset`
-2. **有序推测**：假设字段按声明顺序到达，逐字节比较预编码头部 `fieldNameHeader`（`"fieldName":`）
+2. **有序推测**：假设字段按声明顺序到达，先用 `hdrWord0/hdrMask0` 做 long-word 快速匹配，再回退到 `fieldNameHeader` 逐字节比较（长字段名场景）
 3. **方法体大小控制**：readFieldsLoop ~519 字节码，不被调用者内联，但自身作为热方法被 C2 编译器充分优化
 4. **分层内联**：STRING 和 LONG 直接内联（最常见），INT/DOUBLE/BOOLEAN 通过 offset-passing 方法内联，复杂类型（LIST/POJO/ARRAY）走 readAndSetFieldUTF8Inline
 5. **不可删除的"死"方法**：`readAndSetFieldUTF8`、`readListUTF8` 虽未被直接调用，但删除会改变类结构导致 JIT 编译决策变化，实测性能下降
@@ -228,7 +229,14 @@ javap -c -p 'io/github/wycst/wast/json/JSONPojoOptimizeDeserializer.class'
 - `fieldNameHeader`：预编码 `"fieldName":` 字节数组，用于有序推测的逐字节比较
 - `typeTag`：预计算类型标签（TAG_STRING=1, TAG_INT=2, ...），避免运行时 `fieldClass == String.class` 判断
 - `fieldOffset`：Unsafe 字段偏移量，直接写入目标对象字段，跳过反射
-- `hdrWord0/hdrMask0`：预计算长字匹配值（当前未在热路径使用，long-word 匹配实测无提升）
+- `hdrWord0/hdrMask0`：预计算 long-word 匹配值，在 `readFieldsLoop` 有序推测的主快速路径中使用，一次 long 比较即可匹配短字段名（<= 8 字节）
+
+### 序列化 SWAR 尾部优化（noEscape4）
+
+`writeLatinStringNoCapCheck` 中 SWAR 主循环（`noEscape8`）以 8 字节步进处理字符串，循环结束后
+剩余 1-7 字节。当剩余 >= 4 字节时，使用 `noEscape4(int)` 做 4 字节批量转义检查 + 复制，
+避免逐字节 3 次比较（`b >= 0x20 && b != '"' && b != '\\'`）。对于典型负载（60 个短字符串，
+每个有 ~3 字节尾部），减少约 540 次分支判断，贡献约 2% 性能提升。
 
 ---
 
@@ -241,7 +249,7 @@ javap -c -p 'io/github/wycst/wast/json/JSONPojoOptimizeDeserializer.class'
 | ObjectMapper 默认 ASM | 所有类型走 ASM 导致全面回退 | 内部类型的 ASM reader 不如反射 reader | 不要假设代码生成一定更快 |
 | this.offset vs 局部变量 | 堆访问比寄存器慢 5-10 倍 | CPU 缓存层级差异 | 热循环中 offset 必须是局部变量 |
 | 删除"无用"方法 | 性能从 718K 降至 651K | JIT 编译决策依赖类结构 | 用注释标记，不可删除 |
-| long-word 头部匹配 | 无提升 | JIT 已优化逐字节循环 | 先 profile 再优化 |
+| long-word 头部匹配 | 早期无提升，后续已启用为主快速路径 | 初始循环结构不同；重构 readFieldsLoop 后生效 | 优化效果依赖整体架构，需反复验证 |
 | readAndSetFieldUTF8Inline 不被内联 | 350 字节码超过阈值 | FreqInlineSize ~325 | 关键方法要控制大小 |
 
 ---

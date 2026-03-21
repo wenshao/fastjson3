@@ -9,7 +9,7 @@ fastjson3 的分层优化策略。
     │
     ├─ 复用 ObjectMapper
     ├─ 使用 byte[] 而非 String
-    └─ 启用 ASM
+    └─ 预热 JIT
     │
 框架层
     │

@@ -1,7 +1,6 @@
 package com.alibaba.fastjson3.samples.jsonpath;
 
 import com.alibaba.fastjson3.JSON;
-import com.alibaba.fastjson3.JSONArray;
 import com.alibaba.fastjson3.JSONObject;
 import com.alibaba.fastjson3.JSONPath;
 
@@ -50,15 +49,15 @@ public class JSONPathRealWorldExample {
         JSONObject log = JSON.parseObject(logJson);
 
         // 提取所有请求方法
-        JSONArray methods = JSONPath.eval(log, "$.events[?(@.type == 'request')].method", JSONArray.class);
+        List<?> methods = JSONPath.eval(log, "$.events[?(@.type == 'request')].method", List.class);
         System.out.println("  请求方法: " + methods);
 
         // 提取所有错误事件
-        JSONArray errors = JSONPath.eval(log, "$.events[?(@.type == 'error')]", JSONArray.class);
+        List<?> errors = JSONPath.eval(log, "$.events[?(@.type == 'error')]", List.class);
         System.out.println("  错误事件: " + errors.size() + " 个");
 
         // 计算平均响应时间
-        JSONArray durations = JSONPath.eval(log, "$.events[?(@.type == 'request')].duration", JSONArray.class);
+        List<?> durations = JSONPath.eval(log, "$.events[?(@.type == 'request')].duration", List.class);
         double avgDuration = 0;
         for (Object d : durations) {
             avgDuration += ((Number) d).doubleValue();
@@ -67,7 +66,7 @@ public class JSONPathRealWorldExample {
         System.out.println("  平均响应时间: " + avgDuration + "ms");
 
         // 慢请求 (>100ms)
-        JSONArray slowRequests = JSONPath.eval(log, "$.events[?(@.type == 'request' && @.duration > 100)]", JSONArray.class);
+        List<?> slowRequests = JSONPath.eval(log, "$.events[?(@.type == 'request' && @.duration > 100)]", List.class);
         System.out.println("  慢请求: " + slowRequests.size() + " 个");
         System.out.println();
     }
@@ -150,7 +149,7 @@ public class JSONPathRealWorldExample {
         System.out.println("  研发人员: " + devNames);
 
         // 提取所有薪水
-        JSONArray salaries = JSONPath.eval(dataJson, "$.users[*].salary", JSONArray.class);
+        List<?> salaries = JSONPath.eval(dataJson, "$.users[*].salary", List.class);
         int totalSalary = 0;
         for (Object s : salaries) {
             totalSalary += ((Number) s).intValue();
@@ -163,7 +162,7 @@ public class JSONPathRealWorldExample {
         System.out.println("  部门: " + departments.stream().distinct().toList());
 
         // 提取高薪员工 (>15000)
-        JSONArray highEarners = JSONPath.eval(dataJson, "$.users[?(@.salary > 15000)]", JSONArray.class);
+        List<?> highEarners = JSONPath.eval(dataJson, "$.users[?(@.salary > 15000)]", List.class);
         System.out.println("  高薪员工: " + highEarners.size() + " 人");
         System.out.println();
     }
@@ -188,25 +187,25 @@ public class JSONPathRealWorldExample {
         JSONObject data = JSON.parseObject(productsJson);
 
         // 库存 > 100 的商品
-        JSONArray inStock = JSONPath.eval(data, "$.products[?(@.stock > 100)]", JSONArray.class);
+        List<?> inStock = JSONPath.eval(data, "$.products[?(@.stock > 100)]", List.class);
         System.out.println("  库存>100: " + inStock.size() + " 种商品");
 
         // 电子类且价格 < 1000
-        JSONArray cheapElectronics = JSONPath.eval(data, "$.products[?(@.category == '电子' && @.price < 1000)]", JSONArray.class);
+        List<?> cheapElectronics = JSONPath.eval(data, "$.products[?(@.category == '电子' && @.price < 1000)]", List.class);
         System.out.println("  便宜电子产品: " + cheapElectronics.size() + " 种");
         for (int i = 0; i < cheapElectronics.size(); i++) {
-            JSONObject p = cheapElectronics.getJSONObject(i);
+            JSONObject p = (JSONObject) cheapElectronics.get(i);
             System.out.println("    - " + p.getString("name") + ": ¥" + p.getBigDecimal("price"));
         }
 
         // 缺货商品
         JSONPath outOfStockPath = JSONPath.of("$.products[?(@.stock == 0)]");
-        JSONArray outOfStock = outOfStockPath.eval(data, JSONArray.class);
+        List<?> outOfStock = outOfStockPath.eval(data, List.class);
         System.out.println("  缺货: " + outOfStock.size() + " 种商品");
 
         // 计算电子产品总价
         JSONPath electronicsPricesPath = JSONPath.of("$.products[?(@.category == '电子')].price");
-        JSONArray electronicsPrices = electronicsPricesPath.eval(data, JSONArray.class);
+        List<?> electronicsPrices = electronicsPricesPath.eval(data, List.class);
         double total = 0;
         for (Object price : electronicsPrices) {
             total += ((Number) price).doubleValue();

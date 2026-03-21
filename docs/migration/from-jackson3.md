@@ -36,7 +36,7 @@ Jackson 3.x 相比 2.x 的主要变化在 fastjson3 中也有对应实现：
 | ObjectMapper | 不可变 | 不可变 | **设计一致** |
 | 构建方式 | `JsonMapper.builder()` | `ObjectMapper.builder()` | API 相似 |
 | 线程安全 | 是 | 是 | 完全线程安全 |
-| Java 基线 | Java 17 | Java 21+ | 目标一致 |
+| Java 基线 | Java 17 | Java 21+ | fastjson3 更高 |
 | sealed class | 支持 | 支持 | JIT 优化 |
 
 ---
