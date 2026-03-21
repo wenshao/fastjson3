@@ -1426,10 +1426,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 buf[count++] = '}';
                 buf[count++] = ',';
             } else {
-                // Original pattern: strip trailing comma, write }, write ,
-                if (count > 0 && buf[count - 1] == ',') {
-                    count--;
-                }
+                // Optimized: always strip trailing comma (we always write one after each field)
+                count--;
                 buf[count++] = '}';
                 buf[count++] = ',';
             }
@@ -1459,9 +1457,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 buf[count++] = ']';
                 buf[count++] = ',';
             } else {
-                if (count > 0 && buf[count - 1] == ',') {
-                    count--;
-                }
+                // Optimized: always strip trailing comma
+                count--;
                 buf[count++] = ']';
                 buf[count++] = ',';
             }
@@ -1980,16 +1977,60 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 byte[] valBytes = (byte[]) JDKUtils.getStringValue(value);
                 int valLen = valBytes.length;
                 // Like wast: use actual length + safety margin, not worst-case len*6.
-                // If escapes are found, writeEscapedBytes handles expansion.
                 ensureCapacity(nameBytesLen + valLen + 3);
+                int pos = count;
+
+                // Inline writeName0 for better performance
                 if (nameByteLongs != null) {
-                    writeName0(nameByteLongs, nameBytesLen);
-                    count += nameBytesLen;
+                    switch (nameByteLongs.length) {
+                        case 1 -> JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]);
+                        case 2 -> { JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]); JDKUtils.putLongDirect(buf, pos + 8, nameByteLongs[1]); }
+                        default -> { for (int i = 0; i < nameByteLongs.length; i++) JDKUtils.putLongDirect(buf, pos + (i << 3), nameByteLongs[i]); }
+                    }
+                    pos += nameBytesLen;
                 } else {
-                    System.arraycopy(nameBytes, 0, buf, count, nameBytesLen);
-                    count += nameBytesLen;
+                    System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+                    pos += nameBytesLen;
                 }
-                writeLatinStringNoCapCheck(valBytes, valLen);
+
+                // Inline writeLatinStringNoCapCheck for Latin-1 strings
+                buf[pos++] = '"';
+                if (JDKUtils.UNSAFE_AVAILABLE && valLen > 0) {
+                    int i = 0;
+                    for (; i + 7 < valLen; i += 8) {
+                        long v = JDKUtils.getLongDirect(valBytes, i);
+                        if (noEscape8(v)) {
+                            JDKUtils.putLongDirect(buf, pos, v);
+                            pos += 8;
+                        } else {
+                            pos = writeEscapedBytes(valBytes, i, valLen, pos);
+                            buf[pos++] = '"';
+                            buf[pos++] = ',';
+                            count = pos;
+                            return;
+                        }
+                    }
+                    for (; i < valLen; i++) {
+                        byte b = valBytes[i];
+                        if (b >= 0x20 && b != '"' && b != '\\') {
+                            buf[pos++] = b;
+                        } else {
+                            pos = writeEscapedByte(b, pos);
+                        }
+                    }
+                } else if (valLen > 0) {
+                    for (int i = 0; i < valLen; i++) {
+                        byte b = valBytes[i];
+                        if (b >= 0x20 && b != '"' && b != '\\') {
+                            buf[pos++] = b;
+                        } else {
+                            pos = writeEscapedByte(b, pos);
+                        }
+                    }
+                }
+                buf[pos++] = '"';
+                buf[pos++] = ',';
+                count = pos;
                 return;
             }
 
@@ -2014,12 +2055,16 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             ensureCapacity(nameBytesLen + 25);
-            int pos;
+            int pos = count;
+            // Inline writeName0 for better performance
             if (nameByteLongs != null) {
-                writeName0(nameByteLongs, nameBytesLen);
-                pos = count + nameBytesLen;
+                switch (nameByteLongs.length) {
+                    case 1 -> JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]);
+                    case 2 -> { JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]); JDKUtils.putLongDirect(buf, pos + 8, nameByteLongs[1]); }
+                    default -> { for (int i = 0; i < nameByteLongs.length; i++) JDKUtils.putLongDirect(buf, pos + (i << 3), nameByteLongs[i]); }
+                }
+                pos += nameBytesLen;
             } else {
-                pos = count;
                 System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
                 pos += nameBytesLen;
             }
@@ -2036,12 +2081,16 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             ensureCapacity(nameBytesLen + 25);
-            int pos;
+            int pos = count;
+            // Inline writeName0 for better performance
             if (nameByteLongs != null) {
-                writeName0(nameByteLongs, nameBytesLen);
-                pos = count + nameBytesLen;
+                switch (nameByteLongs.length) {
+                    case 1 -> JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]);
+                    case 2 -> { JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]); JDKUtils.putLongDirect(buf, pos + 8, nameByteLongs[1]); }
+                    default -> { for (int i = 0; i < nameByteLongs.length; i++) JDKUtils.putLongDirect(buf, pos + (i << 3), nameByteLongs[i]); }
+                }
+                pos += nameBytesLen;
             } else {
-                pos = count;
                 System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
                 pos += nameBytesLen;
             }
@@ -2058,12 +2107,16 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             ensureCapacity(nameBytesLen + 25);
-            int pos;
+            int pos = count;
+            // Inline writeName0 for better performance
             if (nameByteLongs != null) {
-                writeName0(nameByteLongs, nameBytesLen);
-                pos = count + nameBytesLen;
+                switch (nameByteLongs.length) {
+                    case 1 -> JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]);
+                    case 2 -> { JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]); JDKUtils.putLongDirect(buf, pos + 8, nameByteLongs[1]); }
+                    default -> { for (int i = 0; i < nameByteLongs.length; i++) JDKUtils.putLongDirect(buf, pos + (i << 3), nameByteLongs[i]); }
+                }
+                pos += nameBytesLen;
             } else {
-                pos = count;
                 System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
                 pos += nameBytesLen;
             }
@@ -2080,12 +2133,16 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             ensureCapacity(nameBytesLen + 25);
-            int pos;
+            int pos = count;
+            // Inline writeName0 for better performance
             if (nameByteLongs != null) {
-                writeName0(nameByteLongs, nameBytesLen);
-                pos = count + nameBytesLen;
+                switch (nameByteLongs.length) {
+                    case 1 -> JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]);
+                    case 2 -> { JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]); JDKUtils.putLongDirect(buf, pos + 8, nameByteLongs[1]); }
+                    default -> { for (int i = 0; i < nameByteLongs.length; i++) JDKUtils.putLongDirect(buf, pos + (i << 3), nameByteLongs[i]); }
+                }
+                pos += nameBytesLen;
             } else {
-                pos = count;
                 System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
                 pos += nameBytesLen;
             }
@@ -2156,12 +2213,16 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt32Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
-            int pos;
+            // Optimized: remove ensureCapacity (caller ensures capacity), inline writeName0
+            int pos = count;
             if (nameByteLongs != null) {
-                writeName0(nameByteLongs, nameBytesLen);
-                pos = count + nameBytesLen;
+                switch (nameByteLongs.length) {
+                    case 1 -> JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]);
+                    case 2 -> { JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]); JDKUtils.putLongDirect(buf, pos + 8, nameByteLongs[1]); }
+                    default -> { for (int i = 0; i < nameByteLongs.length; i++) JDKUtils.putLongDirect(buf, pos + (i << 3), nameByteLongs[i]); }
+                }
+                pos += nameBytesLen;
             } else {
-                pos = count;
                 System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
                 pos += nameBytesLen;
             }
@@ -2172,12 +2233,16 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt64Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
-            int pos;
+            // Optimized: inline writeName0 for better performance
+            int pos = count;
             if (nameByteLongs != null) {
-                writeName0(nameByteLongs, nameBytesLen);
-                pos = count + nameBytesLen;
+                switch (nameByteLongs.length) {
+                    case 1 -> JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]);
+                    case 2 -> { JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]); JDKUtils.putLongDirect(buf, pos + 8, nameByteLongs[1]); }
+                    default -> { for (int i = 0; i < nameByteLongs.length; i++) JDKUtils.putLongDirect(buf, pos + (i << 3), nameByteLongs[i]); }
+                }
+                pos += nameBytesLen;
             } else {
-                pos = count;
                 System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
                 pos += nameBytesLen;
             }
@@ -2188,12 +2253,16 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameDoubleCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
-            int pos;
+            // Optimized: inline writeName0 for better performance
+            int pos = count;
             if (nameByteLongs != null) {
-                writeName0(nameByteLongs, nameBytesLen);
-                pos = count + nameBytesLen;
+                switch (nameByteLongs.length) {
+                    case 1 -> JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]);
+                    case 2 -> { JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]); JDKUtils.putLongDirect(buf, pos + 8, nameByteLongs[1]); }
+                    default -> { for (int i = 0; i < nameByteLongs.length; i++) JDKUtils.putLongDirect(buf, pos + (i << 3), nameByteLongs[i]); }
+                }
+                pos += nameBytesLen;
             } else {
-                pos = count;
                 System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
                 pos += nameBytesLen;
             }

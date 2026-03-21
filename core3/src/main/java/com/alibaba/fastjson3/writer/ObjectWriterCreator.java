@@ -484,7 +484,12 @@ public final class ObjectWriterCreator {
     }
 
     static void writeFields(com.alibaba.fastjson3.JSONGenerator generator, FieldWriter[] writers, Object object, long features) {
-        if (generator.hasFilters() || generator.labelFilter != null) {
+        // Fast path: no filters
+        if (!generator.hasFilters() && generator.labelFilter == null) {
+            for (FieldWriter fw : writers) {
+                fw.writeField(generator, object, features);
+            }
+        } else {
             com.alibaba.fastjson3.filter.LabelFilter lf = generator.labelFilter;
             for (FieldWriter fw : writers) {
                 if (lf != null && fw.label != null && !lf.apply(fw.label)) continue;
@@ -494,10 +499,6 @@ public final class ObjectWriterCreator {
                 } else {
                     fw.writeField(generator, object, features);
                 }
-            }
-        } else {
-            for (FieldWriter fw : writers) {
-                fw.writeField(generator, object, features);
             }
         }
     }
@@ -509,16 +510,19 @@ public final class ObjectWriterCreator {
      */
     public static final class ReflectObjectWriter implements com.alibaba.fastjson3.ObjectWriter<Object> {
         public final FieldWriter[] writers;
+        private final int estimatedSize;
 
         ReflectObjectWriter(FieldWriter[] writers) {
             this.writers = writers;
+            // Estimate average object size: 8 fields * 32 bytes each = 256 bytes
+            this.estimatedSize = writers.length * 32 + 16;
         }
 
         @Override
         public void write(com.alibaba.fastjson3.JSONGenerator generator, Object object,
                           Object fieldName, java.lang.reflect.Type fieldType, long features) {
-            // Note: static path (writeObjectStaticUTF8) tested but virtual dispatch is faster
-            // due to JIT devirtualization being cheaper than switch dispatch in the static path.
+            // Pre-allocate capacity for the entire object
+            generator.ensureCapacityPublic(estimatedSize);
             generator.startObject();
             writeFields(generator, writers, object, features);
             generator.endObject();

@@ -40,6 +40,16 @@ mvn package -pl core3 -DskipTests      # Skip tests for faster builds
 | `ObjectReaderCreatorASM.java` | @JVMOnly — ASM bytecode reader generation |
 | `ObjectWriterCreatorASM.java` | @JVMOnly — ASM bytecode writer generation |
 
+## Benchmark
+
+See `benchmark3/README.md` for details.
+
+**Quick Reference:**
+- `JJBBenchmark` — Main JMH benchmark entry (parse/write Users & Clients, 16 threads)
+- `JJBQuickBenchmark` — Quick comparison fastjson3 vs wast
+- Test data: `benchmark3/src/main/resources/data/jjb/` (user.json, client.json, client_cn.json)
+- Run: `java -cp benchmark3.jar com.alibaba.fastjson3.benchmark.jjb.JJBBenchmark`
+
 ## Design Docs
 
 - `core3/docs/design.md` — Overall architecture, platform support, module structure
