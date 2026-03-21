@@ -47,7 +47,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     static final int[] TWO_DIGITS_32 = new int[100];
     static final long[] FOUR_DIGITS_64 = new long[10000];
     static final char[] DIGITS = {
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+        'a', 'b', 'c', 'd', 'e', 'f'
     };
     // Byte-oriented 2-digit lookup for UTF-8 int writing
     static final byte[] DIGIT_TENS = new byte[100];
@@ -1234,7 +1235,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             int len = val.length();
-            ensureCapacity(count + len + 3);
+            // Worst case: each char becomes \\uXXXX (6 chars) + 2 quotes + comma
+            ensureCapacity(count + len * 6 + 3);
             buf[count++] = '"';
             for (int i = 0; i < len; i++) {
                 char ch = val.charAt(i);
