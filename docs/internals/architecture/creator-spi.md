@@ -200,6 +200,6 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 - [ASM 字节码生成](../optimization/asm-bytecode.md)
 - [字段处理架构](field-handling.md)
-- [ObjectReader API](../../api/ObjectReader.md)
+- [ObjectMapper API](../../api/ObjectMapper.md)
 
 [← 返回索引](README.md)

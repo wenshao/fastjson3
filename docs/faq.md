@@ -25,7 +25,7 @@
 
 **A:** API 不完全兼容，但：
 - 支持 Jackson 注解（`@JsonProperty` 等）
-- 提供 [迁移指南](migration.md)
+- 提供 [迁移指南](migration/README.md)
 
 ---
 
