@@ -240,6 +240,66 @@ public final class JSON {
         }
     }
 
+    // ==================== JSON Merge Patch (RFC 7396) ====================
+
+    /**
+     * Apply a JSON Merge Patch (RFC 7396) to a target JSON string.
+     *
+     * <pre>{@code
+     * String target = "{\"a\":1,\"b\":2}";
+     * String patch = "{\"b\":null,\"c\":3}";
+     * String result = JSON.mergePatch(target, patch);
+     * // result: {"a":1,"c":3}
+     * }</pre>
+     *
+     * @param target the target JSON string
+     * @param patch  the merge patch JSON string
+     * @return the merged result as a JSON string
+     * @see <a href="https://tools.ietf.org/html/rfc7396">RFC 7396</a>
+     */
+    public static String mergePatch(String target, String patch) {
+        Object targetObj = target != null ? parseObject(target) : null;
+        Object patchObj = parse(patch);
+        Object result = mergePatchValue(targetObj, patchObj);
+        return toJSONString(result);
+    }
+
+    /**
+     * Apply a JSON Merge Patch (RFC 7396) to a target JSONObject.
+     *
+     * @param target the target object (modified in place if it's a JSONObject)
+     * @param patch  the merge patch object
+     * @return the merged result
+     */
+    public static Object mergePatch(Object target, Object patch) {
+        return mergePatchValue(target, patch);
+    }
+
+    private static Object mergePatchValue(Object target, Object patch) {
+        if (!(patch instanceof JSONObject patchObj)) {
+            return patch;
+        }
+
+        JSONObject targetObj;
+        if (target instanceof JSONObject t) {
+            targetObj = t;
+        } else {
+            targetObj = new JSONObject();
+        }
+
+        for (var entry : patchObj.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            if (value == null) {
+                targetObj.remove(key);
+            } else {
+                Object existing = targetObj.get(key);
+                targetObj.put(key, mergePatchValue(existing, value));
+            }
+        }
+        return targetObj;
+    }
+
     // ==================== Validate ====================
 
     /**
