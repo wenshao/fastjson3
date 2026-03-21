@@ -125,26 +125,26 @@ class NumberEdgeCaseTest {
         assertEquals(0, expected.compareTo(actual));
     }
 
-    // ==================== BigDecimal precision preservation ====================
+    // ==================== Decimal round-trip (double-level precision) ====================
 
     @Test
-    void parseBigDecimal_preservesPrecision_1decimal() {
-        verifyBigDecimalRoundTrip("345.6");
+    void parseDecimal_preservesDoublePrecision_1decimal() {
+        verifyDoubleRoundTrip("345.6");
     }
 
     @Test
-    void parseBigDecimal_preservesPrecision_2decimals() {
-        verifyBigDecimalRoundTrip("345.67");
+    void parseDecimal_preservesDoublePrecision_2decimals() {
+        verifyDoubleRoundTrip("345.67");
     }
 
     @Test
-    void parseBigDecimal_preservesPrecision_7decimals() {
-        verifyBigDecimalRoundTrip("345.6789123");
+    void parseDecimal_preservesDoublePrecision_7decimals() {
+        verifyDoubleRoundTrip("345.6789123");
     }
 
     @Test
-    void parseBigDecimal_preservesPrecision_negative() {
-        verifyBigDecimalRoundTrip("-345.6789123");
+    void parseDecimal_preservesDoublePrecision_negative() {
+        verifyDoubleRoundTrip("-345.6789123");
     }
 
     @Test
@@ -158,7 +158,12 @@ class NumberEdgeCaseTest {
                 "Precision lost: expected " + expected + " got " + actual);
     }
 
-    private void verifyBigDecimalRoundTrip(String value) {
+    /**
+     * Verifies that a decimal value survives a JSON round-trip at double-level precision.
+     * Default parsing goes through double, so this comparison uses doubleValue() rather than
+     * full BigDecimal precision.
+     */
+    private void verifyDoubleRoundTrip(String value) {
         BigDecimal expected = new BigDecimal(value);
         // Parse via JSON object — getBigDecimal converts double to BigDecimal
         JSONObject obj = JSON.parseObject("{\"val\":" + value + "}");
