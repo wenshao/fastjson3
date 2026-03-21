@@ -51,8 +51,8 @@ public void writeInt(int value) {
 ```java
 // 一次检查，多次写入
 public void writeField(String name, int value) {
-    // 注意：实际实现中 nameBytesLen 基于预编码 UTF-8 字节长度，非字符长度
-    int nameBytesLen = name.length() + 3;  // "" + name + :
+    // 实际实现中 nameBytesLen 来自预编码的 nameBytes.length（UTF-8 字节长度）
+    int nameBytesLen = nameBytes.length;  // 预编码 "name": 的 UTF-8 字节长度
     int intLen = 11;  // 最多 11 位
     int commaLen = 1;
 

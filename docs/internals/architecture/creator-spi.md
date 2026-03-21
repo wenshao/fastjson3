@@ -144,9 +144,9 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 | 平台 | 默认 Reader 策略 | 默认 Writer 策略 | 说明 |
 |------|------------------|------------------|------|
-| JDK 21+ | REFLECT | REFLECT | 反射路径 JIT 优化最佳 |
-| Android | REFLECT | REFLECT | ASM 不可用 |
-| Native Image | REFLECT | REFLECT | ASM 不可用 |
+| JDK 21+ | REFLECT | AUTO | Reader 反射最快；Writer AUTO 会尝试 ASM 再回退反射 |
+| Android | REFLECT | REFLECT | ASM 不可用，自动回退 |
+| Native Image | REFLECT | REFLECT | ASM 不可用，自动回退 |
 
 ## 自定义 Provider
 
