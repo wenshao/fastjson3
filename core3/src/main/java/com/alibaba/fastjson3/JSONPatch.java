@@ -100,7 +100,28 @@ public final class JSONPatch {
             return deepCopy(value);
         }
         JSONPointer pointer = JSONPointer.of(path);
-        pointer.set(target, deepCopy(value));
+        String[] tokens = pointer.getTokens();
+        Object parent = target;
+        for (int i = 0; i < tokens.length - 1; i++) {
+            parent = resolveForReplace(parent, tokens[i]);
+        }
+        String lastToken = tokens[tokens.length - 1];
+        if (parent instanceof JSONObject obj) {
+            obj.put(lastToken, deepCopy(value));
+        } else if (parent instanceof JSONArray arr) {
+            Object copied = deepCopy(value);
+            if ("-".equals(lastToken)) {
+                arr.add(copied);
+            } else {
+                int index = JSONPointer.parseIndex(lastToken, arr.size() + 1);
+                if (index > arr.size()) {
+                    throw new JSONException("Array index out of bounds: " + lastToken + " (size: " + arr.size() + ")");
+                }
+                arr.add(index, copied);  // RFC 6902 add inserts before the element
+            }
+        } else {
+            throw new JSONException("Cannot add to non-container");
+        }
         return target;
     }
 

@@ -7,6 +7,15 @@
 ```java
 public class JSONPointer {
     public static JSONPointer of(String pointer);
+
+    public Object eval(Object root);
+    public <T> T eval(Object root, Class<T> type);
+    public void set(Object root, Object value);
+    public void remove(Object root);
+    public boolean exists(Object root);
+    public String getPointer();
+    public String[] getTokens();
+    public static String escape(String token);
 }
 ```
 

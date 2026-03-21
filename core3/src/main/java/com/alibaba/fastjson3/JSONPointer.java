@@ -68,7 +68,12 @@ public final class JSONPointer {
                 }
                 current = obj.get(token);
             } else if (current instanceof JSONArray arr) {
-                int index = parseIndex(token, arr.size());
+                int index;
+                try {
+                    index = parseIndex(token, arr.size());
+                } catch (JSONException e) {
+                    return null;
+                }
                 if (index < 0 || index >= arr.size()) {
                     return null;
                 }
@@ -118,7 +123,15 @@ public final class JSONPointer {
                 return (T) Boolean.valueOf(s);
             }
             if (value instanceof Number n) {
-                return (T) Boolean.valueOf(n.intValue() != 0);
+                boolean boolVal;
+                if (n instanceof java.math.BigInteger bi) {
+                    boolVal = bi.signum() != 0;
+                } else if (n instanceof java.math.BigDecimal bd) {
+                    boolVal = bd.signum() != 0;
+                } else {
+                    boolVal = n.longValue() != 0L;
+                }
+                return (T) Boolean.valueOf(boolVal);
             }
             throw new JSONException("Cannot convert " + value.getClass().getName() + " to " + type.getName());
         }
@@ -253,7 +266,7 @@ public final class JSONPointer {
                 if (index == arr.size()) {
                     arr.add(value);
                 } else {
-                    arr.add(index, value);
+                    arr.set(index, value);
                 }
             }
         } else {
@@ -278,6 +291,25 @@ public final class JSONPointer {
         }
     }
 
+    /**
+     * Parse an array index token.
+     * <p>
+     * This method enforces two extensions beyond basic RFC 6901 array indexing,
+     * primarily for RFC 6902 (JSON Patch) support:
+     * <ul>
+     *   <li><b>No leading zeros</b> — tokens like {@code "01"} are rejected.
+     *       RFC 6901 does not explicitly forbid leading zeros, but RFC 6902
+     *       relies on unambiguous numeric parsing.</li>
+     *   <li><b>"{@code -}" as array append marker</b> — the token {@code "-"}
+     *       returns {@code size} (one past the last element), enabling
+     *       RFC 6902 {@code add} operations that append to an array.</li>
+     * </ul>
+     *
+     * @param token the string token to parse
+     * @param size  the current array size (used for {@code "-"} resolution)
+     * @return the parsed index
+     * @throws JSONException if the token is not a valid array index
+     */
     static int parseIndex(String token, int size) {
         if ("-".equals(token)) {
             return size; // past-the-end for add operations

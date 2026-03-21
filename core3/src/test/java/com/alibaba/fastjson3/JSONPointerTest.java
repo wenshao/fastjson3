@@ -126,7 +126,10 @@ class JSONPointerTest {
     @Test
     void testLeadingZeroIndex() {
         JSONObject obj = JSON.parseObject("{\"arr\":[1,2,3]}");
-        assertThrows(JSONException.class, () -> JSONPointer.of("/arr/01").eval(obj));
+        // eval returns null for invalid paths (including leading-zero indices)
+        assertNull(JSONPointer.of("/arr/01").eval(obj));
+        // parseIndex itself still throws for leading zeros
+        assertThrows(JSONException.class, () -> JSONPointer.parseIndex("01", 3));
     }
 
     @Test
