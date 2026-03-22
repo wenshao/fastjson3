@@ -175,6 +175,13 @@ class DeepNestingTest {
         assertEquals(2, obj.getIntValue("a"));
     }
 
+    @Test
+    void duplicateKeys_multipleValues() {
+        JSONObject obj = JSON.parseObject("{\"a\":1,\"b\":2,\"a\":3,\"b\":4}");
+        assertEquals(3, obj.getIntValue("a"));
+        assertEquals(4, obj.getIntValue("b"));
+    }
+
     // ==================== Helpers ====================
 
     private String buildNestedArray(int depth) {

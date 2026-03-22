@@ -140,6 +140,8 @@ public final class JSONPointer {
 
     /**
      * Set the value at this pointer location.
+     * For objects, this puts the key. For arrays, this inserts at the index
+     * (use "-" to append). This follows RFC 6902 "add" semantics.
      *
      * @param root  the root JSON document
      * @param value the value to set
@@ -242,7 +244,7 @@ public final class JSONPointer {
             }
             Object child = obj.get(token);
             if (child == null) {
-                throw new JSONException("JSON Pointer path resolves to null: " + token);
+                throw new JSONException("JSON Pointer path resolves to null (cannot traverse): " + token);
             }
             return child;
         } else if (current instanceof JSONArray arr) {
@@ -269,7 +271,7 @@ public final class JSONPointer {
                 if (index == arr.size()) {
                     arr.add(value);
                 } else {
-                    arr.set(index, value);
+                    arr.add(index, value);
                 }
             }
         } else {

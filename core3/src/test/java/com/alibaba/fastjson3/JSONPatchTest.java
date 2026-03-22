@@ -241,6 +241,22 @@ class JSONPatchTest {
                 "{\"a\":1}", "[{\"op\":\"move\",\"path\":\"/b\"}]"));
     }
 
+    @Test
+    void testMoveFromPrefixOfPath() {
+        // RFC 6902 Section 4.4: "from" MUST NOT be a proper prefix of "path"
+        assertThrows(JSONException.class, () -> JSONPatch.apply(
+                "{\"a\":{\"b\":1}}",
+                "[{\"op\":\"move\",\"from\":\"/a\",\"path\":\"/a/b/c\"}]"));
+    }
+
+    @Test
+    void testTestNonExistentPath() {
+        // "test" on a path that doesn't exist should fail even if expected is null
+        assertThrows(JSONException.class, () -> JSONPatch.apply(
+                "{\"a\":1}",
+                "[{\"op\":\"test\",\"path\":\"/nonexistent\",\"value\":null}]"));
+    }
+
     // ==================== RFC 6902 Appendix A examples ====================
 
     @Test
