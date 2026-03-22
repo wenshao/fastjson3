@@ -337,4 +337,26 @@ class StringEncodingEdgeTest {
         assertEquals(original, fromString);
         assertEquals(original, fromBytes);
     }
+
+    // ==================== Latin-1 high-byte UTF-8 output ====================
+
+    @Test
+    void writeBytes_latin1HighBytes_roundTrip() {
+        // Latin-1 chars U+0080-U+00FF must be encoded as 2-byte UTF-8 in toJSONBytes output.
+        // Previously, noEscape4 incorrectly passed these through as single bytes (invalid UTF-8).
+        String text = "\u00e9\u00fc\u00f1\u00e0"; // éüñà — all in Latin-1 range
+        byte[] jsonBytes = JSON.toJSONBytes(text);
+        String json = new String(jsonBytes, StandardCharsets.UTF_8);
+        assertEquals(text, JSON.parseObject(json, String.class), "Round-trip for Latin-1 high bytes");
+    }
+
+    @Test
+    void writeBytes_latin1HighBytes_after8AlignedChunk() {
+        // 8 ASCII bytes trigger the 8-byte UNSAFE fast path; 4 Latin-1 high bytes follow in
+        // the tail and must be 2-byte UTF-8 encoded (regression for noEscape4 bug).
+        String text = "AAAAAAAA\u00e9\u00fc\u00f1\u00e0"; // 8 ASCII + 4 Latin-1 high
+        byte[] jsonBytes = JSON.toJSONBytes(text);
+        String json = new String(jsonBytes, StandardCharsets.UTF_8);
+        assertEquals(text, JSON.parseObject(json, String.class), "Round-trip for tail Latin-1 bytes");
+    }
 }
