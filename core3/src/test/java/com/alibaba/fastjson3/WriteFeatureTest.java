@@ -42,6 +42,12 @@ class WriteFeatureTest {
         assertEquals(17, WriteFeature.BrowserCompatible.ordinal());
         assertEquals(18, WriteFeature.WriteNonStringValueAsString.ordinal());
         assertEquals(19, WriteFeature.OptimizedForAscii.ordinal());
+        assertEquals(20, WriteFeature.NotWriteDefaultValue.ordinal());
+        assertEquals(21, WriteFeature.NotWriteEmptyArray.ordinal());
+        assertEquals(22, WriteFeature.WriteEnumUsingOrdinal.ordinal());
+        assertEquals(23, WriteFeature.WriteBooleanAsNumber.ordinal());
+        assertEquals(24, WriteFeature.BrowserSecure.ordinal());
+        assertEquals(25, WriteFeature.NullAsDefaultValue.ordinal());
     }
 
     // ==================== Mask tests ====================
@@ -87,6 +93,12 @@ class WriteFeatureTest {
         assertEquals(1L << 17, WriteFeature.BrowserCompatible.mask);
         assertEquals(1L << 18, WriteFeature.WriteNonStringValueAsString.mask);
         assertEquals(1L << 19, WriteFeature.OptimizedForAscii.mask);
+        assertEquals(1L << 20, WriteFeature.NotWriteDefaultValue.mask);
+        assertEquals(1L << 21, WriteFeature.NotWriteEmptyArray.mask);
+        assertEquals(1L << 22, WriteFeature.WriteEnumUsingOrdinal.mask);
+        assertEquals(1L << 23, WriteFeature.WriteBooleanAsNumber.mask);
+        assertEquals(1L << 24, WriteFeature.BrowserSecure.mask);
+        assertEquals(1L << 25, WriteFeature.NullAsDefaultValue.mask);
     }
 
     // ==================== of() tests ====================
