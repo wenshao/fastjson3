@@ -1044,11 +1044,26 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                         && (mergedFeatures & WriteFeature.WriteNullStringAsEmpty.mask) != 0) {
                     generator.writeName(name);
                     generator.writeString("");
-                } else if ((typeTag == TYPE_INT || typeTag == TYPE_LONG || typeTag == TYPE_DOUBLE || typeTag == TYPE_FLOAT)
+                } else if ((typeTag == TYPE_LIST_STRING || typeTag == TYPE_LIST_OBJECT
+                        || java.util.Collection.class.isAssignableFrom(fieldClass))
+                        && (mergedFeatures & WriteFeature.WriteNullListAsEmpty.mask) != 0) {
+                    generator.writeName(name);
+                    generator.startArray();
+                    generator.endArray();
+                } else if ((typeTag == TYPE_INT || typeTag == TYPE_LONG || typeTag == TYPE_DOUBLE || typeTag == TYPE_FLOAT
+                        || Number.class.isAssignableFrom(fieldClass))
                         && (mergedFeatures & WriteFeature.WriteNullNumberAsZero.mask) != 0) {
                     generator.writeName(name);
-                    generator.writeInt32(0);
-                } else if (typeTag == TYPE_BOOL
+                    if (typeTag == TYPE_LONG) {
+                        generator.writeInt64(0L);
+                    } else if (typeTag == TYPE_DOUBLE) {
+                        generator.writeDouble(0D);
+                    } else if (typeTag == TYPE_FLOAT) {
+                        generator.writeFloat(0F);
+                    } else {
+                        generator.writeInt32(0);
+                    }
+                } else if ((typeTag == TYPE_BOOL || fieldClass == Boolean.class)
                         && (mergedFeatures & WriteFeature.WriteNullBooleanAsFalse.mask) != 0) {
                     generator.writeName(name);
                     generator.writeBool(false);

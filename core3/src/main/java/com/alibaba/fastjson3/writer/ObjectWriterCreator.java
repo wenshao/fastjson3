@@ -59,6 +59,8 @@ public final class ObjectWriterCreator {
         }
 
         if (com.alibaba.fastjson3.util.JDKUtils.isRecord(type)) {
+            // Note: writeFeatures (IgnoreNoneSerializable etc.) not yet applied to Record fields.
+            // Record fields are always final components — Serializable check is less relevant.
             return createRecordWriter(type, mixIn, useJacksonAnnotation);
         }
 

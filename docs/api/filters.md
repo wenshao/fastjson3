@@ -219,9 +219,8 @@ ContextValueFilter filter = (fieldClass, fieldName, source, name, value) -> {
     return value;
 };
 
-ObjectMapper mapper = ObjectMapper.builder()
-    .addContextValueFilter(filter)
-    .build();
+// ContextValueFilter 接口已定义，ObjectMapper.Builder 集成将在后续版本中实现。
+// 当前可通过自定义 ObjectWriterModule 或 ValueFilter 实现类似功能。
 ```
 
 ### 按字段类型格式化
