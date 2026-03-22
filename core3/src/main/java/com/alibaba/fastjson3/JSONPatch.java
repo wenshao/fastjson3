@@ -1,5 +1,7 @@
 package com.alibaba.fastjson3;
 
+import java.math.BigDecimal;
+
 /**
  * JSON Patch (RFC 6902) implementation.
  * <p>
@@ -190,6 +192,9 @@ public final class JSONPatch {
             return obj.get(token);
         } else if (current instanceof JSONArray arr) {
             int idx = JSONPointer.parseIndex(token, arr.size());
+            if (idx >= arr.size()) {
+                throw new JSONException("Array index out of bounds: " + token + " (size: " + arr.size() + ")");
+            }
             return arr.get(idx);
         }
         throw new JSONException("Cannot traverse: " + token);
@@ -244,17 +249,17 @@ public final class JSONPatch {
                     && (nb instanceof Integer || nb instanceof Long || nb instanceof Short || nb instanceof Byte)) {
                 return na.longValue() == nb.longValue();
             }
-            if (na instanceof java.math.BigDecimal bda && nb instanceof java.math.BigDecimal bdb) {
+            if (na instanceof BigDecimal bda && nb instanceof BigDecimal bdb) {
                 return bda.compareTo(bdb) == 0;
             }
-            if (na instanceof java.math.BigDecimal bda) {
-                return bda.compareTo(new java.math.BigDecimal(nb.toString())) == 0;
+            if (na instanceof BigDecimal bda) {
+                return bda.compareTo(new BigDecimal(nb.toString())) == 0;
             }
-            if (nb instanceof java.math.BigDecimal bdb) {
-                return bdb.compareTo(new java.math.BigDecimal(na.toString())) == 0;
+            if (nb instanceof BigDecimal bdb) {
+                return bdb.compareTo(new BigDecimal(na.toString())) == 0;
             }
-            return new java.math.BigDecimal(na.toString())
-                    .compareTo(new java.math.BigDecimal(nb.toString())) == 0;
+            return new BigDecimal(na.toString())
+                    .compareTo(new BigDecimal(nb.toString())) == 0;
         }
         return a.equals(b);
     }
