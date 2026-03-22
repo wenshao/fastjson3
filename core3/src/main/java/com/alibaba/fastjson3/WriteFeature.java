@@ -117,7 +117,7 @@ public enum WriteFeature {
     /** Write boolean as 0/1 */
     WriteBooleanAsNumber,
 
-    /** Strict browser escaping: escape &lt;, &gt;, &amp;, ' (combine with EscapeNoneAscii for \u2028/\u2029) */
+    /** Strict browser escaping: escape &lt;, &gt;, &amp;, ' (combine with EscapeNoneAscii for U+2028/U+2029) */
     BrowserSecure,
 
     /** Shorthand: null numbers→0, null strings→"", null booleans→false, null lists→[] */
