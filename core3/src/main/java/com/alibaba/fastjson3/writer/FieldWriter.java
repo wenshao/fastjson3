@@ -1025,9 +1025,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
 
         // Write name + value (use generic path since name/value may be transformed)
         if (value == null) {
-            if (!unwrapped && (features & WriteFeature.WriteNulls.mask) != 0) {
-                generator.writeName(name);
-                generator.writeNull();
+            if (!unwrapped) {
+                // Delegate to writeNull which handles WriteNulls, WriteNullStringAsEmpty, etc.
+                writeNull(generator, features);
             }
             return;
         }

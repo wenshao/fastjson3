@@ -376,7 +376,9 @@ public final class ObjectWriterCreator {
             Type fieldType = method.getGenericReturnType();
             Class<?> fieldClass = method.getReturnType();
             // Detect List<T> element type for specialized List serialization
-            if (List.class.isAssignableFrom(fieldClass)) {
+            // Skip specialization when field has custom features/unwrapped (not supported by ofList)
+            if (List.class.isAssignableFrom(fieldClass) && fieldFeatures == 0 && !unwrapped
+                    && format == null && customWriter == null) {
                 Class<?> elemClass = extractListElementClass(fieldType);
                 if (elemClass != null) {
                     if (backingField != null) {

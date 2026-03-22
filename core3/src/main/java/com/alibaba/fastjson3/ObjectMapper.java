@@ -1523,6 +1523,9 @@ public final class ObjectMapper {
                     boolean hasFilters = (propertyFilters != null && propertyFilters.length > 0) ||
                                         (valueFilters != null && valueFilters.length > 0) ||
                                         (nameFilters != null && nameFilters.length > 0) ||
+                                        (propertyPreFilters != null && propertyPreFilters.length > 0) ||
+                                        (beforeFilters != null && beforeFilters.length > 0) ||
+                                        (afterFilters != null && afterFilters.length > 0) ||
                                         labelFilter != null;
                     if (hasFilters) {
                         // Use reflection for filter support

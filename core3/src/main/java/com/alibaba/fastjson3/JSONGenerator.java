@@ -703,12 +703,19 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             writeJSONArray((JSONArray) value);
         } else if (value instanceof Map.Entry<?, ?> entry
                 && (features & WriteFeature.WritePairAsJavaBean.mask) != 0) {
-            startObject();
-            writeName("key");
-            writeAny(entry.getKey());
-            writeName("value");
-            writeAny(entry.getValue());
-            endObject();
+            if (++writeDepth > MAX_WRITE_DEPTH) {
+                throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
+            }
+            try {
+                startObject();
+                writeName("key");
+                writeAny(entry.getKey());
+                writeName("value");
+                writeAny(entry.getValue());
+                endObject();
+            } finally {
+                writeDepth--;
+            }
         } else if (value instanceof Map<?, ?> map) {
             if (++writeDepth > MAX_WRITE_DEPTH) {
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
