@@ -220,6 +220,18 @@ public final class BuiltinCodecs {
         if (type == AtomicBoolean.class) {
             return (ObjectWriter<T>) ATOMIC_BOOLEAN_WRITER;
         }
+        if (Throwable.class.isAssignableFrom(type)) {
+            return (ObjectWriter<T>) THROWABLE_WRITER;
+        }
+        if (type == java.util.Currency.class) {
+            return (ObjectWriter<T>) CURRENCY_WRITER;
+        }
+        if (type == java.util.Locale.class) {
+            return (ObjectWriter<T>) LOCALE_WRITER;
+        }
+        if (type == java.util.TimeZone.class || java.util.TimeZone.class.isAssignableFrom(type)) {
+            return (ObjectWriter<T>) TIMEZONE_WRITER;
+        }
         return null;
     }
 
@@ -542,6 +554,60 @@ public final class BuiltinCodecs {
             (generator, object, fieldName, fieldType, features) -> {
                 generator.writeBool(((AtomicBoolean) object).get());
             };
+
+    // ==================== Throwable ====================
+
+    private static final ObjectWriter<Throwable> THROWABLE_WRITER = new ObjectWriter<>() {
+        @Override
+        public void write(JSONGenerator generator, Object object,
+                          Object fieldName, java.lang.reflect.Type fieldType, long features) {
+            Throwable t = (Throwable) object;
+            generator.startObject();
+            if (generator.writeThrowableClassName || generator.writeClassName) {
+                generator.writeName("@type");
+                generator.writeString(t.getClass().getName());
+            }
+            if (t.getMessage() != null) {
+                generator.writeName("message");
+                generator.writeString(t.getMessage());
+            }
+            StackTraceElement[] stack = t.getStackTrace();
+            if (stack != null && stack.length > 0) {
+                generator.writeName("stackTrace");
+                generator.startArray();
+                for (StackTraceElement ste : stack) {
+                    generator.beforeArrayValue();
+                    generator.writeString(ste.toString());
+                }
+                generator.endArray();
+            }
+            Throwable cause = t.getCause();
+            if (cause != null && cause != t) {
+                generator.writeName("cause");
+                generator.incrementDepth();
+                try {
+                    this.write(generator, cause, null, null, features);
+                } finally {
+                    generator.decrementDepth();
+                }
+            }
+            generator.endObject();
+        }
+    };
+
+    // ==================== Currency / Locale / TimeZone ====================
+
+    private static final ObjectWriter<java.util.Currency> CURRENCY_WRITER =
+            (generator, object, fieldName, fieldType, features) ->
+                    generator.writeString(((java.util.Currency) object).getCurrencyCode());
+
+    private static final ObjectWriter<java.util.Locale> LOCALE_WRITER =
+            (generator, object, fieldName, fieldType, features) ->
+                    generator.writeString(object.toString());
+
+    private static final ObjectWriter<java.util.TimeZone> TIMEZONE_WRITER =
+            (generator, object, fieldName, fieldType, features) ->
+                    generator.writeString(((java.util.TimeZone) object).getID());
 
     // ==================== String ====================
 

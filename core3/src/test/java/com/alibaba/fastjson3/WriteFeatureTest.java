@@ -17,7 +17,7 @@ class WriteFeatureTest {
     void testEnumValues_allPresent() {
         WriteFeature[] values = WriteFeature.values();
 
-        assertEquals(26, values.length);
+        assertEquals(45, values.length);
     }
 
     @Test
@@ -136,7 +136,7 @@ class WriteFeatureTest {
         long mask = WriteFeature.of(WriteFeature.values());
 
         // All 26 features should have their bits set
-        assertEquals(26, Long.bitCount(mask));
+        assertEquals(45, Long.bitCount(mask));
     }
 
     @Test
@@ -187,7 +187,7 @@ class WriteFeatureTest {
         long mask = WriteFeature.of(WriteFeature.values());
         WriteFeature[] features = WriteFeature.valuesFrom(mask);
 
-        assertEquals(26, features.length);
+        assertEquals(45, features.length);
         // Verify order matches ordinal
         assertEquals(WriteFeature.FieldBased, features[0]);
         assertEquals(WriteFeature.PrettyFormat, features[1]);
@@ -199,7 +199,7 @@ class WriteFeatureTest {
     @Test
     void testValuesFrom_invalidBits() {
         // Mask with bits that don't correspond to any feature
-        long mask = 1L << 35; // Bit 35 is beyond our features
+        long mask = 1L << 50; // Bit 50 is beyond our features
         WriteFeature[] features = WriteFeature.valuesFrom(mask);
 
         assertEquals(0, features.length);
@@ -208,7 +208,7 @@ class WriteFeatureTest {
     @Test
     void testValuesFrom_mixedValidInvalid() {
         // Mix of valid and invalid bits
-        long mask = WriteFeature.PrettyFormat.mask | (1L << 35);
+        long mask = WriteFeature.PrettyFormat.mask | (1L << 50);
         WriteFeature[] features = WriteFeature.valuesFrom(mask);
 
         assertEquals(1, features.length);

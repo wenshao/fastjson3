@@ -88,7 +88,67 @@ public enum ReadFeature {
     /**
      * Base64 encoded string as byte array
      */
-    Base64StringAsByteArray;
+    Base64StringAsByteArray,
+
+    /** Throw when enum value doesn't match any constant */
+    ErrorOnEnumNotMatch,
+
+    /** Ignore null values — don't set property when JSON value is null */
+    IgnoreSetNullValue,
+
+    /** Use HashMap/ArrayList instead of JSONObject/JSONArray for untyped parsing */
+    UseNativeObject,
+
+    /** Cast non-zero numbers to boolean true (0→false, others→true) */
+    NonZeroNumberCastToBooleanAsTrue,
+
+    /** Disable reference detection ($ref handling) */
+    DisableReferenceDetect,
+
+    /** Use Long for integer values (instead of Integer) */
+    UseLongForInts,
+
+    /** Don't throw on number overflow, truncate silently */
+    NonErrorOnNumberOverflow,
+
+    /** Support Class.forName() for type resolution */
+    SupportClassForName,
+
+    /** Prefer no-arg constructor when available */
+    UseDefaultConstructorAsPossible,
+
+    /** Throw when AutoType encounters an unsupported type */
+    ErrorOnNotSupportAutoType,
+
+    /** Silently ignore AutoType type mismatch instead of throwing */
+    IgnoreAutoTypeNotMatch,
+
+    /** Ignore null property values — don't call setter for null */
+    IgnoreNullPropertyValue,
+
+    /** Skip resource close check (performance optimization) */
+    IgnoreCheckClose,
+
+    /** Use BigInteger for integer values */
+    UseBigIntegerForInts,
+
+    /** Use double for decimal values (instead of BigDecimal) */
+    UseDoubleForDecimals,
+
+    /** Disable single-quote string support */
+    DisableSingleQuote,
+
+    /** Disable unwrapping single-element string arrays */
+    DisableStringArrayUnwrapping,
+
+    /** Ignore non-Serializable types during deserialization */
+    IgnoreNoneSerializable,
+
+    /** Throw on non-Serializable types during deserialization */
+    ErrorOnNoneSerializable,
+
+    /** Convert non-String Map keys to String */
+    NonStringKeyAsString;
 
     public final long mask;
 

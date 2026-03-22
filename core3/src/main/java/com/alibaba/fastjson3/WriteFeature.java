@@ -121,7 +121,64 @@ public enum WriteFeature {
     BrowserSecure,
 
     /** Shorthand: null numbers→0, null strings→"", null booleans→false, null lists→[] */
-    NullAsDefaultValue;
+    NullAsDefaultValue,
+
+    /** Pretty print with 2-space indent (default when PrettyFormat is set) */
+    PrettyFormatWith2Space,
+
+    /** Pretty print with 4-space indent (overrides 2-space) */
+    PrettyFormatWith4Space,
+
+    /** Use single quotes instead of double quotes for strings and names */
+    UseSingleQuotes,
+
+    /** Skip fields whose declared type does not implement Serializable (checked at writer creation time) */
+    IgnoreNoneSerializable,
+
+    /** Throw JSONException if any field type does not implement Serializable (checked at writer creation time) */
+    ErrorOnNoneSerializable,
+
+    /** Suppress exceptions thrown by getter methods — treat as null instead */
+    IgnoreErrorGetter,
+
+    /** Serialize Map.Entry / Pair types as {"key":..., "value":...} instead of nested structure */
+    WritePairAsJavaBean,
+
+    /** Convert non-String Map keys to String via toString() (default behavior, explicit opt-in for clarity) */
+    WriteNonStringKeyAsString,
+
+    /** Write float/double NaN and Infinity as string literals ("NaN", "Infinity") instead of null */
+    WriteFloatSpecialAsString,
+
+    /** When WriteClassName is on, skip @type for the root object (depth 0) */
+    NotWriteRootClassName,
+
+    /** When WriteClassName is on, skip @type for HashMap/ArrayList/LinkedHashMap */
+    NotWriteHashMapArrayListClassName,
+
+    /** Ignore getter methods that don't correspond to a declared field (e.g. getClass()) */
+    IgnoreNonFieldGetter,
+
+    /** Write java.util.Date as milliseconds timestamp instead of formatted string */
+    WriteDateAsMillis,
+
+    /** Write null values in Map entries (independent of WriteNulls which controls POJO fields) */
+    WriteMapNullValue,
+
+    /** When WriteClassName is on, skip @type for Set/HashSet/LinkedHashSet */
+    NotWriteSetClassName,
+
+    /** When WriteClassName is on, skip @type for Number subclasses (Integer, Long, etc.) */
+    NotWriteNumberClassName,
+
+    /** Write Throwable class name in serialization output (adds @type to exception JSON) */
+    WriteThrowableClassName,
+
+    /** Write field names without quotes (non-standard JSON, for JS eval compatibility) */
+    UnquoteFieldName,
+
+    /** Allow large object serialization (raises buffer limit from default to 1GB) */
+    LargeObject;
 
     public final long mask;
 

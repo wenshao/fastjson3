@@ -1,6 +1,7 @@
 package com.alibaba.fastjson3.writer;
 
 import com.alibaba.fastjson3.ObjectWriter;
+import com.alibaba.fastjson3.WriteFeature;
 import com.alibaba.fastjson3.annotation.*;
 
 import java.lang.reflect.Field;
@@ -34,11 +35,28 @@ public final class ObjectWriterCreator {
     }
 
     public static <T> ObjectWriter<T> createObjectWriter(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        return createObjectWriter(type, mixIn, useJacksonAnnotation, 0);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> ObjectWriter<T> createObjectWriter(Class<T> type, Class<?> mixIn,
+                                                          boolean useJacksonAnnotation, long writeFeatures) {
+        // Check @JSONType(serializer=...) for class-level custom writer
+        JSONType jsonType = type.getAnnotation(JSONType.class);
+        if (jsonType != null && jsonType.serializer() != Void.class) {
+            try {
+                return (ObjectWriter<T>) jsonType.serializer().getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new com.alibaba.fastjson3.JSONException(
+                        "cannot instantiate serializer: " + jsonType.serializer().getName(), e);
+            }
+        }
+
         if (com.alibaba.fastjson3.util.JDKUtils.isRecord(type)) {
             return createRecordWriter(type, mixIn, useJacksonAnnotation);
         }
 
-        return createPojoWriter(type, mixIn, useJacksonAnnotation);
+        return createPojoWriter(type, mixIn, useJacksonAnnotation, writeFeatures);
     }
 
     private static <T> ObjectWriter<T> createRecordWriter(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
@@ -171,10 +189,15 @@ public final class ObjectWriterCreator {
         }
         FieldWriter[] writers = fieldWriters.toArray(new FieldWriter[0]);
 
-        return buildObjectWriter(writers, null);
+        return buildObjectWriter(writers, null, null, null);
     }
 
     private static <T> ObjectWriter<T> createPojoWriter(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        return createPojoWriter(type, mixIn, useJacksonAnnotation, 0);
+    }
+
+    private static <T> ObjectWriter<T> createPojoWriter(Class<T> type, Class<?> mixIn,
+                                                         boolean useJacksonAnnotation, long writeFeatures) {
         JSONType jsonType = type.getAnnotation(JSONType.class);
         NamingStrategy naming = jsonType != null ? jsonType.naming() : NamingStrategy.NoneStrategy;
         Set<String> includes = jsonType != null && jsonType.includes().length > 0 ? Set.of(jsonType.includes()) : Set.of();
@@ -311,6 +334,12 @@ public final class ObjectWriterCreator {
             // Lookup backing field once — reused for inclusion resolution and Unsafe offset
             Field backingField = findDeclaredField(type, propertyName);
 
+            // IgnoreNonFieldGetter: skip getters without a backing field
+            if (backingField == null && (writeFeatures & WriteFeature.IgnoreNonFieldGetter.mask) != 0
+                    && jsonField == null) { // explicit @JSONField overrides
+                continue;
+            }
+
             // Resolve inclusion: field-level overrides type-level
             Inclusion fieldInclusion = typeInclusion;
             if (jsonField != null && jsonField.inclusion() != Inclusion.DEFAULT) {
@@ -328,10 +357,12 @@ public final class ObjectWriterCreator {
                 }
             }
 
-            // Resolve format, custom writer, and label
+            // Resolve format, custom writer, label, field features, and unwrapped
             String format = resolveFormat(jsonField, jacksonField, backingField, mixIn, useJacksonAnnotation);
             ObjectWriter<?> customWriter = resolveSerializeUsing(jsonField, backingField, mixIn);
             String label = resolveLabel(jsonField, backingField, mixIn);
+            long fieldFeatures = resolveFieldFeatures(jsonField);
+            boolean unwrapped = jsonField != null && jsonField.unwrapped();
 
             // Prefer backing field for Unsafe direct access (avoids Method.invoke overhead)
             Type fieldType = method.getGenericReturnType();
@@ -356,13 +387,15 @@ public final class ObjectWriterCreator {
                 backingField.setAccessible(true);
                 writerMap.put(propertyName, FieldWriter.ofField(
                         jsonName, ordinal, fieldType, fieldClass,
-                        backingField, fieldInclusion, format, customWriter, label
+                        backingField, fieldInclusion, format, customWriter, label,
+                        fieldFeatures, unwrapped
                 ));
             } else {
                 method.setAccessible(true);
                 writerMap.put(propertyName, FieldWriter.ofGetter(
                         jsonName, ordinal, fieldType, fieldClass,
-                        method, fieldInclusion, format, customWriter, label
+                        method, fieldInclusion, format, customWriter, label,
+                        fieldFeatures, unwrapped
                 ));
             }
         }
@@ -429,12 +462,34 @@ public final class ObjectWriterCreator {
             String format = resolveFormat(jsonField, jacksonField, null, mixIn, useJacksonAnnotation);
             ObjectWriter<?> customWriter = resolveSerializeUsing(jsonField, null, mixIn);
             String label = resolveLabel(jsonField, null, mixIn);
+            long fieldFeatures = resolveFieldFeatures(jsonField);
+            boolean unwrapped = jsonField != null && jsonField.unwrapped();
 
             field.setAccessible(true);
             writerMap.put(propertyName, FieldWriter.ofField(
                     jsonName, ordinal, field.getGenericType(), field.getType(), field,
-                    fieldInclusion, format, customWriter, label
+                    fieldInclusion, format, customWriter, label, fieldFeatures, unwrapped
             ));
+        }
+
+        // 2.5. Apply Serializable checks (pre-computed at writer creation time — zero runtime cost)
+        boolean ignoreNonSerializable = (writeFeatures & WriteFeature.IgnoreNoneSerializable.mask) != 0;
+        boolean errorOnNonSerializable = (writeFeatures & WriteFeature.ErrorOnNoneSerializable.mask) != 0;
+        if (ignoreNonSerializable || errorOnNonSerializable) {
+            var it = writerMap.entrySet().iterator();
+            while (it.hasNext()) {
+                var entry = it.next();
+                Class<?> fc = entry.getValue().fieldClass;
+                if (fc.isPrimitive() || fc == String.class || java.io.Serializable.class.isAssignableFrom(fc)) {
+                    continue;
+                }
+                if (errorOnNonSerializable) {
+                    throw new com.alibaba.fastjson3.JSONException(
+                            "field '" + entry.getKey() + "' type " + fc.getName()
+                                    + " does not implement Serializable");
+                }
+                it.remove(); // ignoreNonSerializable
+            }
         }
 
         // 3. Apply includes/ignores filters
@@ -471,14 +526,19 @@ public final class ObjectWriterCreator {
         // Scan for @JSONField(anyGetter=true) — separate pass over ALL methods
         Method anyGetterMethod = findAnyGetterMethod(type, mixIn, useJacksonAnnotation);
 
-        return buildObjectWriter(writers, anyGetterMethod);
+        // Pre-compute @JSONType(typeName/typeKey) — zero cost if not annotated
+        String typeName = (jsonType != null && !jsonType.typeName().isEmpty()) ? jsonType.typeName() : null;
+        String typeKey = (jsonType != null && !jsonType.typeKey().isEmpty()) ? jsonType.typeKey() : null;
+
+        return buildObjectWriter(writers, anyGetterMethod, typeName, typeKey);
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> ObjectWriter<T> buildObjectWriter(FieldWriter[] writers, Method anyGetterMethod) {
+    private static <T> ObjectWriter<T> buildObjectWriter(FieldWriter[] writers, Method anyGetterMethod,
+                                                          String typeName, String typeKey) {
         if (anyGetterMethod == null) {
             // Concrete final class — JIT can devirtualize + inline write() for nested objects
-            return (ObjectWriter<T>) new ReflectObjectWriter(writers);
+            return (ObjectWriter<T>) new ReflectObjectWriter(writers, typeName, typeKey);
         }
         // Lambda fallback for anyGetter (rare)
         return (generator, object, fieldName, fieldType, features) -> {
@@ -513,7 +573,8 @@ public final class ObjectWriterCreator {
                 if (lf != null && fw.label != null && !lf.apply(fw.label)) continue;
                 if (generator.hasFilters()) {
                     fw.writeFieldFiltered(generator, object, features,
-                            generator.propertyFilters, generator.valueFilters, generator.nameFilters);
+                            generator.propertyPreFilters, generator.propertyFilters,
+                            generator.valueFilters, generator.nameFilters);
                 } else {
                     fw.writeField(generator, object, features);
                 }
@@ -529,10 +590,19 @@ public final class ObjectWriterCreator {
     public static final class ReflectObjectWriter implements com.alibaba.fastjson3.ObjectWriter<Object> {
         public final FieldWriter[] writers;
         private final int estimatedSize;
+        // Pre-computed from @JSONType — null if not annotated (zero overhead)
+        final String typeName;  // @JSONType(typeName="Dog") → "Dog"
+        final String typeKey;   // @JSONType(typeKey="type") → "type", default "@type"
 
         ReflectObjectWriter(FieldWriter[] writers) {
+            this(writers, null, null);
+        }
+
+        ReflectObjectWriter(FieldWriter[] writers, String typeName, String typeKey) {
             this.writers = writers;
             this.estimatedSize = writers.length * 32 + 16;
+            this.typeName = typeName;
+            this.typeKey = typeKey;
         }
 
         @Override
@@ -541,8 +611,39 @@ public final class ObjectWriterCreator {
             // Pre-allocate capacity for the entire object
             generator.ensureCapacityPublic(estimatedSize);
             generator.startObject();
+            // WriteClassName: write @type as the first property
+            if (generator.writeClassName) {
+                Class<?> objectClass = object.getClass();
+                boolean skip = (generator.notWriteRootClassName && generator.getWriteDepth() == 0)
+                        || (generator.notWriteHashMapArrayListClassName && isCommonContainerType(objectClass))
+                        || (generator.notWriteSetClassName && java.util.Set.class.isAssignableFrom(objectClass))
+                        || (generator.notWriteNumberClassName && Number.class.isAssignableFrom(objectClass));
+                if (!skip) {
+                    String key = typeKey != null ? typeKey : "@type";
+                    String name = typeName != null ? typeName : objectClass.getName();
+                    generator.writeName(key);
+                    generator.writeString(name);
+                }
+            }
+            // Before filters
+            if (generator.beforeFilters != null) {
+                for (var bf : generator.beforeFilters) {
+                    bf.writeBefore(generator, object);
+                }
+            }
             writeFields(generator, writers, object, features);
+            // After filters
+            if (generator.afterFilters != null) {
+                for (var af : generator.afterFilters) {
+                    af.writeAfter(generator, object);
+                }
+            }
             generator.endObject();
+        }
+
+        private static boolean isCommonContainerType(Class<?> cls) {
+            return cls == java.util.HashMap.class || cls == java.util.ArrayList.class
+                    || cls == java.util.LinkedHashMap.class;
         }
     }
 
@@ -843,6 +944,17 @@ public final class ObjectWriterCreator {
             }
         }
         return null;
+    }
+
+    private static long resolveFieldFeatures(JSONField jsonField) {
+        if (jsonField == null) {
+            return 0;
+        }
+        WriteFeature[] sf = jsonField.serializeFeatures();
+        if (sf.length == 0) {
+            return 0;
+        }
+        return WriteFeature.of(sf);
     }
 
     // ==================== Mixin support ====================
