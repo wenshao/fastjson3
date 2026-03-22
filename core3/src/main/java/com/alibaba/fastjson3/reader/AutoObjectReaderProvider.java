@@ -71,8 +71,10 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
             return null;
         }
 
-        // Skip interfaces and abstract classes - they don't have constructors
-        if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
+        // Skip interfaces, abstract classes, and enums - they don't have accessible constructors
+        // Enum deserialization is handled inline by FieldReader
+        if (type.isInterface() || type.isEnum()
+                || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
             return null;
         }
 

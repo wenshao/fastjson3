@@ -35,6 +35,12 @@ public final class ObjectReaderCreator {
             return null;
         }
 
+        // Enum types don't have accessible constructors - they are deserialized
+        // inline by FieldReader via name/ordinal lookup
+        if (type.isEnum()) {
+            return null;
+        }
+
         if (JDKUtils.isRecord(type)) {
             return createRecordReader(type, mixIn, useJacksonAnnotation);
         }
@@ -691,8 +697,9 @@ public final class ObjectReaderCreator {
                         // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
                         ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fc);
                         if (r == null) {
-                            // Skip interfaces and abstract classes - they don't have constructors
-                            if (!fc.isInterface() && !java.lang.reflect.Modifier.isAbstract(fc.getModifiers())) {
+                            // Skip interfaces, abstract classes, and enums - they don't have constructors
+                            if (!fc.isInterface() && !fc.isEnum()
+                                    && !java.lang.reflect.Modifier.isAbstract(fc.getModifiers())) {
                                 r = createObjectReader(fc);
                             }
                         }
@@ -897,6 +904,11 @@ public final class ObjectReaderCreator {
                         utf8.setOffset(off);
                         reader.setObjectValue(instance, utf8.readLongArrayInline());
                         off = utf8.getOffset();
+                    } else if (tt == FieldReader.TAG_ENUM && b[off] == '"') {
+                        // Fast path for enum string values — readStringOff + setObjectValue does String→enum conversion
+                        off = utf8.readStringOff(off, instance, reader);
+                    } else if (tt == FieldReader.TAG_ENUM && off + 3 < end && b[off] == 'n' && b[off + 1] == 'u' && b[off + 2] == 'l' && b[off + 3] == 'l') {
+                        off += 4;
                     } else {
                         // Sync offset for complex types (POJO, LIST, ARRAY, etc.)
                         // Also handles TAG_STRING with custom deserializeUsing
@@ -1088,6 +1100,21 @@ public final class ObjectReaderCreator {
                     }
                     reader.setObjectValue(instance, utf8.readLongArrayInline());
                 }
+                case FieldReader.TAG_ENUM -> {
+                    if (peek == 'n' && utf8.readNull()) {
+                        return;
+                    }
+                    if (peek == '"') {
+                        // Read string and convert to enum constant via setObjectValue
+                        reader.setObjectValue(instance, utf8.readStringDirect());
+                    } else if (peek >= '0' && peek <= '9') {
+                        // Ordinal-based enum lookup
+                        reader.setFieldValue(instance, reader.convertValue(utf8.readInt()));
+                    } else {
+                        Object val = utf8.readAny();
+                        reader.setFieldValue(instance, reader.convertValue(val));
+                    }
+                }
                 default -> {
                     if (peek == 'n' && utf8.readNull()) {
                         return;
@@ -1175,6 +1202,10 @@ public final class ObjectReaderCreator {
                 case FieldReader.TAG_LONG_OBJ -> reader.setFieldValue(instance, parser.readLong());
                 case FieldReader.TAG_DOUBLE_OBJ -> reader.setFieldValue(instance, parser.readDouble());
                 case FieldReader.TAG_BOOLEAN_OBJ -> reader.setFieldValue(instance, parser.readBoolean());
+                case FieldReader.TAG_ENUM -> {
+                    Object value = parser.readAny();
+                    reader.setFieldValue(instance, reader.convertValue(value));
+                }
                 case FieldReader.TAG_LIST -> {
                     Object value = readListGeneric(parser, reader, fi, features);
                     reader.setObjectValue(instance, value);
