@@ -2022,6 +2022,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         private int writeEscapedByte(byte b, int pos) {
             int ch = b & 0xFF;
+            if (ch >= 128) {
+                // Latin-1 char 0x80-0xFF: encode as 2-byte UTF-8
+                buf[pos++] = (byte) (0xC0 | (ch >> 6));
+                buf[pos++] = (byte) (0x80 | (ch & 0x3F));
+                return pos;
+            }
             char escaped = ESCAPE_CHARS[ch];
             if (escaped != 0 && ch != '/') {
                 buf[pos++] = '\\';
@@ -2687,6 +2693,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
          */
         public static int writeEscapedByteDirect(byte b, byte[] buf, int pos) {
             int ch = b & 0xFF;
+            if (ch >= 128) {
+                // Latin-1 char 0x80-0xFF: encode as 2-byte UTF-8
+                buf[pos++] = (byte) (0xC0 | (ch >> 6));
+                buf[pos++] = (byte) (0x80 | (ch & 0x3F));
+                return pos;
+            }
             char escaped = ESCAPE_CHARS[ch];
             if (escaped != 0 && ch != '/') {
                 buf[pos++] = '\\';
