@@ -1131,7 +1131,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
      */
     public static void writeFieldsStaticChar(Char gen, com.alibaba.fastjson3.writer.FieldWriter[] writers,
                                               Object bean, long features) {
-        gen.ensureCapacity(writers.length * 48);
+        gen.ensureCapacity(gen.count + writers.length * 48);
         char[] buf = gen.buf;
         int pos = gen.count;
         for (com.alibaba.fastjson3.writer.FieldWriter fw : writers) {
@@ -3090,6 +3090,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         /** Tracks if any non-ASCII byte was written */
         boolean hasNonAscii;
+
+        @Override
+        public void resetForReuse() {
+            super.resetForReuse();
+            hasNonAscii = false;
+        }
 
         /**
          * Create String directly from internal byte[] buffer as Latin-1.
