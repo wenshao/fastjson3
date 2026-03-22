@@ -736,9 +736,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         try {
             pushReference(obj);
             startObject();
-            Iterable<Map.Entry<String, Object>> entries = sortMapKeys
-                ? new java.util.TreeMap<>(obj).entrySet()
-                : obj.entrySet();
+            Iterable<Map.Entry<String, Object>> entries;
+            if (sortMapKeys) {
+                java.util.List<Map.Entry<String, Object>> list = new java.util.ArrayList<>(obj.entrySet());
+                list.sort(java.util.Comparator.comparing(e -> String.valueOf(e.getKey())));
+                entries = list;
+            } else {
+                entries = obj.entrySet();
+            }
             for (Map.Entry<String, Object> entry : entries) {
                 writeName(entry.getKey());
                 writeAny(entry.getValue());

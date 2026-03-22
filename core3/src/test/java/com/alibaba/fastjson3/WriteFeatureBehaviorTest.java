@@ -109,8 +109,13 @@ class WriteFeatureBehaviorTest {
         String json = obj.toJSONString(WriteFeature.WriteNulls, WriteFeature.NullAsDefaultValue);
         // NullAsDefaultValue expands to WriteNullStringAsEmpty + WriteNullListAsEmpty + etc.
         // but JSONObject values are untyped, so type-specific defaults apply via FieldWriter (POJOs).
-        // For JSONObject, null values are written as null.
-        assertTrue(json.contains("null"), "JSONObject nulls remain null: " + json);
+        // For JSONObject, null values are written as null since type info is unavailable.
+        JSONObject parsed = JSON.parseObject(json);
+        assertEquals(4, parsed.size(), "All 4 keys should be present: " + json);
+        assertNull(parsed.get("name"), "name should be null: " + json);
+        assertNull(parsed.get("list"), "list should be null: " + json);
+        assertNull(parsed.get("count"), "count should be null: " + json);
+        assertNull(parsed.get("flag"), "flag should be null: " + json);
     }
 
     // NotWriteDefaultValue (via ObjectMapper with a POJO)
