@@ -141,7 +141,7 @@ public class User {
 public class EmailReader implements ObjectReader<String> {
     @Override
     public String readObject(JSONParser parser, Type fieldType, Object fieldName, long features) {
-        String email = reader.readString();
+        String email = parser.readString();
         // 自定义验证逻辑
         if (!email.contains("@")) {
             throw new RuntimeException("Invalid email");

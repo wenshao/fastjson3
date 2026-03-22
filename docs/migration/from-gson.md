@@ -118,7 +118,7 @@ Gson gson = new GsonBuilder()
 ObjectMapper mapper = ObjectMapper.builder()
     .enableWrite(WriteFeature.PrettyFormat)      // 美化输出
     .enableWrite(WriteFeature.WriteNulls)         // 序列化 null
-    .disableWrite(WriteFeature.EscapeNoneAscii)   // 禁用 HTML 转义
+    .disableWrite(WriteFeature.EscapeNoneAscii)   // 禁用非 ASCII 字符转义
     .build();
 ```
 

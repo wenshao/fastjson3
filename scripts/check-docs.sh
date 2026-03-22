@@ -16,6 +16,9 @@
 
 set -euo pipefail
 
+# Requires GNU grep (grep -P). On macOS: brew install grep, then use ggrep.
+# CI runs on Linux where GNU grep is the default.
+
 DOCS_DIR="docs"
 SRC_DIR="core3/src/main/java/com/alibaba/fastjson3"
 ERRORS=0
@@ -90,7 +93,7 @@ check_pattern "WriteEnumUsingOrdinal (does not exist)" \
     "Only WriteEnumsUsingName and WriteEnumUsingToString exist"
 
 check_pattern "ReadFeature.AllowComment (singular, should be AllowComments)" \
-    'ReadFeature\.AllowComment[^s]' \
+    'ReadFeature\.AllowComment(?!s)' \
     "Correct: ReadFeature.AllowComments"
 
 check_pattern "AllowUnQuotedFieldNames (capital Q)" \

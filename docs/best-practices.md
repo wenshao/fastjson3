@@ -261,9 +261,9 @@ public void process(String json) {
 
 ```gradle
 // ✅ 好：使用 android 版本
-implementation 'com.alibaba.fastjson3:fastjson3:3.0.0'
+implementation 'com.alibaba.fastjson3:fastjson3:3.0.0:android'
 
-// ⚠️ 普通 JAR 包含 ASM，Android 不支持
+// ⚠️ 不带 :android 分类器的 JAR 包含 ASM，Android 不支持
 ```
 
 ### 2. 避免反射

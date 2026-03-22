@@ -239,7 +239,7 @@ public void configureMessageConverters(List<HttpMessageConverter<?>> converters)
 使用专用 JAR：
 
 ```gradle
-implementation 'com.alibaba.fastjson3:fastjson3:3.0.0'
+implementation 'com.alibaba.fastjson3:fastjson3:3.0.0:android'
 ```
 
 ### Q: Android 上性能如何？
