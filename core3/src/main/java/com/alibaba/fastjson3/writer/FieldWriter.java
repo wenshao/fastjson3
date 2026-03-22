@@ -526,8 +526,13 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && isEmpty(value)) {
             return;
         }
-        if (generator.notWriteEmptyArray && value instanceof java.util.Collection && ((java.util.Collection<?>) value).isEmpty()) {
-            return;
+        if (generator.notWriteEmptyArray) {
+            if (value instanceof java.util.Collection && ((java.util.Collection<?>) value).isEmpty()) {
+                return;
+            }
+            if (value.getClass().isArray() && java.lang.reflect.Array.getLength(value) == 0) {
+                return;
+            }
         }
         // Format temporal types with explicit pattern
         if (formatter != null) {
@@ -748,8 +753,13 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && isEmpty(value)) {
             return;
         }
-        if (generator.notWriteEmptyArray && value instanceof java.util.Collection && ((java.util.Collection<?>) value).isEmpty()) {
-            return;
+        if (generator.notWriteEmptyArray) {
+            if (value instanceof java.util.Collection && ((java.util.Collection<?>) value).isEmpty()) {
+                return;
+            }
+            if (value.getClass().isArray() && java.lang.reflect.Array.getLength(value) == 0) {
+                return;
+            }
         }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         if (value instanceof String s) {

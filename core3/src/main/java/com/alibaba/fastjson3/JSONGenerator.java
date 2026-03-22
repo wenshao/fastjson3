@@ -2253,7 +2253,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt32(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
-            if (pretty) {
+            if (pretty || nonStringAsString) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeInt32(value);
                 return;
@@ -2279,7 +2279,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt64(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
-            if (pretty) {
+            if (pretty || longAsString || nonStringAsString) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeInt64(value);
                 return;
@@ -2305,7 +2305,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameDouble(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
-            if (pretty) {
+            if (pretty || nonStringAsString) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeDouble(value);
                 return;
@@ -2331,7 +2331,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameBool(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
-            if (pretty) {
+            if (pretty || boolAsNumber || nonStringAsString) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeBool(value);
                 return;
@@ -2417,6 +2417,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt32Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
+            if (nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeInt32(value);
+                return;
+            }
             // Optimized: remove ensureCapacity (caller ensures capacity), inline writeName0
             int pos = count;
             if (nameByteLongs != null) {
@@ -2437,6 +2442,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt64Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+            if (longAsString || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeInt64(value);
+                return;
+            }
             // Optimized: inline writeName0 for better performance
             int pos = count;
             if (nameByteLongs != null) {
@@ -2457,6 +2467,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameDoubleCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
+            if (nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeDouble(value);
+                return;
+            }
             // Optimized: inline writeName0 for better performance
             int pos = count;
             if (nameByteLongs != null) {
@@ -2477,6 +2492,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameBoolCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
+            if (boolAsNumber || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeBool(value);
+                return;
+            }
             int pos;
             if (nameByteLongs != null) {
                 writeName0(nameByteLongs, nameBytesLen);

@@ -265,6 +265,47 @@ class WriteFeatureBehaviorTest {
         assertTrue(json.contains("\"123.456\""), "BigDecimal should be string: " + json);
     }
 
+    // POJO UTF8 tests
+    @Test
+    void longAsString_pojo_utf8() {
+        LongBean bean = new LongBean();
+        bean.id = 9007199254740993L;
+        byte[] bytes = JSON.toJSONBytes(bean, WriteFeature.WriteLongAsString, WriteFeature.FieldBased);
+        String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(json.contains("\"9007199254740993\""), "Long should be quoted in POJO UTF8: " + json);
+    }
+
+    public static class LongBean {
+        public long id;
+    }
+
+    @Test
+    void booleanAsNumber_pojo_utf8() {
+        BoolBean bean = new BoolBean();
+        bean.flag = true;
+        byte[] bytes = JSON.toJSONBytes(bean, WriteFeature.WriteBooleanAsNumber, WriteFeature.FieldBased);
+        String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(json.contains("1"), "true should be 1 in POJO UTF8: " + json);
+        assertFalse(json.contains("true"), "should not contain literal true: " + json);
+    }
+
+    public static class BoolBean {
+        public boolean flag;
+    }
+
+    @Test
+    void nonStringValueAsString_pojo_utf8() {
+        IntBean bean = new IntBean();
+        bean.count = 42;
+        byte[] bytes = JSON.toJSONBytes(bean, WriteFeature.WriteNonStringValueAsString, WriteFeature.FieldBased);
+        String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(json.contains("\"42\""), "int should be string in POJO UTF8: " + json);
+    }
+
+    public static class IntBean {
+        public int count;
+    }
+
     // NonStringValueAsString UTF8
     @Test
     void nonStringValueAsString_utf8() {
