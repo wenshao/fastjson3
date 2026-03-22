@@ -61,19 +61,16 @@ public class EishayWriteString {
         }
     }
 
-    /** Direct UTF8→Latin1 path, bypassing ObjectMapper overhead */
+    /** Direct UTF8→Latin1 using ObjectMapper writer (same as toJSONString internally) */
     @Benchmark
     public void fastjson3_utf8latin1(Blackhole bh) {
-        try (com.alibaba.fastjson3.JSONGenerator gen = com.alibaba.fastjson3.JSONGenerator.ofUTF8()) {
-            gen.writeAny(mc);
-            if (gen instanceof com.alibaba.fastjson3.JSONGenerator.UTF8 utf8) {
-                String result = utf8.toStringLatin1();
-                if (result != null) {
-                    bh.consume(result);
-                    return;
-                }
-            }
-            bh.consume(gen.toString());
+        com.alibaba.fastjson3.ObjectWriter<?> writer =
+                com.alibaba.fastjson3.ObjectMapper.shared().getObjectWriter(MediaContent.class);
+        try (com.alibaba.fastjson3.JSONGenerator.UTF8 gen =
+                     (com.alibaba.fastjson3.JSONGenerator.UTF8) com.alibaba.fastjson3.JSONGenerator.ofUTF8()) {
+            writer.write(gen, mc, null, null, 0);
+            String result = gen.toStringLatin1();
+            bh.consume(result != null ? result : gen.toString());
         }
     }
 

@@ -1173,27 +1173,26 @@ public final class ObjectMapper {
     /**
      * Serialize object to JSON string with custom features.
      */
+    @SuppressWarnings("unchecked")
     public String writeValueAsString(Object obj, long features) {
         if (obj == null) {
             return "null";
         }
-        // Fast path: write to UTF8 byte[] then create Latin1 String directly.
-        // This leverages all UTF8 optimizations (putLong, SWAR, fused writes)
-        // and avoids the char[] → byte[] compression overhead in new String(char[]).
-        // Fast path: use UTF8 generator (leverages putLong, SWAR, fused writes)
-        // then create String directly from the byte[] without char[] intermediary.
-        if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION
+        // Fast path: UTF8 serialize → Latin-1 String (bypasses char[] entirely).
+        // Inlined to minimize call chain depth for JIT inlining.
+        if (com.alibaba.fastjson3.util.JDKUtils.STRING_CREATOR != null
                 && propertyFilters == null && valueFilters == null && nameFilters == null
                 && features == 0) {
-            try (JSONGenerator gen = JSONGenerator.ofUTF8()) {
-                writeValue0(gen, obj, 0);
-                if (gen instanceof JSONGenerator.UTF8 utf8) {
-                    String result = utf8.toStringLatin1();
+            ObjectWriter<Object> writer = (ObjectWriter<Object>) getObjectWriter(obj.getClass());
+            if (writer != null) {
+                try (JSONGenerator.UTF8 gen = (JSONGenerator.UTF8) JSONGenerator.ofUTF8()) {
+                    writer.write(gen, obj, null, null, 0);
+                    String result = gen.toStringLatin1();
                     if (result != null) {
                         return result;
                     }
+                    return gen.toString();
                 }
-                return gen.toString();
             }
         }
         try (JSONGenerator generator = createCharGenerator(features)) {
