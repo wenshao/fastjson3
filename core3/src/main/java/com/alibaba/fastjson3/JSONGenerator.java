@@ -182,8 +182,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 : browserCompatible ? ESCAPE_CHARS_BROWSER
                 : ESCAPE_CHARS;
         this.extendedEscape = (escapeChars != ESCAPE_CHARS);
+        boolean writeNulls = (features & WriteFeature.WriteNulls.mask) != 0
+                || (features & WriteFeature.WriteNullStringAsEmpty.mask) != 0
+                || (features & WriteFeature.WriteNullListAsEmpty.mask) != 0
+                || (features & WriteFeature.WriteNullNumberAsZero.mask) != 0
+                || (features & WriteFeature.WriteNullBooleanAsFalse.mask) != 0;
         this.bypassStaticPath = longAsString || nonStringAsString || boolAsNumber
-                || notWriteDefaultValue || notWriteEmptyArray || extendedEscape || escapeNoneAscii;
+                || notWriteDefaultValue || notWriteEmptyArray || extendedEscape || escapeNoneAscii
+                || writeNulls;
 
         if ((features & WriteFeature.ReferenceDetection.mask) != 0) {
             this.referenceDetection = true;
@@ -275,6 +281,13 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
      */
     public static JSONGenerator of() {
         return new Char(0);
+    }
+
+    /**
+     * Get the feature bitmask (includes NullAsDefaultValue expansion).
+     */
+    public long getFeatures() {
+        return features;
     }
 
     /**

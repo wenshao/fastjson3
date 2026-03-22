@@ -123,7 +123,7 @@ class WriteFeatureTest {
     void testOf_allFeatures() {
         long mask = WriteFeature.of(WriteFeature.values());
 
-        // All 29 features should have their bits set
+        // All 26 features should have their bits set
         assertEquals(26, Long.bitCount(mask));
     }
 

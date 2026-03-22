@@ -319,6 +319,8 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     }
 
     private void writeNull(JSONGenerator generator, long features) {
+        // Merge with generator features to pick up NullAsDefaultValue expansion
+        features |= generator.getFeatures();
         if (inclusion == Inclusion.ALWAYS
                 || (features & WriteFeature.WriteNulls.mask) != 0) {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
