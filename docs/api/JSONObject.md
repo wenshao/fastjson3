@@ -34,6 +34,22 @@ obj.put("tags", new JSONArray());
 obj.put("nullable", null);
 ```
 
+### 便捷构建方法
+
+```java
+JSONObject obj = new JSONObject();
+
+// putObject：创建并放入子 JSONObject，返回新创建的子对象
+JSONObject address = obj.putObject("address");
+address.put("city", "北京");
+address.put("district", "朝阳区");
+
+// putArray：创建并放入子 JSONArray，返回新创建的子数组
+JSONArray tags = obj.putArray("tags");
+tags.add("Java");
+tags.add("Python");
+```
+
 ## 获取值
 
 ### 基本获取
@@ -58,6 +74,42 @@ int age = obj.getIntValue("age");          // 0 if missing
 boolean vip = obj.getBooleanValue("vip");  // false if missing
 ```
 
+### 类型化获取
+
+```java
+// 获取并转换为指定类型
+User user = obj.getObject("user", User.class);
+
+// 获取 List 并转换元素类型
+List<String> tags = obj.getList("tags", String.class);
+List<User> users = obj.getList("users", User.class);
+
+// 获取 byte[]（Base64 解码）
+byte[] data = obj.getBytes("avatar");
+
+// 获取 Byte / Short（包装类型，key 不存在时返回 null）
+Byte flag = obj.getByte("flag");
+Short code = obj.getShort("code");
+
+// 获取 byte / short（基本类型，key 不存在时返回 0）
+byte flagValue = obj.getByteValue("flag");
+short codeValue = obj.getShortValue("code");
+```
+
+### 日期时间获取
+
+```java
+// java.util.Date
+Date createTime = obj.getDate("createTime");
+
+// java.time 类型
+Instant instant = obj.getInstant("timestamp");
+LocalDate birthday = obj.getLocalDate("birthday");
+LocalDateTime createAt = obj.getLocalDateTime("createAt");
+LocalTime startTime = obj.getLocalTime("startTime");
+OffsetDateTime eventTime = obj.getOffsetDateTime("eventTime");
+```
+
 ### 获取对象
 
 ```java
@@ -70,6 +122,14 @@ User user = obj.toJavaObject(User.class);
 
 // 获取任意类型
 Object value = obj.get("key");
+```
+
+### JSONPath 查询
+
+```java
+// 使用 getByPath 进行 JSONPath 查询
+Object city = obj.getByPath("$.address.city");
+Object firstTag = obj.getByPath("$.tags[0]");
 ```
 
 ## 检查和查询
@@ -146,19 +206,31 @@ byte[] bytes = JSON.toJSONBytes(obj);
 
 // 转为 Java 对象
 User user = obj.toJavaObject(User.class);
+
+// 泛型类型转换
+Map<String, List<User>> result = obj.toJavaObject(
+    new TypeReference<Map<String, List<User>>>() {}
+);
+
+// 使用 Type 转换
+Type type = new TypeReference<Map<String, User>>() {}.getType();
+Map<String, User> map = obj.toJavaObject(type);
 ```
 
 ## 嵌套操作
 
 ```java
 JSONObject obj = new JSONObject();
-obj.put("user", new JSONObject());
-obj.getJSONObject("user").put("name", "张三");
 
-// 链式操作
-obj.getJSONObject("address")
-   .put("city", "北京")
-   .put("district", "朝阳区");
+// 使用 putObject 便捷创建嵌套对象
+JSONObject address = obj.putObject("address");
+address.put("city", "北京");
+address.put("district", "朝阳区");
+
+// 使用 putArray 便捷创建嵌套数组
+JSONArray tags = obj.putArray("tags");
+tags.add("Java");
+tags.add("Python");
 
 // 获取嵌套值
 String city = obj.getJSONObject("address").getString("city");
@@ -168,9 +240,7 @@ String city = obj.getJSONObject("address").getString("city");
 
 ```java
 JSONObject obj = new JSONObject();
-obj.put("items", new JSONArray());
-
-JSONArray items = obj.getJSONArray("items");
+JSONArray items = obj.putArray("items");
 items.add("item1");
 items.add(123);
 ```
@@ -184,8 +254,8 @@ JSONObject obj = JSON.parseObject(jsonString);
 JSONPath path = JSONPath.of("$.user.name");
 String name = path.eval(obj, String.class);
 
-// 或使用便捷方法
-Object result = obj.eval("$.user.address.city");
+// 使用 getByPath 便捷方法
+Object result = obj.getByPath("$.user.address.city");
 ```
 
 ## 常用方法速查
@@ -193,21 +263,40 @@ Object result = obj.eval("$.user.address.city");
 | 方法 | 描述 | 示例 |
 |------|------|------|
 | `put(String, Object)` | 添加/替换值 | `obj.put("key", "value")` |
+| `putObject(String)` | 创建并放入子 JSONObject | `obj.putObject("addr")` |
+| `putArray(String)` | 创建并放入子 JSONArray | `obj.putArray("tags")` |
 | `get(String)` | 获取任意值 | `obj.get("key")` |
 | `getString(String)` | 获取字符串 | `obj.getString("name")` |
 | `getInteger(String)` | 获取 Integer | `obj.getInteger("age")` |
 | `getIntValue(String)` | 获取 int | `obj.getIntValue("age")` |
+| `getLong(String)` | 获取 Long | `obj.getLong("id")` |
 | `getLongValue(String)` | 获取 long | `obj.getLongValue("id")` |
 | `getDoubleValue(String)` | 获取 double | `obj.getDoubleValue("price")` |
 | `getBooleanValue(String)` | 获取 boolean | `obj.getBooleanValue("vip")` |
+| `getByte(String)` | 获取 Byte | `obj.getByte("flag")` |
+| `getByteValue(String)` | 获取 byte | `obj.getByteValue("flag")` |
+| `getShort(String)` | 获取 Short | `obj.getShort("code")` |
+| `getShortValue(String)` | 获取 short | `obj.getShortValue("code")` |
+| `getBytes(String)` | 获取 byte[]（Base64 解码） | `obj.getBytes("data")` |
+| `getObject(String, Class)` | 获取并转换为指定类型 | `obj.getObject("user", User.class)` |
+| `getList(String, Class)` | 获取 List 并转换元素类型 | `obj.getList("items", Item.class)` |
+| `getDate(String)` | 获取 Date | `obj.getDate("time")` |
+| `getInstant(String)` | 获取 Instant | `obj.getInstant("ts")` |
+| `getLocalDate(String)` | 获取 LocalDate | `obj.getLocalDate("birthday")` |
+| `getLocalDateTime(String)` | 获取 LocalDateTime | `obj.getLocalDateTime("createAt")` |
+| `getLocalTime(String)` | 获取 LocalTime | `obj.getLocalTime("start")` |
+| `getOffsetDateTime(String)` | 获取 OffsetDateTime | `obj.getOffsetDateTime("event")` |
 | `getJSONObject(String)` | 获取嵌套对象 | `obj.getJSONObject("addr")` |
 | `getJSONArray(String)` | 获取嵌套数组 | `obj.getJSONArray("tags")` |
+| `getByPath(String)` | JSONPath 查询 | `obj.getByPath("$.user.name")` |
 | `containsKey(String)` | 检查键存在 | `obj.containsKey("name")` |
 | `remove(String)` | 删除键 | `obj.remove("key")` |
 | `size()` | 获取大小 | `obj.size()` |
 | `isEmpty()` | 检查是否为空 | `obj.isEmpty()` |
 | `clear()` | 清空 | `obj.clear()` |
 | `toJavaObject(Class)` | 转为 Java 对象 | `obj.toJavaObject(User.class)` |
+| `toJavaObject(Type)` | 泛型类型转换 | `obj.toJavaObject(type)` |
+| `toJavaObject(TypeReference)` | TypeReference 转换 | `obj.toJavaObject(new TypeReference<>(){})` |
 
 ## 线程安全
 
@@ -254,6 +343,20 @@ for (int i = 0; i < 10000; i++) {
 MyData data = obj.toJavaObject(MyData.class);
 ```
 
+3. **使用 putObject/putArray 构建嵌套结构**
+```java
+// ✅ 好：使用便捷方法，代码更简洁
+JSONObject root = new JSONObject();
+root.putObject("user").put("name", "张三");
+root.putArray("tags").add("Java");
+
+// ❌ 不好：手动创建和放入
+JSONObject root = new JSONObject();
+JSONObject user = new JSONObject();
+user.put("name", "张三");
+root.put("user", user);
+```
+
 ## 完整示例
 
 ```java
@@ -265,17 +368,14 @@ public class Demo {
         user.put("age", 25);
         user.put("vip", true);
 
-        // 嵌套对象
-        JSONObject address = new JSONObject();
+        // 使用便捷方法创建嵌套结构
+        JSONObject address = user.putObject("address");
         address.put("city", "北京");
         address.put("district", "朝阳区");
-        user.put("address", address);
 
-        // 数组
-        JSONArray tags = new JSONArray();
+        JSONArray tags = user.putArray("tags");
         tags.add("Java");
         tags.add("Python");
-        user.put("tags", tags);
 
         // 输出 JSON
         System.out.println(user.toJSONString());
@@ -285,8 +385,16 @@ public class Demo {
         String name = user.getString("name");
         String city = user.getJSONObject("address").getString("city");
 
-        // 转换为 Java 对象
+        // 类型化获取
         User userObj = user.toJavaObject(User.class);
+        List<String> tagList = user.getList("tags", String.class);
+
+        // JSONPath 查询
+        Object district = user.getByPath("$.address.district");
+
+        // 日期时间获取
+        JSONObject event = JSON.parseObject("{\"time\":\"2024-01-15T10:30:00\"}");
+        LocalDateTime time = event.getLocalDateTime("time");
 
         // 遍历
         user.forEach((key, value) -> {
@@ -298,6 +406,6 @@ public class Demo {
 
 ## 相关文档
 
-- [📋 JSONArray 参考 →](JSONArray.md)
-- [📋 JSON 类参考 →](JSON.md)
-- [📖 解析基础 →](../start/01-basic-parse.md)
+- [JSONArray 参考](JSONArray.md)
+- [JSON 类参考](JSON.md)
+- [解析基础](../start/01-basic-parse.md)
