@@ -297,7 +297,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             if (list.isEmpty()) {
                 return (List<T>) list;
             }
-            if (elementType.isInstance(list.getFirst())) {
+            if (elementType.isInstance(list.get(0))) {
                 return (List<T>) list;
             }
             // Convert via byte[] round-trip (generic TypeReference not supported by convertValue)

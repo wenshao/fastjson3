@@ -975,6 +975,11 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                                    PropertyFilter[] propertyFilters,
                                    ValueFilter[] valueFilters,
                                    NameFilter[] nameFilters) {
+        // Merge field-level features (same as writeFieldInternal)
+        if (fieldFeatures != 0) {
+            features |= fieldFeatures;
+        }
+
         // PropertyPreFilter: check before reading value (more efficient)
         if (propertyPreFilters != null) {
             for (var ppf : propertyPreFilters) {
@@ -1020,9 +1025,20 @@ public final class FieldWriter implements Comparable<FieldWriter> {
 
         // Write name + value (use generic path since name/value may be transformed)
         if (value == null) {
-            if ((features & WriteFeature.WriteNulls.mask) != 0) {
+            if (!unwrapped && (features & WriteFeature.WriteNulls.mask) != 0) {
                 generator.writeName(name);
                 generator.writeNull();
+            }
+            return;
+        }
+        // Unwrapped: write nested fields directly (no name, no braces)
+        if (unwrapped) {
+            ObjectWriter<Object> writer = resolveObjectWriter(value.getClass());
+            if (writer instanceof ObjectWriterCreator.ReflectObjectWriter row) {
+                ObjectWriterCreator.writeFields(generator, row.writers, value, features);
+            } else {
+                throw new JSONException("@JSONField(unwrapped=true) requires a POJO type; "
+                        + value.getClass().getName() + " is not supported");
             }
             return;
         }
