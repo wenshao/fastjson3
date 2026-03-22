@@ -241,7 +241,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 || (features & WriteFeature.WriteNullBooleanAsFalse.mask) != 0;
         this.bypassStaticPath = longAsString || nonStringAsString || boolAsNumber
                 || notWriteDefaultValue || notWriteEmptyArray || extendedEscape || escapeNoneAscii
-                || writeNulls;
+                || writeNulls || unquoteFieldName || quoteChar != '"';
 
         if ((features & WriteFeature.ReferenceDetection.mask) != 0) {
             this.referenceDetection = true;
@@ -323,9 +323,13 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         this.nameFilters = nf;
     }
 
+    /**
+     * Check if per-field filters are configured (Property/Value/Name/PreFilter).
+     * Before/After filters are handled at the object level, not per-field.
+     */
     public boolean hasFilters() {
         return propertyFilters != null || propertyPreFilters != null
-                || beforeFilters != null || afterFilters != null;
+                || valueFilters != null || nameFilters != null;
     }
 
     /**

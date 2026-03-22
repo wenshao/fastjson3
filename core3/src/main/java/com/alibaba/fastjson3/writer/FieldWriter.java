@@ -608,10 +608,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             ObjectWriter<Object> writer = resolveObjectWriter(value.getClass());
             if (writer instanceof ObjectWriterCreator.ReflectObjectWriter row) {
                 ObjectWriterCreator.writeFields(generator, row.writers, value, features);
-            } else if (writer != null) {
-                writer.write(generator, value, fieldName, fieldType, features);
             } else {
-                generator.writeAny(value);
+                throw new JSONException("@JSONField(unwrapped=true) requires a POJO type; "
+                        + value.getClass().getName() + " is not supported");
             }
             return;
         }
@@ -985,7 +984,15 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             }
         }
 
-        Object value = getObjectValue(bean);
+        Object value;
+        try {
+            value = getObjectValue(bean);
+        } catch (JSONException e) {
+            if (generator.ignoreErrorGetter) {
+                return;
+            }
+            throw e;
+        }
 
         // PropertyFilter: check if field should be included
         if (propertyFilters != null) {

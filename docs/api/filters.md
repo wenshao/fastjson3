@@ -468,10 +468,8 @@ public interface AutoTypeFilter {
 // 只允许 com.myapp 包下的类
 AutoTypeFilter filter = AutoTypeFilter.acceptNames("com.myapp.");
 
-ObjectMapper mapper = ObjectMapper.builder()
-    .enableRead(ReadFeature.SupportAutoType)
-    .autoTypeFilter(filter)
-    .build();
+// AutoTypeFilter 接口已定义，AutoType 完整流程（JSONParser 解析 @type + filter 联动）
+// 将在后续版本中实现。当前可通过自定义 ObjectReaderModule 实现类似功能。
 ```
 
 ### 按类型白名单

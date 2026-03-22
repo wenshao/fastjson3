@@ -35,10 +35,22 @@ class P0RemainingTest {
         assertFalse(json.contains("\"computed\""), "Should skip getComputed(): " + json);
     }
 
+    public static class BeanWithAnnotatedGetter {
+        private String name = "test";
+        public String getName() { return name; }
+
+        @com.alibaba.fastjson3.annotation.JSONField(name = "computed")
+        public String getComputed() { return name.toUpperCase(); }
+    }
+
     @Test
     void ignoreNonFieldGetter_withAnnotation_keeps() {
-        // Even with IgnoreNonFieldGetter, explicit @JSONField should be kept
-        // (tested implicitly — if getter has @JSONField it won't be skipped)
+        ObjectMapper mapper = ObjectMapper.builder()
+                .enableWrite(WriteFeature.IgnoreNonFieldGetter)
+                .build();
+        String json = mapper.writeValueAsString(new BeanWithAnnotatedGetter());
+        assertTrue(json.contains("\"name\""), json);
+        assertTrue(json.contains("\"computed\""), "Annotated getter should be kept: " + json);
     }
 
     // ==================== WriteDateAsMillis ====================
