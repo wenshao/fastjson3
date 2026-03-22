@@ -526,6 +526,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && isEmpty(value)) {
             return;
         }
+        if (generator.notWriteEmptyArray && value instanceof java.util.Collection && ((java.util.Collection<?>) value).isEmpty()) {
+            return;
+        }
         // Format temporal types with explicit pattern
         if (formatter != null) {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
@@ -743,6 +746,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             return;
         }
         if (inclusion == Inclusion.NON_EMPTY && isEmpty(value)) {
+            return;
+        }
+        if (generator.notWriteEmptyArray && value instanceof java.util.Collection && ((java.util.Collection<?>) value).isEmpty()) {
             return;
         }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);

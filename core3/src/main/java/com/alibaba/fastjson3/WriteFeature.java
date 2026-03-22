@@ -105,7 +105,7 @@ public enum WriteFeature {
      */
     OptimizedForAscii,
 
-    /** Skip fields with default values (0, false, null, 0.0) */
+    /** Skip fields with primitive default values (0, false, 0.0) */
     NotWriteDefaultValue,
 
     /** Skip empty collections/arrays */
@@ -117,7 +117,7 @@ public enum WriteFeature {
     /** Write boolean as 0/1 */
     WriteBooleanAsNumber,
 
-    /** Strict browser escaping: escape <, >, &, ', \u2028, \u2029 */
+    /** Strict browser escaping: escape &lt;, &gt;, &amp;, ' (combine with EscapeNoneAscii for \u2028/\u2029) */
     BrowserSecure,
 
     /** Shorthand: null numbers→0, null strings→"", null booleans→false, null lists→[] */

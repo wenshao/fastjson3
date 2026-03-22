@@ -141,6 +141,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     public final boolean notWriteDefaultValue;
     public final boolean notWriteEmptyArray;
     protected final char[] escapeChars; // instance escape table
+    protected final boolean extendedEscape; // browser or secure escaping active
     protected int indentLevel;
 
     // Filters — null when no filters configured (zero overhead)
@@ -178,6 +179,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         this.escapeChars = browserSecure ? ESCAPE_CHARS_SECURE
                 : browserCompatible ? ESCAPE_CHARS_BROWSER
                 : ESCAPE_CHARS;
+        this.extendedEscape = (escapeChars != ESCAPE_CHARS);
 
         if ((features & WriteFeature.ReferenceDetection.mask) != 0) {
             this.referenceDetection = true;
@@ -625,9 +627,18 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             try {
                 pushReference(map);
                 startObject();
-                Iterable<? extends Map.Entry<?, ?>> entries = sortMapKeys
-                    ? new java.util.TreeMap<>(map).entrySet()
-                    : map.entrySet();
+                Iterable<? extends Map.Entry<?, ?>> entries;
+                if (sortMapKeys) {
+                    if (map instanceof java.util.SortedMap) {
+                        entries = map.entrySet();
+                    } else {
+                        java.util.List<? extends Map.Entry<?, ?>> list = new java.util.ArrayList<>(map.entrySet());
+                        list.sort(java.util.Comparator.comparing(e -> String.valueOf(e.getKey())));
+                        entries = list;
+                    }
+                } else {
+                    entries = map.entrySet();
+                }
                 for (Map.Entry<?, ?> entry : entries) {
                     writeName(String.valueOf(entry.getKey()));
                     writeAny(entry.getValue());
@@ -2018,7 +2029,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
 
-            if (JDKUtils.getStringCoder(val) == 0 && escapeChars == ESCAPE_CHARS) {
+            if (JDKUtils.getStringCoder(val) == 0 && escapeChars == ESCAPE_CHARS && !escapeNoneAscii) {
                 byte[] value = (byte[]) JDKUtils.getStringValue(val);
                 // Inline writeLatinString: eliminates 1 method call level for list string elements
                 ensureCapacity(value.length + 3);
@@ -2028,7 +2039,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
             // General path: char-by-char with escaping and UTF-8 encoding
             int len = val.length();
-            int capacity = escapeNoneAscii ? len * 6 + 6 : len * 3 + 6;
+            int capacity = (escapeNoneAscii || extendedEscape) ? len * 6 + 6 : len * 3 + 6;
             ensureCapacity(capacity);
             int pos = count;
             buf[pos++] = '"';

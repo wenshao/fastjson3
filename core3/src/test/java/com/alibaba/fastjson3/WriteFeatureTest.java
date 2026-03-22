@@ -393,4 +393,39 @@ class WriteFeatureTest {
         assertTrue((mask & WriteFeature.BrowserCompatible.mask) != 0);
         assertTrue((mask & WriteFeature.EscapeNoneAscii.mask) != 0);
     }
+
+    // ==================== POJO-based feature behavior tests ====================
+
+    @Test
+    void nullAsDefaultValue_pojo() {
+        NullBean bean = new NullBean();
+        String json = JSON.toJSONString(bean, WriteFeature.NullAsDefaultValue, WriteFeature.FieldBased);
+        // null String -> "", null Number -> 0, null Boolean -> false, null List -> []
+        assertTrue(json.contains("\"name\":\"\""), "null String should be empty: " + json);
+        assertTrue(json.contains("\"count\":0"), "null Number should be 0: " + json);
+        assertTrue(json.contains("\"flag\":false"), "null Boolean should be false: " + json);
+        assertTrue(json.contains("\"items\":[]"), "null List should be []: " + json);
+    }
+
+    public static class NullBean {
+        public String name;
+        public Integer count;
+        public Boolean flag;
+        public java.util.List<String> items;
+    }
+
+    @Test
+    void notWriteEmptyArray_pojo() {
+        EmptyArrayBean bean = new EmptyArrayBean();
+        bean.name = "test";
+        bean.items = new java.util.ArrayList<>();
+        String json = JSON.toJSONString(bean, WriteFeature.NotWriteEmptyArray, WriteFeature.FieldBased);
+        assertFalse(json.contains("\"items\""), "empty list should be skipped: " + json);
+        assertTrue(json.contains("\"name\""), "non-empty should be present: " + json);
+    }
+
+    public static class EmptyArrayBean {
+        public String name;
+        public java.util.List<String> items;
+    }
 }
