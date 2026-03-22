@@ -138,8 +138,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     protected final boolean enumOrdinal;
     protected final boolean escapeNoneAscii;
     protected final boolean sortMapKeys;
-    protected final boolean notWriteDefaultValue;
-    protected final boolean notWriteEmptyArray;
+    public final boolean notWriteDefaultValue;
+    public final boolean notWriteEmptyArray;
     protected final char[] escapeChars; // instance escape table
     protected int indentLevel;
 
