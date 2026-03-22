@@ -247,6 +247,24 @@ class WriteFeatureBehaviorTest {
         assertTrue(json.contains("\"3.14\""), "double should be string: " + json);
     }
 
+    @Test
+    void nonStringValueAsString_boolean() {
+        JSONObject obj = new JSONObject();
+        obj.put("ok", true);
+        obj.put("no", false);
+        String json = obj.toJSONString(WriteFeature.WriteNonStringValueAsString);
+        assertTrue(json.contains("\"true\""), "true should be string: " + json);
+        assertTrue(json.contains("\"false\""), "false should be string: " + json);
+    }
+
+    @Test
+    void nonStringValueAsString_bigDecimal() {
+        JSONObject obj = new JSONObject();
+        obj.put("val", new java.math.BigDecimal("123.456"));
+        String json = obj.toJSONString(WriteFeature.WriteNonStringValueAsString);
+        assertTrue(json.contains("\"123.456\""), "BigDecimal should be string: " + json);
+    }
+
     // NonStringValueAsString UTF8
     @Test
     void nonStringValueAsString_utf8() {

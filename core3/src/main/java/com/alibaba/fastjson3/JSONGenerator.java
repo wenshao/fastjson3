@@ -1221,6 +1221,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeInt32(val ? 1 : 0);
                 return;
             }
+            if (nonStringAsString) {
+                writeString(Boolean.toString(val));
+                return;
+            }
             if (val) {
                 writeTrue();
             } else {
@@ -1292,11 +1296,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeNull();
                 return;
             }
-            String s;
-            if (bigDecimalPlain) {
-                s = val.toPlainString();
-            } else {
-                s = val.toString();
+            String s = bigDecimalPlain ? val.toPlainString() : val.toString();
+            if (nonStringAsString) {
+                writeString(s);
+                return;
             }
             int len = s.length();
             ensureCapacity(count + len + 1);
@@ -1784,6 +1787,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeInt32(val ? 1 : 0);
                 return;
             }
+            if (nonStringAsString) {
+                writeString(Boolean.toString(val));
+                return;
+            }
             if (val) {
                 writeTrue();
             } else {
@@ -1864,6 +1871,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             String s = bigDecimalPlain ? val.toPlainString() : val.toString();
+            if (nonStringAsString) {
+                writeString(s);
+                return;
+            }
             writeNumericString(s);
         }
 
