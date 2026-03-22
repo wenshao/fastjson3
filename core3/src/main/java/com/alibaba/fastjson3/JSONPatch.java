@@ -30,13 +30,17 @@ public final class JSONPatch {
      * @throws JSONException if any operation fails
      */
     public static String apply(String target, String patch) {
-        if (patch == null || patch.trim().isEmpty()) {
-            throw new JSONException("patch must not be null or empty");
+        if (patch == null) {
+            throw new JSONException("JSON Patch document must not be null");
+        }
+        String trimmed = patch.trim();
+        if (trimmed.isEmpty()) {
+            throw new JSONException("JSON Patch document must not be empty");
         }
         Object targetObj = JSON.parse(target);
-        JSONArray operations = JSON.parseArray(patch);
+        JSONArray operations = JSON.parseArray(trimmed);
         if (operations == null) {
-            throw new JSONException("patch must be a JSON array");
+            throw new JSONException("JSON Patch document must be a JSON array");
         }
         Object result = apply(targetObj, operations);
         return JSON.toJSONString(result);
@@ -52,7 +56,7 @@ public final class JSONPatch {
      */
     public static Object apply(Object target, JSONArray operations) {
         if (operations == null) {
-            return target;
+            throw new JSONException("JSON Patch operations array must not be null");
         }
         Object current = target;
         for (int i = 0; i < operations.size(); i++) {
@@ -109,28 +113,7 @@ public final class JSONPatch {
             return deepCopy(value);
         }
         JSONPointer pointer = JSONPointer.of(path);
-        String[] tokens = pointer.getTokens();
-        Object parent = target;
-        for (int i = 0; i < tokens.length - 1; i++) {
-            parent = resolveForReplace(parent, tokens[i]);
-        }
-        String lastToken = tokens[tokens.length - 1];
-        if (parent instanceof JSONObject obj) {
-            obj.put(lastToken, deepCopy(value));
-        } else if (parent instanceof JSONArray arr) {
-            Object copied = deepCopy(value);
-            if ("-".equals(lastToken)) {
-                arr.add(copied);
-            } else {
-                int index = JSONPointer.parseIndex(lastToken, arr.size() + 1);
-                if (index > arr.size()) {
-                    throw new JSONException("Array index out of bounds: " + lastToken + " (size: " + arr.size() + ")");
-                }
-                arr.add(index, copied);  // RFC 6902 add inserts before the element
-            }
-        } else {
-            throw new JSONException("Cannot add to non-container");
-        }
+        pointer.set(target, deepCopy(value));
         return target;
     }
 
@@ -162,17 +145,18 @@ public final class JSONPatch {
             obj.put(lastToken, deepCopy(value));
         } else if (parent instanceof JSONArray arr) {
             int idx = JSONPointer.parseIndex(lastToken, arr.size());
-            if (idx < 0 || idx >= arr.size()) {
-                throw new JSONException("Array index out of bounds: " + lastToken + " (size: " + arr.size() + ")");
-            }
             arr.set(idx, deepCopy(value));
         } else {
-            throw new JSONException("Cannot replace on non-container");
+            throw new JSONException("JSON Patch replace: cannot replace on non-container at: " + path);
         }
         return target;
     }
 
     private static Object applyMove(Object target, String path, String from) {
+        // RFC 6902 Section 4.4: "from" MUST NOT be a proper prefix of "path"
+        if (!from.isEmpty() && path.startsWith(from + "/")) {
+            throw new JSONException("JSON Patch move: 'from' cannot be a proper prefix of 'path': " + from + " → " + path);
+        }
         JSONPointer fromPointer = JSONPointer.of(from);
         Object value = fromPointer.eval(target);
         if (value == null && !fromPointer.exists(target)) {
@@ -193,6 +177,9 @@ public final class JSONPatch {
 
     private static Object applyTest(Object target, String path, Object expected) {
         JSONPointer pointer = JSONPointer.of(path);
+        if (!pointer.exists(target) && !path.isEmpty()) {
+            throw new JSONException("JSON Patch test failed: path does not exist: " + path);
+        }
         Object actual = pointer.eval(target);
         if (!deepEquals(actual, expected)) {
             throw new JSONException("JSON Patch test failed at " + path
@@ -209,7 +196,7 @@ public final class JSONPatch {
             return obj.get(token);
         } else if (current instanceof JSONArray arr) {
             int idx = JSONPointer.parseIndex(token, arr.size());
-            if (idx < 0 || idx >= arr.size()) {
+            if (idx >= arr.size()) {
                 throw new JSONException("Array index out of bounds: " + token + " (size: " + arr.size() + ")");
             }
             return arr.get(idx);
@@ -266,7 +253,17 @@ public final class JSONPatch {
                     && (nb instanceof Integer || nb instanceof Long || nb instanceof Short || nb instanceof Byte)) {
                 return na.longValue() == nb.longValue();
             }
-            return new BigDecimal(na.toString()).compareTo(new BigDecimal(nb.toString())) == 0;
+            if (na instanceof BigDecimal bda && nb instanceof BigDecimal bdb) {
+                return bda.compareTo(bdb) == 0;
+            }
+            if (na instanceof BigDecimal bda) {
+                return bda.compareTo(new BigDecimal(nb.toString())) == 0;
+            }
+            if (nb instanceof BigDecimal bdb) {
+                return bdb.compareTo(new BigDecimal(na.toString())) == 0;
+            }
+            return new BigDecimal(na.toString())
+                    .compareTo(new BigDecimal(nb.toString())) == 0;
         }
         return a.equals(b);
     }
