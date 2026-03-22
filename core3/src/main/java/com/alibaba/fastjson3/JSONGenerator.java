@@ -1943,6 +1943,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
          */
         public static boolean noEscape4(int v) {
             int hiMask = 0x80808080;
+            // Bytes 0x80-0xFF need multi-byte UTF-8 encoding — reject them immediately
+            if ((v & hiMask) != 0) return false;
             int lo = 0x01010101;
             int ctrl = (v - 0x20202020) & ~v & hiMask;
             int xq = v ^ 0x22222222;

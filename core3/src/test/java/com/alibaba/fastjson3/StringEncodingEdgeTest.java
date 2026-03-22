@@ -337,4 +337,26 @@ class StringEncodingEdgeTest {
         assertEquals(original, fromString);
         assertEquals(original, fromBytes);
     }
+
+    @Test
+    void toJSONBytes_latin1HighByte_4charString() {
+        // "café" — length 4, triggers the 4-byte tail acceleration path.
+        // The é (U+00E9, Latin-1 byte 0xE9) must be emitted as 2-byte UTF-8 (0xC3 0xA9).
+        String text = "caf\u00e9"; // café
+        byte[] bytes = JSON.toJSONBytes(text);
+        String roundTrip = JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), String.class);
+        assertEquals(text, roundTrip, "café round-trip via UTF-8 bytes should preserve é");
+        // Verify the JSON contains the character (either as UTF-8 or as escaped unicode)
+        String json = new String(bytes, StandardCharsets.UTF_8);
+        assertTrue(json.contains("caf"), json);
+    }
+
+    @Test
+    void toJSONBytes_latin1HighByte_mixed() {
+        // 11 ASCII chars + 1 Latin-1 high byte: tests SWAR path + 4-byte tail
+        String text = "Hello World\u00e9";
+        byte[] bytes = JSON.toJSONBytes(text);
+        String roundTrip = JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), String.class);
+        assertEquals(text, roundTrip, "mixed ASCII + é round-trip should preserve é");
+    }
 }
