@@ -904,7 +904,8 @@ public final class ObjectReaderCreator {
                         utf8.setOffset(off);
                         reader.setObjectValue(instance, utf8.readLongArrayInline());
                         off = utf8.getOffset();
-                    } else if (tt == FieldReader.TAG_ENUM && b[off] == '"') {
+                    } else if (tt == FieldReader.TAG_ENUM && b[off] == '"'
+                            && (fi < 0 || objReaders == null || objReaders[fi] == null)) {
                         // Fast path for enum string values — readStringOff + setObjectValue does String→enum conversion
                         off = utf8.readStringOff(off, instance, reader);
                     } else {

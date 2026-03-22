@@ -188,6 +188,36 @@ class EnumDeserializationTest {
         assertEquals(100, image.getHeight());
     }
 
+    // ==================== Ordinal-based enum deserialization ====================
+
+    @Test
+    void deserialize_enum_fromOrdinal() {
+        // Image.Size: SMALL=0, LARGE=1
+        String json = "{\"size\":1,\"height\":100}";
+        Image image = JSON.parseObject(json, Image.class);
+        assertEquals(Image.Size.LARGE, image.getSize());
+        assertEquals(100, image.getHeight());
+    }
+
+    @Test
+    void deserialize_enum_fromOrdinalZero() {
+        String json = "{\"size\":0}";
+        Image image = JSON.parseObject(json, Image.class);
+        assertEquals(Image.Size.SMALL, image.getSize());
+    }
+
+    @Test
+    void deserialize_enum_fromOrdinalOutOfRange_throwsException() {
+        String json = "{\"size\":99}";
+        assertThrows(JSONException.class, () -> JSON.parseObject(json, Image.class));
+    }
+
+    @Test
+    void deserialize_enum_fromNegativeOrdinal_throwsException() {
+        String json = "{\"size\":-1}";
+        assertThrows(JSONException.class, () -> JSON.parseObject(json, Image.class));
+    }
+
     // ==================== Invalid enum name ====================
 
     @Test

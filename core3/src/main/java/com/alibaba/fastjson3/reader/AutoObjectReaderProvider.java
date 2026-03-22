@@ -72,7 +72,8 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
         }
 
         // Skip interfaces, abstract classes, and enums - they don't have accessible constructors
-        // Enum deserialization is handled inline by FieldReader
+        // Enum-typed POJO fields are deserialized inline by FieldReader;
+        // top-level enum and collection element enum deserialization is not yet supported
         if (type.isInterface() || type.isEnum()
                 || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
             return null;
