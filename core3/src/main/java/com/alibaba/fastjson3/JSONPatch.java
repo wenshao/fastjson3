@@ -33,8 +33,12 @@ public final class JSONPatch {
         if (patch == null) {
             throw new JSONException("JSON Patch document must not be null");
         }
+        String trimmed = patch.trim();
+        if (trimmed.isEmpty()) {
+            throw new JSONException("JSON Patch document must not be empty");
+        }
         Object targetObj = JSON.parse(target);
-        JSONArray operations = JSON.parseArray(patch);
+        JSONArray operations = JSON.parseArray(trimmed);
         if (operations == null) {
             throw new JSONException("JSON Patch document must be a JSON array");
         }

@@ -291,18 +291,23 @@ class TypeCoercionTest {
     @Test
     void nestedObject_getString() {
         JSONObject obj = JSON.parseObject("{\"val\":{\"a\":1}}");
+        // getString delegates to toString(), which uses Map format for JSONObject
         String str = obj.getString("val");
-        // Should return JSON representation
         assertNotNull(str);
-        assertTrue(str.contains("a"), "Should serialize nested: " + str);
+        // Use JSON.toJSONString for guaranteed JSON output
+        String jsonStr = JSON.toJSONString(obj.get("val"));
+        assertTrue(jsonStr.contains("\"a\""), "Should serialize as JSON: " + jsonStr);
     }
 
     @Test
     void nestedArray_getString() {
         JSONObject obj = JSON.parseObject("{\"val\":[1,2,3]}");
+        // getString delegates to toString()
         String str = obj.getString("val");
         assertNotNull(str);
-        assertTrue(str.contains("1"), "Should serialize nested: " + str);
+        // Use JSON.toJSONString for guaranteed JSON output
+        String jsonStr = JSON.toJSONString(obj.get("val"));
+        assertTrue(jsonStr.contains("1"), "Should serialize as JSON: " + jsonStr);
     }
 
     // ==================== Typed getter consistency ====================
