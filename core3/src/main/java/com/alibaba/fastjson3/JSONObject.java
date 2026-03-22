@@ -281,21 +281,28 @@ public class JSONObject extends LinkedHashMap<String, Object> {
         if (type.isInstance(val)) {
             return type.cast(val);
         }
-        String json = JSON.toJSONString(val);
-        return JSON.parseObject(json, type);
+        return ObjectMapper.shared().convertValue(val, type);
     }
 
     /**
      * Get a List of typed elements.
      */
+    @SuppressWarnings("unchecked")
     public <T> List<T> getList(String key, Class<T> elementType) {
         Object val = get(key);
         if (val == null) {
             return null;
         }
-        if (val instanceof List<?>) {
-            String json = JSON.toJSONString(val);
-            return JSON.parseArray(json, elementType);
+        if (val instanceof List<?> list) {
+            if (list.isEmpty()) {
+                return (List<T>) list;
+            }
+            if (elementType.isInstance(list.getFirst())) {
+                return (List<T>) list;
+            }
+            // Convert via byte[] round-trip (generic TypeReference not supported by convertValue)
+            byte[] json = JSON.toJSONBytes(list);
+            return ObjectMapper.shared().readList(json, elementType);
         }
         throw new JSONException("Cannot cast JSONObject['" + key + "'] to List: " + val.getClass().getSimpleName());
     }
@@ -498,8 +505,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
      */
     @SuppressWarnings("unchecked")
     public <T> T toJavaObject(TypeReference<T> typeRef) {
-        String json = JSON.toJSONString(this);
-        return JSON.parseObject(json, typeRef);
+        return ObjectMapper.shared().convertValue(this, typeRef);
     }
 
     /**
@@ -507,8 +513,12 @@ public class JSONObject extends LinkedHashMap<String, Object> {
      */
     @SuppressWarnings("unchecked")
     public <T> T toJavaObject(Type type) {
-        String json = JSON.toJSONString(this);
-        return (T) JSON.parseObject(json, type);
+        if (type instanceof Class<?> clazz) {
+            return (T) ObjectMapper.shared().convertValue(this, clazz);
+        }
+        // For generic types, fall back to byte[] round-trip (more efficient than String)
+        byte[] json = JSON.toJSONBytes(this);
+        return (T) ObjectMapper.shared().readValue(json, type);
     }
 
     /**

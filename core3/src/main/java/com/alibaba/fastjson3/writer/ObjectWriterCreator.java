@@ -44,11 +44,17 @@ public final class ObjectWriterCreator {
         // Check @JSONType(serializer=...) for class-level custom writer
         JSONType jsonType = type.getAnnotation(JSONType.class);
         if (jsonType != null && jsonType.serializer() != Void.class) {
+            Class<?> serializerClass = jsonType.serializer();
+            if (!com.alibaba.fastjson3.ObjectWriter.class.isAssignableFrom(serializerClass)) {
+                throw new com.alibaba.fastjson3.JSONException(
+                        "@JSONType(serializer=" + serializerClass.getName()
+                                + ") does not implement ObjectWriter");
+            }
             try {
-                return (ObjectWriter<T>) jsonType.serializer().getDeclaredConstructor().newInstance();
+                return (ObjectWriter<T>) serializerClass.getDeclaredConstructor().newInstance();
             } catch (Exception e) {
                 throw new com.alibaba.fastjson3.JSONException(
-                        "cannot instantiate serializer: " + jsonType.serializer().getName(), e);
+                        "cannot instantiate serializer: " + serializerClass.getName(), e);
             }
         }
 
@@ -189,7 +195,9 @@ public final class ObjectWriterCreator {
         }
         FieldWriter[] writers = fieldWriters.toArray(new FieldWriter[0]);
 
-        return buildObjectWriter(writers, null, null, null);
+        String typeName = (jsonType != null && !jsonType.typeName().isEmpty()) ? jsonType.typeName() : null;
+        String typeKey = (jsonType != null && !jsonType.typeKey().isEmpty()) ? jsonType.typeKey() : null;
+        return buildObjectWriter(writers, null, typeName, typeKey);
     }
 
     private static <T> ObjectWriter<T> createPojoWriter(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
@@ -610,35 +618,42 @@ public final class ObjectWriterCreator {
                           Object fieldName, java.lang.reflect.Type fieldType, long features) {
             // Pre-allocate capacity for the entire object
             generator.ensureCapacityPublic(estimatedSize);
-            generator.startObject();
-            // WriteClassName: write @type as the first property
-            if (generator.writeClassName) {
-                Class<?> objectClass = object.getClass();
-                boolean skip = (generator.notWriteRootClassName && generator.getWriteDepth() == 0)
-                        || (generator.notWriteHashMapArrayListClassName && isCommonContainerType(objectClass))
-                        || (generator.notWriteSetClassName && java.util.Set.class.isAssignableFrom(objectClass))
-                        || (generator.notWriteNumberClassName && Number.class.isAssignableFrom(objectClass));
-                if (!skip) {
-                    String key = typeKey != null ? typeKey : "@type";
-                    String name = typeName != null ? typeName : objectClass.getName();
-                    generator.writeName(key);
-                    generator.writeString(name);
+            // Track depth for NotWriteRootClassName (depth 0 = root)
+            int depth = generator.getWriteDepth();
+            generator.incrementDepth();
+            try {
+                generator.startObject();
+                // WriteClassName: write @type as the first property
+                if (generator.writeClassName) {
+                    Class<?> objectClass = object.getClass();
+                    boolean skip = (generator.notWriteRootClassName && depth == 0)
+                            || (generator.notWriteHashMapArrayListClassName && isCommonContainerType(objectClass))
+                            || (generator.notWriteSetClassName && java.util.Set.class.isAssignableFrom(objectClass))
+                            || (generator.notWriteNumberClassName && Number.class.isAssignableFrom(objectClass));
+                    if (!skip) {
+                        String key = typeKey != null ? typeKey : "@type";
+                        String name = typeName != null ? typeName : objectClass.getName();
+                        generator.writeName(key);
+                        generator.writeString(name);
+                    }
                 }
-            }
-            // Before filters
-            if (generator.beforeFilters != null) {
-                for (var bf : generator.beforeFilters) {
-                    bf.writeBefore(generator, object);
+                // Before filters
+                if (generator.beforeFilters != null) {
+                    for (var bf : generator.beforeFilters) {
+                        bf.writeBefore(generator, object);
+                    }
                 }
-            }
-            writeFields(generator, writers, object, features);
-            // After filters
-            if (generator.afterFilters != null) {
-                for (var af : generator.afterFilters) {
-                    af.writeAfter(generator, object);
+                writeFields(generator, writers, object, features);
+                // After filters
+                if (generator.afterFilters != null) {
+                    for (var af : generator.afterFilters) {
+                        af.writeAfter(generator, object);
+                    }
                 }
+                generator.endObject();
+            } finally {
+                generator.decrementDepth();
             }
-            generator.endObject();
         }
 
         private static boolean isCommonContainerType(Class<?> cls) {
