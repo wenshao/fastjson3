@@ -76,6 +76,12 @@ public @interface JSONType {
     Inclusion inclusion() default Inclusion.DEFAULT;
 
     /**
+     * Custom ObjectWriter class for serialization of the entire class.
+     * The class must implement {@code ObjectWriter<T>} and have a no-arg constructor.
+     */
+    Class<?> serializer() default Void.class;
+
+    /**
      * JSON Schema for validating the entire object after deserialization.
      * The schema string is parsed as a JSON object conforming to JSON Schema specification.
      *

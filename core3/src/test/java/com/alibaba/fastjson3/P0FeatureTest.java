@@ -364,15 +364,13 @@ public class P0FeatureTest {
         assertEquals(-1, ex.getOffset());
     }
 
-    // ==================== @JSONField(unwrapped) removed ====================
+    // ==================== @JSONField(unwrapped) implemented ====================
 
     @Test
-    public void testUnwrappedAttributeRemoved() throws Exception {
-        // Verify the unwrapped attribute no longer exists on @JSONField
-        var methods = JSONField.class.getDeclaredMethods();
-        for (var method : methods) {
-            assertNotEquals("unwrapped", method.getName(),
-                    "@JSONField.unwrapped should be removed (not yet implemented)");
-        }
+    public void testUnwrappedAttributeExists() throws Exception {
+        // Verify the unwrapped attribute exists on @JSONField (now implemented)
+        var method = JSONField.class.getDeclaredMethod("unwrapped");
+        assertNotNull(method);
+        assertEquals(boolean.class, method.getReturnType());
     }
 }

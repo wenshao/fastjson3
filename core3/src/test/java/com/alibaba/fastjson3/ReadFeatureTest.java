@@ -17,7 +17,7 @@ class ReadFeatureTest {
     void testEnumValues_allPresent() {
         ReadFeature[] values = ReadFeature.values();
 
-        assertEquals(17, values.length);
+        assertEquals(37, values.length);
     }
 
     @Test
@@ -118,7 +118,7 @@ class ReadFeatureTest {
         long mask = ReadFeature.of(ReadFeature.values());
 
         // All 17 features should have their bits set
-        assertEquals(17, Long.bitCount(mask));
+        assertEquals(37, Long.bitCount(mask));
     }
 
     @Test
@@ -169,7 +169,7 @@ class ReadFeatureTest {
         long mask = ReadFeature.of(ReadFeature.values());
         ReadFeature[] features = ReadFeature.valuesFrom(mask);
 
-        assertEquals(17, features.length);
+        assertEquals(37, features.length);
         // Verify order matches ordinal
         assertEquals(ReadFeature.FieldBased, features[0]);
         assertEquals(ReadFeature.AllowSingleQuotes, features[1]);
@@ -180,7 +180,7 @@ class ReadFeatureTest {
     @Test
     void testValuesFrom_invalidBits() {
         // Mask with bits that don't correspond to any feature
-        long mask = 1L << 20; // Bit 20 is beyond our features
+        long mask = 1L << 50; // Bit 20 is beyond our features
         ReadFeature[] features = ReadFeature.valuesFrom(mask);
 
         assertEquals(0, features.length);
@@ -189,7 +189,7 @@ class ReadFeatureTest {
     @Test
     void testValuesFrom_mixedValidInvalid() {
         // Mix of valid and invalid bits
-        long mask = ReadFeature.AllowSingleQuotes.mask | (1L << 20);
+        long mask = ReadFeature.AllowSingleQuotes.mask | (1L << 50);
         ReadFeature[] features = ReadFeature.valuesFrom(mask);
 
         assertEquals(1, features.length);

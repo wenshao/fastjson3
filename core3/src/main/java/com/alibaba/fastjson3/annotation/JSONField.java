@@ -122,6 +122,35 @@ public @interface JSONField {
     boolean anySetter() default false;
 
     /**
+     * Unwrap the nested object's properties into the parent object during serialization.
+     * <pre>
+     * public class User {
+     *     &#64;JSONField(unwrapped = true)
+     *     private Address address; // address.street becomes user.street
+     * }
+     * </pre>
+     */
+    boolean unwrapped() default false;
+
+    /**
+     * Serialize features for this field (overrides global features).
+     * <pre>
+     * &#64;JSONField(serializeFeatures = WriteFeature.WriteNulls)
+     * private String name;
+     * </pre>
+     */
+    com.alibaba.fastjson3.WriteFeature[] serializeFeatures() default {};
+
+    /**
+     * Deserialize features for this field (overrides global features).
+     * <pre>
+     * &#64;JSONField(deserializeFeatures = ReadFeature.TrimString)
+     * private String name;
+     * </pre>
+     */
+    com.alibaba.fastjson3.ReadFeature[] deserializeFeatures() default {};
+
+    /**
      * JSON Schema for validating this field's value during deserialization.
      * The schema string is parsed as a JSON object conforming to JSON Schema specification.
      *

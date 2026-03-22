@@ -77,12 +77,19 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     // Optional: label for view-based filtering (from @JSONField(label=))
     public final String label;
 
+    // Optional: field-level serialization features (from @JSONField(serializeFeatures=))
+    public final long fieldFeatures;
+
+    // Optional: unwrap nested object properties into parent (from @JSONField(unwrapped=true))
+    public final boolean unwrapped;
+
     // Private constructor — use factory methods
     @SuppressWarnings("unchecked")
     private FieldWriter(
             String fieldName, int ordinal, Type fieldType, Class<?> fieldClass,
             Method getter, Field field, int typeTag, Class<?> elementClass,
-            Inclusion inclusion, String format, ObjectWriter<?> customWriter, String label
+            Inclusion inclusion, String format, ObjectWriter<?> customWriter, String label,
+            long fieldFeatures, boolean unwrapped
     ) {
         this.fieldName = fieldName;
         this.ordinal = ordinal;
@@ -100,6 +107,8 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 ? java.time.format.DateTimeFormatter.ofPattern(format) : null;
         this.customWriter = (ObjectWriter<Object>) customWriter;
         this.label = (label != null && !label.isEmpty()) ? label : null;
+        this.fieldFeatures = fieldFeatures;
+        this.unwrapped = unwrapped;
         this.nameChars = encodeNameChars(fieldName);
         this.nameBytes = encodeNameBytes(fieldName);
         this.nameBytesLen = nameBytes.length;
@@ -119,15 +128,25 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             Inclusion inclusion
     ) {
         return new FieldWriter(fieldName, ordinal, fieldType, fieldClass, getter, null,
-                typeTagFor(fieldClass), null, inclusion, null, null, null);
+                typeTagFor(fieldClass), null, inclusion, null, null, null, 0, false);
     }
 
     public static FieldWriter ofGetter(
             String fieldName, int ordinal, Type fieldType, Class<?> fieldClass, Method getter,
             Inclusion inclusion, String format, ObjectWriter<?> customWriter, String label
     ) {
+        return ofGetter(fieldName, ordinal, fieldType, fieldClass, getter,
+                inclusion, format, customWriter, label, 0, false);
+    }
+
+    public static FieldWriter ofGetter(
+            String fieldName, int ordinal, Type fieldType, Class<?> fieldClass, Method getter,
+            Inclusion inclusion, String format, ObjectWriter<?> customWriter, String label,
+            long fieldFeatures, boolean unwrapped
+    ) {
         return new FieldWriter(fieldName, ordinal, fieldType, fieldClass, getter, null,
-                typeTagFor(fieldClass), null, inclusion, format, customWriter, label);
+                typeTagFor(fieldClass), null, inclusion, format, customWriter, label,
+                fieldFeatures, unwrapped);
     }
 
     public static FieldWriter ofField(
@@ -141,15 +160,25 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             Inclusion inclusion
     ) {
         return new FieldWriter(fieldName, ordinal, fieldType, fieldClass, null, field,
-                typeTagFor(fieldClass), null, inclusion, null, null, null);
+                typeTagFor(fieldClass), null, inclusion, null, null, null, 0, false);
     }
 
     public static FieldWriter ofField(
             String fieldName, int ordinal, Type fieldType, Class<?> fieldClass, Field field,
             Inclusion inclusion, String format, ObjectWriter<?> customWriter, String label
     ) {
+        return ofField(fieldName, ordinal, fieldType, fieldClass, field,
+                inclusion, format, customWriter, label, 0, false);
+    }
+
+    public static FieldWriter ofField(
+            String fieldName, int ordinal, Type fieldType, Class<?> fieldClass, Field field,
+            Inclusion inclusion, String format, ObjectWriter<?> customWriter, String label,
+            long fieldFeatures, boolean unwrapped
+    ) {
         return new FieldWriter(fieldName, ordinal, fieldType, fieldClass, null, field,
-                typeTagFor(fieldClass), null, inclusion, format, customWriter, label);
+                typeTagFor(fieldClass), null, inclusion, format, customWriter, label,
+                fieldFeatures, unwrapped);
     }
 
     public static FieldWriter ofList(
@@ -165,7 +194,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     ) {
         int tag = elementClass == String.class ? TYPE_LIST_STRING : TYPE_LIST_OBJECT;
         return new FieldWriter(fieldName, ordinal, fieldType, fieldClass, getter, null,
-                tag, elementClass, inclusion, null, null, null);
+                tag, elementClass, inclusion, null, null, null, 0, false);
     }
 
     public static FieldWriter ofList(
@@ -181,7 +210,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     ) {
         int tag = elementClass == String.class ? TYPE_LIST_STRING : TYPE_LIST_OBJECT;
         return new FieldWriter(fieldName, ordinal, fieldType, fieldClass, null, field,
-                tag, elementClass, inclusion, null, null, null);
+                tag, elementClass, inclusion, null, null, null, 0, false);
     }
 
     private static int typeTagFor(Class<?> fieldClass) {
@@ -299,6 +328,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
     }
 
+
     private Object getObjectValue(Object bean) {
         if (fieldOffset >= 0) {
             if (fieldClass == int.class) {
@@ -318,12 +348,20 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         return getFieldValue(bean);
     }
 
+    private void writeName(JSONGenerator generator) {
+        if (generator.bypassStaticPath) {
+            generator.writeName(fieldName);
+        } else {
+            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+        }
+    }
+
     private void writeNull(JSONGenerator generator, long features) {
         // Merge with generator features to pick up NullAsDefaultValue expansion
         features |= generator.getFeatures();
         if (inclusion == Inclusion.ALWAYS
                 || (features & WriteFeature.WriteNulls.mask) != 0) {
-            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            writeName(generator);
             generator.writeNull();
             return;
         }
@@ -331,19 +369,19 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         // Type-specific null defaults — check typeTag first, then fieldClass for collections
         if (typeTag == TYPE_STRING
                 && (features & WriteFeature.WriteNullStringAsEmpty.mask) != 0) {
-            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            writeName(generator);
             generator.writeString("");
         } else if ((typeTag == TYPE_LIST_STRING || typeTag == TYPE_LIST_OBJECT
                 || java.util.Collection.class.isAssignableFrom(fieldClass))
                 && (features & WriteFeature.WriteNullListAsEmpty.mask) != 0) {
-            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            writeName(generator);
             generator.startArray();
             generator.endArray();
         } else if ((typeTag == TYPE_INT || typeTag == TYPE_LONG
                 || typeTag == TYPE_DOUBLE || typeTag == TYPE_FLOAT
                 || Number.class.isAssignableFrom(fieldClass))
                 && (features & WriteFeature.WriteNullNumberAsZero.mask) != 0) {
-            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            writeName(generator);
             if (typeTag == TYPE_LONG) {
                 generator.writeInt64(0L);
             } else if (typeTag == TYPE_DOUBLE) {
@@ -355,7 +393,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             }
         } else if ((typeTag == TYPE_BOOL || fieldClass == Boolean.class)
                 && (features & WriteFeature.WriteNullBooleanAsFalse.mask) != 0) {
-            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            writeName(generator);
             generator.writeBool(false);
         }
     }
@@ -402,6 +440,21 @@ public final class FieldWriter implements Comparable<FieldWriter> {
      * Single monomorphic method with switch dispatch on type tag.
      */
     public void writeField(JSONGenerator generator, Object bean, long features) {
+        try {
+            writeFieldInternal(generator, bean, features);
+        } catch (JSONException e) {
+            if (generator.ignoreErrorGetter) {
+                return; // skip this field silently
+            }
+            throw e;
+        }
+    }
+
+    private void writeFieldInternal(JSONGenerator generator, Object bean, long features) {
+        // Merge field-level features
+        if (fieldFeatures != 0) {
+            features |= fieldFeatures;
+        }
         // Custom writer takes full control
         if (customWriter != null) {
             writeFieldCustom(generator, bean, features);
@@ -550,10 +603,23 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     private void writeObject(JSONGenerator generator, Object bean, long features) {
         Object value = getObjectValue(bean);
         if (value == null) {
-            writeNull(generator, features);
+            if (!unwrapped) {
+                writeNull(generator, features);
+            }
             return;
         }
         if (inclusion == Inclusion.NON_EMPTY && isEmpty(value)) {
+            return;
+        }
+        // Unwrapped: write nested object's fields directly into parent (no field name, no braces)
+        if (unwrapped) {
+            ObjectWriter<Object> writer = resolveObjectWriter(value.getClass());
+            if (writer instanceof ObjectWriterCreator.ReflectObjectWriter row) {
+                ObjectWriterCreator.writeFields(generator, row.writers, value, features);
+            } else {
+                throw new JSONException("@JSONField(unwrapped=true) requires a POJO type; "
+                        + value.getClass().getName() + " is not supported");
+            }
             return;
         }
         if (generator.notWriteEmptyArray) {
@@ -893,6 +959,19 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private ObjectWriter<Object> resolveObjectWriter(Class<?> valueClass) {
+        ObjectWriter<Object> writer = cachedWriter;
+        if (writer == null || cachedWriterClass != valueClass) {
+            writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(valueClass);
+            if (writer != null) {
+                cachedWriterClass = valueClass;
+                cachedWriter = writer;
+            }
+        }
+        return writer;
+    }
+
     // ==================== Filter-aware write ====================
 
     /**
@@ -900,34 +979,106 @@ public final class FieldWriter implements Comparable<FieldWriter> {
      * Zero overhead when not used — callers check filter array length before calling.
      */
     public void writeFieldFiltered(JSONGenerator generator, Object bean, long features,
+                                   com.alibaba.fastjson3.filter.PropertyPreFilter[] propertyPreFilters,
                                    PropertyFilter[] propertyFilters,
                                    ValueFilter[] valueFilters,
                                    NameFilter[] nameFilters) {
-        Object value = getObjectValue(bean);
+        // Merge field-level features (same as writeFieldInternal)
+        if (fieldFeatures != 0) {
+            features |= fieldFeatures;
+        }
+
+        // PropertyPreFilter: check before reading value (more efficient)
+        if (propertyPreFilters != null) {
+            for (var ppf : propertyPreFilters) {
+                if (!ppf.apply(bean, fieldName)) {
+                    return;
+                }
+            }
+        }
+
+        Object value;
+        try {
+            value = getObjectValue(bean);
+        } catch (JSONException e) {
+            if (generator.ignoreErrorGetter) {
+                return;
+            }
+            throw e;
+        }
 
         // PropertyFilter: check if field should be included
-        for (PropertyFilter pf : propertyFilters) {
-            if (!pf.apply(bean, fieldName, value)) {
-                return;
+        if (propertyFilters != null) {
+            for (PropertyFilter pf : propertyFilters) {
+                if (!pf.apply(bean, fieldName, value)) {
+                    return;
+                }
             }
         }
 
         // ValueFilter: transform value
-        for (ValueFilter vf : valueFilters) {
-            value = vf.apply(bean, fieldName, value);
+        if (valueFilters != null) {
+            for (ValueFilter vf : valueFilters) {
+                value = vf.apply(bean, fieldName, value);
+            }
         }
 
         // NameFilter: transform name
         String name = fieldName;
-        for (NameFilter nf : nameFilters) {
-            name = nf.apply(bean, name, value);
+        if (nameFilters != null) {
+            for (NameFilter nf : nameFilters) {
+                name = nf.apply(bean, name, value);
+            }
         }
 
         // Write name + value (use generic path since name/value may be transformed)
         if (value == null) {
-            if ((features & WriteFeature.WriteNulls.mask) != 0) {
-                generator.writeName(name);
-                generator.writeNull();
+            if (!unwrapped) {
+                // Inline writeNull logic using the NameFilter-transformed name
+                long mergedFeatures = features | generator.getFeatures();
+                if ((mergedFeatures & WriteFeature.WriteNulls.mask) != 0
+                        || inclusion == Inclusion.ALWAYS) {
+                    generator.writeName(name);
+                    generator.writeNull();
+                } else if (typeTag == TYPE_STRING
+                        && (mergedFeatures & WriteFeature.WriteNullStringAsEmpty.mask) != 0) {
+                    generator.writeName(name);
+                    generator.writeString("");
+                } else if ((typeTag == TYPE_LIST_STRING || typeTag == TYPE_LIST_OBJECT
+                        || java.util.Collection.class.isAssignableFrom(fieldClass))
+                        && (mergedFeatures & WriteFeature.WriteNullListAsEmpty.mask) != 0) {
+                    generator.writeName(name);
+                    generator.startArray();
+                    generator.endArray();
+                } else if ((typeTag == TYPE_INT || typeTag == TYPE_LONG || typeTag == TYPE_DOUBLE || typeTag == TYPE_FLOAT
+                        || Number.class.isAssignableFrom(fieldClass))
+                        && (mergedFeatures & WriteFeature.WriteNullNumberAsZero.mask) != 0) {
+                    generator.writeName(name);
+                    if (typeTag == TYPE_LONG) {
+                        generator.writeInt64(0L);
+                    } else if (typeTag == TYPE_DOUBLE) {
+                        generator.writeDouble(0D);
+                    } else if (typeTag == TYPE_FLOAT) {
+                        generator.writeFloat(0F);
+                    } else {
+                        generator.writeInt32(0);
+                    }
+                } else if ((typeTag == TYPE_BOOL || fieldClass == Boolean.class)
+                        && (mergedFeatures & WriteFeature.WriteNullBooleanAsFalse.mask) != 0) {
+                    generator.writeName(name);
+                    generator.writeBool(false);
+                }
+            }
+            return;
+        }
+        // Unwrapped: write nested fields directly (no name, no braces)
+        if (unwrapped) {
+            ObjectWriter<Object> writer = resolveObjectWriter(value.getClass());
+            if (writer instanceof ObjectWriterCreator.ReflectObjectWriter row) {
+                ObjectWriterCreator.writeFields(generator, row.writers, value, features);
+            } else {
+                throw new JSONException("@JSONField(unwrapped=true) requires a POJO type; "
+                        + value.getClass().getName() + " is not supported");
             }
             return;
         }

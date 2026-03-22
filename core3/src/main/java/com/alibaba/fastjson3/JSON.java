@@ -184,6 +184,65 @@ public final class JSON {
         return ObjectMapper.shared().readList(jsonBytes, type);
     }
 
+    // ==================== Parse: InputStream ====================
+
+    /**
+     * Parse JSON from InputStream (UTF-8) to typed Java object.
+     */
+    public static <T> T parseObject(java.io.InputStream in, Class<T> type) {
+        return ObjectMapper.shared().readValue(in, type);
+    }
+
+    /**
+     * Parse JSON from InputStream (UTF-8) to JSONObject.
+     */
+    public static JSONObject parseObject(java.io.InputStream in) {
+        try {
+            byte[] bytes = in.readAllBytes();
+            return parseObject(bytes);
+        } catch (java.io.IOException e) {
+            throw new JSONException("read InputStream error", e);
+        }
+    }
+
+    /**
+     * Parse JSON from InputStream (UTF-8) to generic type.
+     */
+    public static <T> T parseObject(java.io.InputStream in, Type type) {
+        return ObjectMapper.shared().readValue(in, type);
+    }
+
+    /**
+     * Parse JSON from InputStream (UTF-8) to typed Java object with features.
+     */
+    public static <T> T parseObject(java.io.InputStream in, Class<T> type, ReadFeature... features) {
+        try {
+            byte[] bytes = in.readAllBytes();
+            return parseObject(bytes, type, features);
+        } catch (java.io.IOException e) {
+            throw new JSONException("read InputStream error", e);
+        }
+    }
+
+    // ==================== Parse: Reader ====================
+
+    /**
+     * Parse JSON from Reader to typed Java object.
+     */
+    public static <T> T parseObject(java.io.Reader reader, Class<T> type) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            char[] cbuf = new char[8192];
+            int n;
+            while ((n = reader.read(cbuf)) != -1) {
+                sb.append(cbuf, 0, n);
+            }
+            return parseObject(sb.toString(), type);
+        } catch (java.io.IOException e) {
+            throw new JSONException("read Reader error", e);
+        }
+    }
+
     // ==================== Serialize ====================
 
     /**

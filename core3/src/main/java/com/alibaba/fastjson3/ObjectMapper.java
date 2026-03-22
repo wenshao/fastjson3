@@ -151,6 +151,9 @@ public final class ObjectMapper {
     private final com.alibaba.fastjson3.util.DynamicClassLoader classLoader;
 
     // Filters (empty arrays = no overhead)
+    private com.alibaba.fastjson3.filter.BeforeFilter[] beforeFilters;
+    private com.alibaba.fastjson3.filter.AfterFilter[] afterFilters;
+    private com.alibaba.fastjson3.filter.PropertyPreFilter[] propertyPreFilters;
     private final PropertyFilter[] propertyFilters;
     private final ValueFilter[] valueFilters;
     private final NameFilter[] nameFilters;
@@ -1506,10 +1509,13 @@ public final class ObjectMapper {
         // Auto-create writer (only for POJO types)
         if (rawType != null && !isBasicType(rawType)) {
             try {
-                if (useJacksonAnnotation || !mixInCache.isEmpty()) {
-                    // When annotations/mixIns are needed, use ObjectWriterCreator directly
+                if (useJacksonAnnotation || !mixInCache.isEmpty()
+                        || (writeFeatures & (WriteFeature.IgnoreNoneSerializable.mask
+                            | WriteFeature.ErrorOnNoneSerializable.mask
+                            | WriteFeature.IgnoreNonFieldGetter.mask)) != 0) {
+                    // When annotations/mixIns/serializable checks are needed, use ObjectWriterCreator directly
                     Class<?> mixIn = mixInCache.get(rawType);
-                    writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
+                    writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation, writeFeatures);
                 } else if (writerCreator != null) {
                     writer = writerCreator.apply(rawType);
                 } else if (writerProvider != null) {
@@ -1517,6 +1523,9 @@ public final class ObjectMapper {
                     boolean hasFilters = (propertyFilters != null && propertyFilters.length > 0) ||
                                         (valueFilters != null && valueFilters.length > 0) ||
                                         (nameFilters != null && nameFilters.length > 0) ||
+                                        (propertyPreFilters != null && propertyPreFilters.length > 0) ||
+                                        (beforeFilters != null && beforeFilters.length > 0) ||
+                                        (afterFilters != null && afterFilters.length > 0) ||
                                         labelFilter != null;
                     if (hasFilters) {
                         // Use reflection for filter support
@@ -1531,6 +1540,8 @@ public final class ObjectMapper {
                     Class<?> mixIn = mixInCache.get(rawType);
                     writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation);
                 }
+            } catch (JSONException e) {
+                throw e; // propagate explicit errors (e.g., ErrorOnNoneSerializable)
             } catch (Exception e) {
                 return null;
             }
@@ -1815,6 +1826,15 @@ public final class ObjectMapper {
     }
 
     private void applyFilters(JSONGenerator generator) {
+        if (beforeFilters != null && beforeFilters.length > 0) {
+            generator.beforeFilters = beforeFilters;
+        }
+        if (afterFilters != null && afterFilters.length > 0) {
+            generator.afterFilters = afterFilters;
+        }
+        if (propertyPreFilters != null && propertyPreFilters.length > 0) {
+            generator.propertyPreFilters = propertyPreFilters;
+        }
         if (propertyFilters.length > 0 || valueFilters.length > 0 || nameFilters.length > 0) {
             generator.setFilters(propertyFilters, valueFilters, nameFilters);
         }
@@ -2013,6 +2033,9 @@ public final class ObjectMapper {
         WriterCreatorType writerCreatorType;
         ObjectWriterProvider writerProviderInstance;
         com.alibaba.fastjson3.util.DynamicClassLoader classLoader;
+        final List<com.alibaba.fastjson3.filter.BeforeFilter> beforeFilters = new ArrayList<>();
+        final List<com.alibaba.fastjson3.filter.AfterFilter> afterFilters = new ArrayList<>();
+        final List<com.alibaba.fastjson3.filter.PropertyPreFilter> propertyPreFilters = new ArrayList<>();
         final List<PropertyFilter> propertyFilters = new ArrayList<PropertyFilter>();
         final List<ValueFilter> valueFilters = new ArrayList<ValueFilter>();
         final List<NameFilter> nameFilters = new ArrayList<NameFilter>();
@@ -2170,6 +2193,31 @@ public final class ObjectMapper {
         // ---- Filters ----
 
         /**
+         * Add a property pre-filter to control which properties are serialized
+         * (without reading the property value — more efficient than PropertyFilter).
+         */
+        public Builder addPropertyPreFilter(com.alibaba.fastjson3.filter.PropertyPreFilter filter) {
+            propertyPreFilters.add(filter);
+            return this;
+        }
+
+        /**
+         * Add a before filter to inject properties at the start of each object.
+         */
+        public Builder addBeforeFilter(com.alibaba.fastjson3.filter.BeforeFilter filter) {
+            beforeFilters.add(filter);
+            return this;
+        }
+
+        /**
+         * Add an after filter to append properties at the end of each object.
+         */
+        public Builder addAfterFilter(com.alibaba.fastjson3.filter.AfterFilter filter) {
+            afterFilters.add(filter);
+            return this;
+        }
+
+        /**
          * Add a property filter to control which properties are serialized.
          */
         public Builder addPropertyFilter(PropertyFilter filter) {
@@ -2306,6 +2354,17 @@ public final class ObjectMapper {
                     writerProvider,
                     loader
             );
+            // Set before/after/pre filters
+            if (!beforeFilters.isEmpty()) {
+                mapper.beforeFilters = beforeFilters.toArray(new com.alibaba.fastjson3.filter.BeforeFilter[0]);
+            }
+            if (!afterFilters.isEmpty()) {
+                mapper.afterFilters = afterFilters.toArray(new com.alibaba.fastjson3.filter.AfterFilter[0]);
+            }
+            if (!propertyPreFilters.isEmpty()) {
+                mapper.propertyPreFilters = propertyPreFilters.toArray(
+                        new com.alibaba.fastjson3.filter.PropertyPreFilter[0]);
+            }
             // Initialize modules
             for (ObjectReaderModule module : mapper.readerModules) {
                 module.init();

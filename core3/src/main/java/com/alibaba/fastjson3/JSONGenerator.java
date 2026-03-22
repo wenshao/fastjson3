@@ -106,24 +106,43 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
     static final int MAX_WRITE_DEPTH = 512;
 
-    // Pre-computed indent tables for pretty format (2 spaces per level)
+    // Pre-computed indent tables for pretty format (2 and 4 spaces per level)
     static final int MAX_INDENT_LEVEL = 32;
-    static final byte[][] INDENT_BYTES_TABLE = new byte[MAX_INDENT_LEVEL][];
-    static final char[][] INDENT_CHARS_TABLE = new char[MAX_INDENT_LEVEL][];
+    static final byte[][] INDENT_BYTES_2 = new byte[MAX_INDENT_LEVEL][];
+    static final char[][] INDENT_CHARS_2 = new char[MAX_INDENT_LEVEL][];
+    static final byte[][] INDENT_BYTES_4 = new byte[MAX_INDENT_LEVEL][];
+    static final char[][] INDENT_CHARS_4 = new char[MAX_INDENT_LEVEL][];
+    // Aliases for default (2-space) tables
+    static final byte[][] INDENT_BYTES_TABLE = INDENT_BYTES_2;
+    static final char[][] INDENT_CHARS_TABLE = INDENT_CHARS_2;
 
     static {
         for (int i = 0; i < MAX_INDENT_LEVEL; i++) {
-            int len = 1 + 2 * i;
-            byte[] b = new byte[len];
-            char[] c = new char[len];
-            b[0] = '\n';
-            c[0] = '\n';
-            for (int j = 1; j < len; j++) {
-                b[j] = ' ';
-                c[j] = ' ';
+            // 2-space indent
+            int len2 = 1 + 2 * i;
+            byte[] b2 = new byte[len2];
+            char[] c2 = new char[len2];
+            b2[0] = '\n';
+            c2[0] = '\n';
+            for (int j = 1; j < len2; j++) {
+                b2[j] = ' ';
+                c2[j] = ' ';
             }
-            INDENT_BYTES_TABLE[i] = b;
-            INDENT_CHARS_TABLE[i] = c;
+            INDENT_BYTES_2[i] = b2;
+            INDENT_CHARS_2[i] = c2;
+
+            // 4-space indent
+            int len4 = 1 + 4 * i;
+            byte[] b4 = new byte[len4];
+            char[] c4 = new char[len4];
+            b4[0] = '\n';
+            c4[0] = '\n';
+            for (int j = 1; j < len4; j++) {
+                b4[j] = ' ';
+                c4[j] = ' ';
+            }
+            INDENT_BYTES_4[i] = b4;
+            INDENT_CHARS_4[i] = c4;
         }
     }
 
@@ -142,11 +161,27 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     public final boolean notWriteEmptyArray;
     protected final char[] escapeChars; // instance escape table
     protected final boolean extendedEscape; // browser or secure escaping active
+    protected final boolean floatSpecialAsString; // NaN/Infinity → "NaN"/"Infinity"
+    public final boolean ignoreErrorGetter; // suppress getter exceptions
+    public final boolean writeClassName; // write @type for polymorphic types
+    public final boolean notWriteRootClassName; // skip @type at depth 0
+    public final boolean notWriteHashMapArrayListClassName; // skip @type for common collections
+    public final boolean dateAsMillis; // Date → milliseconds timestamp
+    public final boolean writeMapNullValue; // write null values in Map entries
+    public final boolean notWriteSetClassName; // skip @type for Set types
+    public final boolean notWriteNumberClassName; // skip @type for Number types
+    public final boolean writeThrowableClassName; // write @type for Throwable
+    public final boolean unquoteFieldName; // field names without quotes
+    protected final byte quoteChar; // '"' or '\'' — pre-computed at construction
+    protected final int indentStep; // 2 or 4 — pre-computed at construction
     // True when any feature requires bypassing the static UTF8 fast path
     public final boolean bypassStaticPath;
     protected int indentLevel;
 
     // Filters — null when no filters configured (zero overhead)
+    public com.alibaba.fastjson3.filter.BeforeFilter[] beforeFilters;
+    public com.alibaba.fastjson3.filter.AfterFilter[] afterFilters;
+    public com.alibaba.fastjson3.filter.PropertyPreFilter[] propertyPreFilters;
     public PropertyFilter[] propertyFilters;
     public ValueFilter[] valueFilters;
     public NameFilter[] nameFilters;
@@ -163,6 +198,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     | WriteFeature.WriteNullListAsEmpty.mask
                     | WriteFeature.WriteNullNumberAsZero.mask
                     | WriteFeature.WriteNullBooleanAsFalse.mask;
+        }
+        // PrettyFormatWith2Space / PrettyFormatWith4Space imply PrettyFormat
+        if ((features & (WriteFeature.PrettyFormatWith2Space.mask | WriteFeature.PrettyFormatWith4Space.mask)) != 0) {
+            features |= WriteFeature.PrettyFormat.mask;
         }
         this.features = features;
         this.pretty = (features & WriteFeature.PrettyFormat.mask) != 0;
@@ -182,6 +221,19 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 : browserCompatible ? ESCAPE_CHARS_BROWSER
                 : ESCAPE_CHARS;
         this.extendedEscape = (escapeChars != ESCAPE_CHARS);
+        this.floatSpecialAsString = (features & WriteFeature.WriteFloatSpecialAsString.mask) != 0;
+        this.ignoreErrorGetter = (features & WriteFeature.IgnoreErrorGetter.mask) != 0;
+        this.writeClassName = (features & WriteFeature.WriteClassName.mask) != 0;
+        this.notWriteRootClassName = (features & WriteFeature.NotWriteRootClassName.mask) != 0;
+        this.notWriteHashMapArrayListClassName = (features & WriteFeature.NotWriteHashMapArrayListClassName.mask) != 0;
+        this.dateAsMillis = (features & WriteFeature.WriteDateAsMillis.mask) != 0;
+        this.writeMapNullValue = (features & WriteFeature.WriteMapNullValue.mask) != 0;
+        this.notWriteSetClassName = (features & WriteFeature.NotWriteSetClassName.mask) != 0;
+        this.notWriteNumberClassName = (features & WriteFeature.NotWriteNumberClassName.mask) != 0;
+        this.writeThrowableClassName = (features & WriteFeature.WriteThrowableClassName.mask) != 0;
+        this.unquoteFieldName = (features & WriteFeature.UnquoteFieldName.mask) != 0;
+        this.quoteChar = (features & WriteFeature.UseSingleQuotes.mask) != 0 ? (byte) '\'' : (byte) '"';
+        this.indentStep = (features & WriteFeature.PrettyFormatWith4Space.mask) != 0 ? 4 : 2;
         boolean writeNulls = (features & WriteFeature.WriteNulls.mask) != 0
                 || (features & WriteFeature.WriteNullStringAsEmpty.mask) != 0
                 || (features & WriteFeature.WriteNullListAsEmpty.mask) != 0
@@ -189,7 +241,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 || (features & WriteFeature.WriteNullBooleanAsFalse.mask) != 0;
         this.bypassStaticPath = longAsString || nonStringAsString || boolAsNumber
                 || notWriteDefaultValue || notWriteEmptyArray || extendedEscape || escapeNoneAscii
-                || writeNulls;
+                || writeNulls || unquoteFieldName || quoteChar != '"';
 
         if ((features & WriteFeature.ReferenceDetection.mask) != 0) {
             this.referenceDetection = true;
@@ -242,6 +294,13 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     }
 
     /**
+     * Get current write depth (0 = root level).
+     */
+    public int getWriteDepth() {
+        return writeDepth;
+    }
+
+    /**
      * Decrement write depth after writing a nested container.
      */
     public void decrementDepth() {
@@ -264,8 +323,13 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         this.nameFilters = nf;
     }
 
+    /**
+     * Check if per-field filters are configured (Property/Value/Name/PreFilter).
+     * Before/After filters are handled at the object level, not per-field.
+     */
     public boolean hasFilters() {
-        return propertyFilters != null;
+        return propertyFilters != null || propertyPreFilters != null
+                || valueFilters != null || nameFilters != null;
     }
 
     /**
@@ -637,6 +701,21 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             writeJSONObject((JSONObject) value);
         } else if (value instanceof JSONArray) {
             writeJSONArray((JSONArray) value);
+        } else if (value instanceof Map.Entry<?, ?> entry
+                && (features & WriteFeature.WritePairAsJavaBean.mask) != 0) {
+            if (++writeDepth > MAX_WRITE_DEPTH) {
+                throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
+            }
+            try {
+                startObject();
+                writeName("key");
+                writeAny(entry.getKey());
+                writeName("value");
+                writeAny(entry.getValue());
+                endObject();
+            } finally {
+                writeDepth--;
+            }
         } else if (value instanceof Map<?, ?> map) {
             if (++writeDepth > MAX_WRITE_DEPTH) {
                 throw new JSONException("serialization depth " + writeDepth + " exceeds maximum " + MAX_WRITE_DEPTH);
@@ -716,7 +795,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         } else if (value instanceof OffsetDateTime odt) {
             writeString(odt.toString());
         } else if (value instanceof Date date) {
-            writeInstant(date.toInstant());
+            if (dateAsMillis) {
+                writeInt64(date.getTime());
+            } else {
+                writeInstant(date.toInstant());
+            }
         } else {
             // Try ObjectWriter-based serialization
             @SuppressWarnings("unchecked")
@@ -1072,17 +1155,17 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         private void writeNewlineIndent() {
             int level = indentLevel;
+            char[][] table = indentStep == 4 ? INDENT_CHARS_4 : INDENT_CHARS_2;
             if (level < MAX_INDENT_LEVEL) {
-                char[] indent = INDENT_CHARS_TABLE[level];
+                char[] indent = table[level];
                 ensureCapacity(count + indent.length);
                 System.arraycopy(indent, 0, buf, count, indent.length);
                 count += indent.length;
             } else {
-                int len = 1 + 2 * level;
-                ensureCapacity(count + len);
+                int spaces = indentStep * level;
+                ensureCapacity(count + 1 + spaces);
                 buf[count++] = '\n';
-                for (int i = 0; i < level; i++) {
-                    buf[count++] = ' ';
+                for (int i = 0; i < spaces; i++) {
                     buf[count++] = ' ';
                 }
             }
@@ -1185,10 +1268,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             } else {
                 ensureCapacity(count + len + 4);
             }
-            buf[count++] = '"';
-            name.getChars(0, len, buf, count);
-            count += len;
-            buf[count++] = '"';
+            if (unquoteFieldName) {
+                name.getChars(0, len, buf, count);
+                count += len;
+            } else {
+                buf[count++] = (char) quoteChar;
+                name.getChars(0, len, buf, count);
+                count += len;
+                buf[count++] = (char) quoteChar;
+            }
             buf[count++] = ':';
             if (pretty) {
                 buf[count++] = ' ';
@@ -1294,7 +1382,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             if (Float.isNaN(val) || Float.isInfinite(val)) {
-                writeNull();
+                if (floatSpecialAsString) {
+                    writeString(Float.toString(val));
+                } else {
+                    writeNull();
+                }
                 return;
             }
             String s = Float.toString(val);
@@ -1312,7 +1404,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             if (Double.isNaN(val) || Double.isInfinite(val)) {
-                writeNull();
+                if (floatSpecialAsString) {
+                    writeString(Double.toString(val));
+                } else {
+                    writeNull();
+                }
                 return;
             }
             String s = Double.toString(val);
@@ -1348,9 +1444,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             int len = val.length();
+            char q = (char) quoteChar;
             // Conservative initial estimate: most chars are not escaped
             ensureCapacity(count + len + 16);
-            buf[count++] = '"';
+            buf[count++] = q;
             for (int i = 0; i < len; i++) {
                 char ch = val.charAt(i);
                 if (ch < 128) {
@@ -1359,8 +1456,13 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         ensureCapacity(count + 6 + (len - i) + 3);
                         if (escaped == '"' || escaped == '\\' || escaped == 'b' || escaped == 'f'
                                 || escaped == 'n' || escaped == 'r' || escaped == 't') {
-                            buf[count++] = '\\';
-                            buf[count++] = escaped;
+                            if (q != '"' && ch == '"') {
+                                // UseSingleQuotes: don't escape double quotes
+                                buf[count++] = ch;
+                            } else {
+                                buf[count++] = '\\';
+                                buf[count++] = escaped;
+                            }
                         } else {
                             // Browser/secure unicode escape
                             buf[count++] = '\\';
@@ -1370,6 +1472,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                             buf[count++] = DIGITS[ch >> 4];
                             buf[count++] = DIGITS[ch & 0xF];
                         }
+                    } else if (q != '"' && ch == q) {
+                        // UseSingleQuotes: escape the single quote character
+                        ensureCapacity(count + 2 + (len - i) + 3);
+                        buf[count++] = '\\';
+                        buf[count++] = q;
                     } else if (ch < 0x20) {
                         // control character
                         ensureCapacity(count + 6 + (len - i) + 3);
@@ -1397,7 +1504,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     }
                 }
             }
-            buf[count++] = '"';
+            buf[count++] = q;
             buf[count++] = ',';
         }
 
@@ -1537,16 +1644,17 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         private void writeNewlineIndent() {
             int level = indentLevel;
-            int len = 1 + 2 * level;
-            ensureCapacity(len);
+            byte[][] table = indentStep == 4 ? INDENT_BYTES_4 : INDENT_BYTES_2;
             if (level < MAX_INDENT_LEVEL) {
-                byte[] indent = INDENT_BYTES_TABLE[level];
+                byte[] indent = table[level];
+                ensureCapacity(indent.length);
                 System.arraycopy(indent, 0, buf, count, indent.length);
                 count += indent.length;
             } else {
+                int spaces = indentStep * level;
+                ensureCapacity(1 + spaces);
                 buf[count++] = '\n';
-                for (int i = 0; i < level; i++) {
-                    buf[count++] = ' ';
+                for (int i = 0; i < spaces; i++) {
                     buf[count++] = ' ';
                 }
             }
@@ -1643,7 +1751,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             } else {
                 ensureCapacity(len * 4 + 4);
             }
-            buf[count++] = '"';
+            if (!unquoteFieldName) {
+                buf[count++] = quoteChar;
+            }
             for (int i = 0; i < len; i++) {
                 char ch = name.charAt(i);
                 if (ch < 0x80) {
@@ -1669,7 +1779,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     buf[count++] = (byte) (0x80 | (ch & 0x3F));
                 }
             }
-            buf[count++] = '"';
+            if (!unquoteFieldName) {
+                buf[count++] = quoteChar;
+            }
             buf[count++] = ':';
             if (pretty) {
                 buf[count++] = ' ';
@@ -1860,7 +1972,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
             if (Float.isNaN(val) || Float.isInfinite(val)) {
-                writeNull();
+                if (floatSpecialAsString) {
+                    writeString(Float.toString(val));
+                } else {
+                    writeNull();
+                }
                 return;
             }
             String s = Float.toString(val);
@@ -1871,6 +1987,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         public void writeDouble(double val) {
             if (nonStringAsString) {
                 writeString(Double.toString(val));
+                return;
+            }
+            if (Double.isNaN(val) || Double.isInfinite(val)) {
+                if (floatSpecialAsString) {
+                    writeString(Double.toString(val));
+                } else {
+                    writeNull();
+                }
                 return;
             }
             count = com.alibaba.fastjson3.util.NumberUtils.writeDouble(buf, count, val, true, false);

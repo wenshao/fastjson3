@@ -81,6 +81,9 @@ public final class FieldReader implements Comparable<FieldReader> {
     // Cached enum constants for enum fields (null for non-enum fields)
     final Object[] enumConstants;
 
+    // Optional: field-level deserialization features (from @JSONField(deserializeFeatures=))
+    public final long fieldFeatures;
+
     // Index in the fieldReaders array (set after construction)
     public int index = -1;
 
@@ -150,6 +153,25 @@ public final class FieldReader implements Comparable<FieldReader> {
             Class<?> deserializeUsingClass,
             String schema
     ) {
+        this(fieldName, alternateNames, fieldType, fieldClass, ordinal, defaultValue,
+                required, field, setter, format, deserializeUsingClass, schema, 0);
+    }
+
+    public FieldReader(
+            String fieldName,
+            String[] alternateNames,
+            Type fieldType,
+            Class<?> fieldClass,
+            int ordinal,
+            String defaultValue,
+            boolean required,
+            Field field,
+            Method setter,
+            String format,
+            Class<?> deserializeUsingClass,
+            String schema,
+            long fieldFeatures
+    ) {
         this.fieldName = fieldName;
         this.alternateNames = alternateNames != null ? alternateNames : new String[0];
         this.fieldType = fieldType;
@@ -191,6 +213,7 @@ public final class FieldReader implements Comparable<FieldReader> {
 
         // Cache enum constants for enum fields
         this.enumConstants = fieldClass.isEnum() ? fieldClass.getEnumConstants() : null;
+        this.fieldFeatures = fieldFeatures;
 
         // Resolve Unsafe field offset (look up corresponding field if we only have a setter)
         this.fieldOffset = resolveFieldOffset(field, setter, fieldName, fieldClass);
