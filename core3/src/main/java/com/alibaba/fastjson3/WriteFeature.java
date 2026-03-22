@@ -103,7 +103,34 @@ public enum WriteFeature {
     /**
      * Optimize output for ASCII content
      */
-    OptimizedForAscii;
+    OptimizedForAscii,
+
+    /** Skip fields with default values (0, false, null, 0.0) */
+    NotWriteDefaultValue,
+
+    /** Skip empty collections/arrays */
+    NotWriteEmptyArray,
+
+    /** Write enum using ordinal() instead of name() */
+    WriteEnumUsingOrdinal,
+
+    /** Write boolean as 0/1 */
+    WriteBooleanAsNumber,
+
+    /** Strict browser escaping: escape <, >, &, ', \u2028, \u2029 */
+    BrowserSecure,
+
+    /** Shorthand: null numbers→0, null strings→"", null booleans→false, null lists→[] */
+    NullAsDefaultValue,
+
+    /** Swallow getter exceptions instead of throwing */
+    IgnoreErrorGetter,
+
+    /** Skip getters without backing field */
+    IgnoreNonFieldGetter,
+
+    /** Map non-string keys → String.valueOf() */
+    WriteNonStringKeyAsString;
 
     public final long mask;
 

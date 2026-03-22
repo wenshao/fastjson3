@@ -157,6 +157,30 @@ class StringEncodingEdgeTest {
         assertEquals(text, parsed);
     }
 
+    @Test
+    void escapeNoneAscii_singleChar() {
+        // EscapeNoneAscii escapes non-ASCII chars to \\uXXXX sequences
+        String input = "\u4e2d";
+        String json = JSON.toJSONString(input, WriteFeature.EscapeNoneAscii);
+        assertTrue(json.contains("\\u4e2d"), "CJK char should be escaped to unicode sequence: " + json);
+        // Round-trip should still work
+        String parsed = JSON.parseObject(json, String.class);
+        assertEquals(input, parsed);
+    }
+
+    @Test
+    void escapeNoneAscii_mixedWithAscii() {
+        // EscapeNoneAscii escapes non-ASCII chars to \\uXXXX sequences
+        String input = "Hello \u4e2d\u56fd World";
+        String json = JSON.toJSONString(input, WriteFeature.EscapeNoneAscii);
+        assertTrue(json.contains("Hello"), "ASCII should be preserved");
+        assertTrue(json.contains("World"), "ASCII should be preserved");
+        assertTrue(json.contains("\\u"), "Non-ASCII should be escaped");
+        // Round-trip
+        String parsed = JSON.parseObject(json, String.class);
+        assertEquals(input, parsed);
+    }
+
     // ==================== Large strings ====================
 
     @Test
