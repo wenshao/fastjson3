@@ -952,7 +952,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     if (sv instanceof byte[] strBytes && strBytes.length == s.length()) {
                         int needed = fw.nameBytesLen + strBytes.length + 3;
                         if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
-                            gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count;
+                            gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count;
                         }
                         pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
                         return UTF8.writeLatinStringStatic(buf, pos, strBytes, strBytes.length);
@@ -1158,7 +1158,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             case com.alibaba.fastjson3.writer.FieldWriter.TYPE_INT: {
                 if (fw.fieldOffset >= 0 && fw.fieldClass == int.class) {
                     int needed = nameLen + 12;
-                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count; }
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
                     System.arraycopy(nameChars, 0, buf, pos, nameLen);
                     pos += nameLen;
                     pos += Char.writeIntToChars(com.alibaba.fastjson3.util.JDKUtils.getInt(bean, fw.fieldOffset), buf, pos);
@@ -1170,7 +1170,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             case com.alibaba.fastjson3.writer.FieldWriter.TYPE_LONG: {
                 if (fw.fieldOffset >= 0 && fw.fieldClass == long.class) {
                     int needed = nameLen + 21;
-                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count; }
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
                     System.arraycopy(nameChars, 0, buf, pos, nameLen);
                     pos += nameLen;
                     pos += Char.writeLongToChars(com.alibaba.fastjson3.util.JDKUtils.getLongField(bean, fw.fieldOffset), buf, pos);
@@ -1186,7 +1186,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         String s = Double.toString(val);
                         int sLen = s.length();
                         int needed = nameLen + sLen + 1;
-                        if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count; }
+                        if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
                         System.arraycopy(nameChars, 0, buf, pos, nameLen);
                         pos += nameLen;
                         s.getChars(0, sLen, buf, pos);
@@ -1200,7 +1200,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             case com.alibaba.fastjson3.writer.FieldWriter.TYPE_BOOL: {
                 if (fw.fieldOffset >= 0 && fw.fieldClass == boolean.class) {
                     int needed = nameLen + 6;
-                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count; }
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
                     System.arraycopy(nameChars, 0, buf, pos, nameLen);
                     pos += nameLen;
                     if (com.alibaba.fastjson3.util.JDKUtils.getBoolean(bean, fw.fieldOffset)) {
@@ -1221,7 +1221,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     if (s == null) return pos;
                     int sLen = s.length();
                     int needed = nameLen + sLen + 4;
-                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count; }
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
                     System.arraycopy(nameChars, 0, buf, pos, nameLen);
                     pos += nameLen;
                     buf[pos++] = '"';
@@ -1296,6 +1296,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 System.arraycopy(buf, 0, newBuf, 0, count);
                 buf = newBuf;
             }
+        }
+
+        @Override
+        public void ensureCapacityPublic(int needed) {
+            ensureCapacity(count + needed);
         }
 
         private void writeNewlineIndent() {
@@ -1532,7 +1537,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameBool(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
-            if (pretty) {
+            if (pretty || boolAsNumber || nonStringAsString) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeBool(value);
                 return;
