@@ -180,10 +180,9 @@ JSON.write(a);  // StackOverflowError?
 **解决方案**: 使用 `WriteFeature.ReferenceDetection`
 
 ```java
-String json = JSON.write(a, WriteConfig.of(WriteFeature.ReferenceDetection));
+// 注意: WriteConfig.of() 未实现，实际使用 WriteFeature 直接传入
+String json = JSON.toJSONString(a, WriteFeature.ReferenceDetection);
 ```
-
-**需要**: 在 WriteConfig 中添加 REFERENCE_SAFE 选项
 
 ### 3.4 大文件处理
 
