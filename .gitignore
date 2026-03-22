@@ -7,3 +7,8 @@ dependency-reduced-pom.xml
 *.iml
 .DS_Store
 .qwen/
+
+# Benchmark results (machine-specific, not committed)
+benchmark3/results/*/eishay.json
+benchmark3/results/*/jjb.json
+benchmark3/results/*/*.log

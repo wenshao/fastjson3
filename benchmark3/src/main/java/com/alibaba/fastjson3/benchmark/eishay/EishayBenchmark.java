@@ -1,4 +1,4 @@
-package com.alibaba.fastjson3.benchmark.jjb;
+package com.alibaba.fastjson3.benchmark.eishay;
 
 import com.alibaba.fastjson3.benchmark.BenchmarkConfig;
 import org.openjdk.jmh.annotations.Mode;
@@ -10,25 +10,22 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Run all JJB (Users + Clients) benchmarks.
+ * Run all eishay benchmarks.
  *
  * <pre>
- * java -cp benchmark3.jar ...JJBBenchmark                   # standard, 16 threads
- * java -cp benchmark3.jar ...JJBBenchmark quick              # quick, skip reflect/asm
- * java -cp benchmark3.jar ...JJBBenchmark full               # full, high confidence
- * java -cp benchmark3.jar ...JJBBenchmark standard 1         # standard, single thread
+ * java -cp benchmark3.jar ...EishayBenchmark                # standard, 16 threads
+ * java -cp benchmark3.jar ...EishayBenchmark quick           # quick, skip reflect/asm
+ * java -cp benchmark3.jar ...EishayBenchmark full            # full, high confidence
+ * java -cp benchmark3.jar ...EishayBenchmark standard 1      # standard, single thread
  * </pre>
  */
-public class JJBBenchmark {
+public class EishayBenchmark {
     public static void main(String[] args) throws RunnerException {
         BenchmarkConfig config = BenchmarkConfig.parse(args);
-        System.out.println("JJB benchmark: " + config);
+        System.out.println("Eishay benchmark: " + config);
 
         OptionsBuilder builder = new OptionsBuilder();
-        builder.include(UsersWriteUTF8Bytes.class.getName())
-                .include(UsersParseUTF8Bytes.class.getName())
-                .include(ClientsWriteUTF8Bytes.class.getName())
-                .include(ClientsParseUTF8Bytes.class.getName())
+        builder.include("com.alibaba.fastjson3.benchmark.eishay.Eishay")
                 .mode(Mode.Throughput)
                 .timeUnit(TimeUnit.MILLISECONDS)
                 .warmupIterations(config.warmupIterations)

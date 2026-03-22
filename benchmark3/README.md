@@ -1,164 +1,133 @@
 # Benchmark Module (benchmark3)
 
-JMH-based JSON performance benchmarks for fastjson3.
+JMH-based JSON performance benchmarks comparing fastjson3 against fastjson2, jackson, gson, and wast.
 
-## JJB Benchmark
+## Quick Start
 
-Java JSON Benchmark (JJB) is the primary benchmark suite for measuring parse and write performance.
+```bash
+cd benchmark3
 
-### Benchmark Classes
+# Build
+mvn package -q -DskipTests
 
-| Class | Description | Config |
-|-------|-------------|--------|
-| `JJBBenchmark` | Main entry point, Users/Clients parse+write UTF8 | 16 threads, 2 warmup, 3 iterations |
-| `JJBQuickBenchmark` | Quick comparison: fastjson3 vs wast | Single thread |
-| `JJBSimpleBenchmark` | Simplified benchmark for CI | - |
-| `JJBPerformanceComparison` | Detailed performance comparison | - |
-| `QuickCompare` | Fast comparison tool | - |
+# Run (auto-captures environment, saves structured results)
+./run-benchmark.sh eishay quick        # ~3 min, fast check
+./run-benchmark.sh jjb                 # ~15 min, standard
+./run-benchmark.sh all full            # ~45 min, publication quality
 
-### Data Type Benchmarks
+# Compare results across machines
+./compare-results.sh
+```
 
-| Class | Operation | Data Type |
-|-------|-----------|-----------|
-| `UsersParseUTF8Bytes` | Parse | Users (UTF-8 bytes) |
-| `UsersWriteUTF8Bytes` | Write | Users (UTF-8 bytes) |
-| `ClientsParseUTF8Bytes` | Parse | Clients (UTF-8 bytes) |
-| `ClientsWriteUTF8Bytes` | Write | Clients (UTF-8 bytes) |
-| `ClientsParseCNBytes` | Parse | Clients with Chinese (UTF-8 bytes) |
-| `ClientsWriteCNBytes` | Write | Clients with Chinese (UTF-8 bytes) |
-| `UserParseUTF8Bytes` | Parse | Single User (UTF-8 bytes) |
+## Profiles
 
-### Other Benchmarks
+| Profile | Warmup | Measure | Forks | Skip reflect/asm | ~Time |
+|---------|--------|---------|-------|-------------------|-------|
+| `quick` | 1 | 2 | 1 | Yes | ~3 min |
+| `standard` | 2 | 3 | 2 | No | ~15 min |
+| `full` | 3 | 5 | 3 | No | ~45 min |
 
-| Class | Description |
-|-------|-------------|
-| `EscapeStringBenchmark` | String escaping performance |
-| `UserProviderBenchmark` | Provider-based user data |
-| `QuickParseBenchmark` | Quick parse tests |
-| `SimpleParseBenchmark` | Simple parse tests |
+Single-thread variant: `./run-benchmark.sh eishay standard 1`
 
-## Test Data
+## Benchmark Suites
 
-Located in `src/main/resources/data/jjb/`:
+### Eishay (MediaContent)
 
-| File | Size | Description |
-|------|------|-------------|
-| `user.json` | 2.1K | Users list with 22 fields per user |
-| `client.json` | 2.2K | Clients with `long[]`, `String[]` arrays |
-| `client_cn.json` | 2.2K | Clients with Chinese content |
+Classic JSON benchmark based on MediaContent data (~469 bytes compact).
 
-### Data Models
+| Class | Operation | Input | Competitors |
+|-------|-----------|-------|-------------|
+| `EishayParseUTF8Bytes` | Parse | byte[] → MediaContent | fj2, fj3, fj3_reflect, fj3_asm, jackson, gson, wast |
+| `EishayWriteUTF8Bytes` | Write | MediaContent → byte[] | same |
+| `EishayParseString` | Parse | String → MediaContent | fj2, fj3, jackson, gson, wast |
+| `EishayWriteString` | Write | MediaContent → String | same |
+| `EishayParseUTF8BytesPretty` | Parse | Pretty byte[] → MediaContent | fj2, fj3, jackson, gson, wast |
+| `EishayParseStringPretty` | Parse | Pretty String → MediaContent | same |
+| `EishayParseTreeString` | Parse | String → JSONObject | fj2, fj3, jackson, gson, wast |
+| `EishayParseTreeUTF8Bytes` | Parse | byte[] → JSONObject | same |
 
-**Users** (`com.alibaba.fastjson3.benchmark.jjb.Users`)
-- `List<User> users`
-- User fields: id, index, guid, isActive, balance, picture, age, eyeColor, name, gender, company, email, phone, address, about, registered, latitude, longitude, tags, friends, greeting, favoriteFruit
-- Nested: `List<Friend>` (id, name)
+### JJB (Users + Clients)
 
-**Clients** (`com.alibaba.fastjson3.benchmark.jjb.Clients`)
-- `List<Client> clients`
-- Client fields: id (long), index, guid, isActive, balance (double), picture, age, eyeColor, name, gender, company, emails (String[]), phones (long[]), address, about, registered, latitude, longitude, tags, partners
-- Nested: `List<Partner>` (id, name, since)
+Real-world benchmark with complex nested data (~2KB each).
+
+| Class | Operation | Data |
+|-------|-----------|------|
+| `UsersParseUTF8Bytes` | Parse | Users (22 fields, List<Friend>) |
+| `UsersWriteUTF8Bytes` | Write | Users |
+| `ClientsParseUTF8Bytes` | Parse | Clients (long[], String[], List<Partner>) |
+| `ClientsWriteUTF8Bytes` | Write | Clients |
+| `ClientsParseCNBytes` | Parse | Clients with Chinese content |
+| `ClientsWriteCNBytes` | Write | Clients with Chinese content |
 
 ## Competitors
 
-The benchmarks compare fastjson3 against:
-- **wast** (`io.github.wycst.wast.json`) - Wycst JSON library (current: 0.0.29.1)
-- **fastjson2** (`com.alibaba.fastjson2`) - fastjson2 (current: 2.0.29)
+| Library | Version | Notes |
+|---------|---------|-------|
+| fastjson3 | 3.0.0-SNAPSHOT | This project |
+| fastjson2 | 2.0.29 | Previous generation |
+| jackson | 2.18.3 | Industry standard |
+| gson | 2.12.1 | Google JSON |
+| wast | 0.0.29.1 | High-performance library |
 
-## Benchmark Results
+## Result Collection
 
-Results are stored in `results/` directory by date.
+Results are automatically saved by `run-benchmark.sh` to:
 
-### Latest Results
+```
+results/
+├── 2026-03-22-server1/
+│   ├── env.json              # Machine metadata (CPU, cores, memory, JDK, OS)
+│   ├── eishay.json           # JMH JSON output
+│   ├── jjb.json              # JMH JSON output
+│   ├── eishay.log            # Full console output
+│   ├── jjb.log
+│   └── summary.txt           # Human-readable summary
+├── 2026-03-22-laptop/
+│   └── ...
+```
 
-| Date | File | Benchmarks |
-|------|------|------------|
-| 2026-03-21 | [results/2026-03-21.md](results/2026-03-21.md) | ClientsParse/WriteUTF8Bytes, UserParse/WriteUTF8Bytes |
+### Cross-Machine Comparison
 
-### Summary (2026-03-21)
-
-**Parse 场景 - fastjson3 领先**
-
-| Benchmark | fastjson3 vs fastjson2 | fastjson3 vs wast |
-|-----------|------------------------|-------------------|
-| ClientsParseUTF8Bytes | **+98-102%** | **+8-10%** |
-| UserParseUTF8Bytes | **+131-144%** | **+28-35%** |
-
-**Write 场景 - fastjson3 领先**
-
-| Benchmark | fastjson3 vs fastjson2 | fastjson3 vs wast |
-|-----------|------------------------|-------------------|
-| ClientsWriteUTF8Bytes | **+154%** | **+9%** |
-| UsersWriteUTF8Bytes | **+162%** | **+32%** |
-
-**Key Findings:**
-- **Parse:** fastjson3 > wast > fastjson2
-- **Write:** fastjson3 > wast > fastjson2
-- fastjson3 在 Parse 和 Write 场景均全面领先
-- Write 场景超越 wast 9-32%
-
-## Running Benchmarks
-
-### Run All JJB Benchmarks
 ```bash
-java -cp benchmark3.jar com.alibaba.fastjson3.benchmark.jjb.JJBBenchmark
+# Compare all result directories
+./compare-results.sh
+
+# Compare specific runs
+./compare-results.sh results/2026-03-20-server1 results/2026-03-21-laptop
 ```
 
-### Run Quick Comparison
-```bash
-java -cp benchmark3.jar com.alibaba.fastjson3.benchmark.jjb.JJBQuickBenchmark
+Output:
 ```
+Machine              2026-03-22-server1   2026-03-22-laptop
+CPU                  AMD EPYC 7R13       Apple M2 Pro
+Cores                16                   12
+JDK                  25                   21.0.1
 
-### Run with Maven
-```bash
-mvn package -pl benchmark3 -DskipTests
-java -jar benchmark3/target/benchmark3.jar JJBBenchmark
-```
-
-### Custom JMH Options
-```bash
-java -jar benchmark3/target/benchmarks.jar -wi 3 -i 5 -f 2 -t 8 JJBBenchmark
-```
-
-Options:
-- `-wi N` - Warmup iterations
-- `-i N` - Measurement iterations
-- `-f N` - Forks
-- `-t N` - Threads
-
-### Run with Profiler
-```bash
-java -jar benchmark3/target/benchmark3.jar "ClientsParseUTF8Bytes.fastjson3" -prof stack
-```
-
-## Adding New Benchmarks
-
-1. Create test data in `src/main/resources/data/jjb/`
-2. Create data model class in `com.alibaba.fastjson3.benchmark.jjb`
-3. Create benchmark class with `@Benchmark` methods
-4. Register in `JJBBenchmark.java` if needed
-
-Example benchmark method:
-```java
-@Benchmark
-public void parseXxx_fastjson3(Blackhole bh) {
-    bh.consume(com.alibaba.fastjson3.JSON.parseObject(bytes, Xxx.class));
-}
-```
-
-## Recording Results
-
-When running new benchmarks, record results in `results/YYYY-MM-DD.md`:
-
-```markdown
-# Benchmark Results - YYYY-MM-DD
-
-## Test Environment
-| Item | Value |
-|------|-------|
-| JDK | ... |
-| ... | ... |
-
-## BenchmarkName
+Benchmark (ops/ms)                         server1              laptop
+──────────────────────────────────────── ──────────────────── ────────────────────
+eishay.EishayParseUTF8Bytes.fastjson3          5645.2               3210.1
+eishay.EishayParseUTF8Bytes.jackson            1234.5                987.3
 ...
+```
+
+## Latest Results
+
+| Date | Machine | File |
+|------|---------|------|
+| 2026-03-21 | - | [results/2026-03-21.md](results/2026-03-21.md) |
+
+## Manual Usage
+
+```bash
+# Run specific benchmark class
+java -jar target/benchmark3.jar EishayParseUTF8Bytes
+
+# Run with JMH profiler
+java -jar target/benchmark3.jar "EishayParseUTF8Bytes.fastjson3" -prof stack
+
+# Custom JMH options
+java -jar target/benchmark3.jar -wi 3 -i 5 -f 2 -t 8 EishayParseUTF8Bytes
+
+# Output JSON for external analysis
+java -jar target/benchmark3.jar EishayParseUTF8Bytes -rf json -rff results.json
 ```

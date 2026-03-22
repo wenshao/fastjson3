@@ -1,5 +1,7 @@
 package com.alibaba.fastjson3.benchmark.jjb;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.infra.Blackhole;
@@ -12,6 +14,8 @@ import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 
 public class UsersWriteUTF8Bytes {
+    static final ObjectMapper jackson = new ObjectMapper();
+    static final Gson gson = new Gson();
     static Users users;
     static com.alibaba.fastjson3.ObjectWriter<Users> reflectWriter;
     static com.alibaba.fastjson3.ObjectWriter<Users> asmWriter;
@@ -57,6 +61,16 @@ public class UsersWriteUTF8Bytes {
     @Benchmark
     public void wast(Blackhole bh) {
         bh.consume(io.github.wycst.wast.json.JSON.toJsonBytes(users));
+    }
+
+    @Benchmark
+    public void jackson(Blackhole bh) throws Exception {
+        bh.consume(jackson.writeValueAsBytes(users));
+    }
+
+    @Benchmark
+    public void gson(Blackhole bh) {
+        bh.consume(gson.toJson(users).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     public static void main(String[] args) throws RunnerException {
