@@ -16,8 +16,10 @@ public class ClientsWriteCNBytes {
 
     static {
         try {
-            InputStream is = ClientsWriteCNBytes.class.getClassLoader().getResourceAsStream("data/jjb/client_cn.json");
-            byte[] bytes = is.readAllBytes();
+            byte[] bytes;
+            try (InputStream is = ClientsWriteCNBytes.class.getClassLoader().getResourceAsStream("data/jjb/client_cn.json")) {
+                bytes = is.readAllBytes();
+            }
             clients = com.alibaba.fastjson2.JSON.parseObject(bytes, Clients.class);
         } catch (Throwable ex) {
             ex.printStackTrace();

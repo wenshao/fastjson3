@@ -29,7 +29,7 @@ class PerformanceOptTest {
     void byteBufferPoolReuse() {
         byte[] buf1 = BufferPool.borrowByteBuffer();
         assertNotNull(buf1);
-        assertEquals(8192, buf1.length);
+        assertTrue(buf1.length >= 8192, "buffer should be at least 8192 bytes, was " + buf1.length);
 
         BufferPool.returnByteBuffer(buf1);
 

@@ -26,9 +26,10 @@ public class EishayParseTreeString {
 
     static {
         try {
-            InputStream is = EishayParseTreeString.class.getClassLoader()
-                    .getResourceAsStream("data/eishay/eishay_compact.json");
-            str = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            try (InputStream is = EishayParseTreeString.class.getClassLoader()
+                    .getResourceAsStream("data/eishay/eishay_compact.json")) {
+                str = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
         } catch (Throwable ex) {
             ex.printStackTrace();
         }

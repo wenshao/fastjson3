@@ -11,8 +11,9 @@ public class JJBSimpleBenchmark {
 
     static {
         try {
-            InputStream is = JJBSimpleBenchmark.class.getClassLoader().getResourceAsStream("data/jjb/client.json");
-            utf8Bytes = is.readAllBytes();
+            try (InputStream is = JJBSimpleBenchmark.class.getClassLoader().getResourceAsStream("data/jjb/client.json")) {
+                utf8Bytes = is.readAllBytes();
+            }
         } catch (Throwable ex) {
             ex.printStackTrace();
         }

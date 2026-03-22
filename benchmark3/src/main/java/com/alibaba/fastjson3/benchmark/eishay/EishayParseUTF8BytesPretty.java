@@ -27,9 +27,10 @@ public class EishayParseUTF8BytesPretty {
     static {
         try {
             // eishay.json is the pretty-printed version
-            InputStream is = EishayParseUTF8BytesPretty.class.getClassLoader()
-                    .getResourceAsStream("data/eishay/eishay.json");
-            utf8Bytes = is.readAllBytes();
+            try (InputStream is = EishayParseUTF8BytesPretty.class.getClassLoader()
+                    .getResourceAsStream("data/eishay/eishay.json")) {
+                utf8Bytes = is.readAllBytes();
+            }
         } catch (Throwable ex) {
             ex.printStackTrace();
         }

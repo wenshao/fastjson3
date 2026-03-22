@@ -22,8 +22,9 @@ public class UsersParseUTF8Bytes {
 
     static {
         try {
-            InputStream is = UsersParseUTF8Bytes.class.getClassLoader().getResourceAsStream("data/jjb/user.json");
-            utf8Bytes = is.readAllBytes();
+            try (InputStream is = UsersParseUTF8Bytes.class.getClassLoader().getResourceAsStream("data/jjb/user.json")) {
+                utf8Bytes = is.readAllBytes();
+            }
             reflectReader = com.alibaba.fastjson3.reader.ObjectReaderCreator.createObjectReader(Users.class);
             asmReader = com.alibaba.fastjson3.reader.ObjectReaderCreatorASM.createObjectReader(Users.class);
         } catch (Throwable ex) {

@@ -25,9 +25,11 @@ public class EishayWriteUTF8Bytes {
 
     static {
         try {
-            InputStream is = EishayWriteUTF8Bytes.class.getClassLoader()
-                    .getResourceAsStream("data/eishay/eishay_compact.json");
-            byte[] bytes = is.readAllBytes();
+            byte[] bytes;
+            try (InputStream is = EishayWriteUTF8Bytes.class.getClassLoader()
+                    .getResourceAsStream("data/eishay/eishay_compact.json")) {
+                bytes = is.readAllBytes();
+            }
             mc = com.alibaba.fastjson2.JSON.parseObject(bytes, MediaContent.class);
             reflectWriter = com.alibaba.fastjson3.writer.ObjectWriterCreator.createObjectWriter(MediaContent.class);
             asmWriter = com.alibaba.fastjson3.writer.ObjectWriterCreatorASM.createObjectWriter(MediaContent.class);

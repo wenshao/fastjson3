@@ -91,7 +91,7 @@ resolve_jdks() {
             fi
         done
         # Sort
-        IFS=$'\n' jdks=($(sort -t'k' -k2 -n <<<"${jdks[*]}")); unset IFS
+        IFS=$'\n' jdks=($(sort -V <<<"${jdks[*]}")); unset IFS
     else
         # Comma-separated: jdk21,jdk25
         IFS=',' read -ra jdks <<< "$arg"

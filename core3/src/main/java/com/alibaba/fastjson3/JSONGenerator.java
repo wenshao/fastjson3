@@ -1603,6 +1603,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         @Override
         public void writeNameStringCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
             int nameLen = nameChars.length;
+            int valLen = (value != null) ? value.length() : 4; // "null".length()
+            ensureCapacity(count + nameLen + valLen + 4); // quotes, comma, margin
             if (value == null) {
                 int pos = count;
                 System.arraycopy(nameChars, 0, buf, pos, nameLen);
@@ -1611,7 +1613,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 count = pos + 5;
                 return;
             }
-            int valLen = value.length();
             int pos = count;
             System.arraycopy(nameChars, 0, buf, pos, nameLen);
             pos += nameLen;
@@ -3089,6 +3090,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (hasNonAscii) return null;
             if (!JDKUtils.FAST_STRING_CREATION) return null;
             int c = outputCount();
+            // Double-check: scan for non-ASCII bytes (covers edge cases like non-ASCII map keys)
+            for (int i = 0; i < c; i++) {
+                if (buf[i] < 0) return null;
+            }
             return JDKUtils.createLatin1String(buf, 0, c);
         }
 

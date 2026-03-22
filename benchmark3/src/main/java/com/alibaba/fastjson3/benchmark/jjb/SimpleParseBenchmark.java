@@ -10,8 +10,9 @@ public class SimpleParseBenchmark {
 
     static {
         try {
-            InputStream is = SimpleParseBenchmark.class.getClassLoader().getResourceAsStream("data/jjb/client.json");
-            utf8Bytes = is.readAllBytes();
+            try (InputStream is = SimpleParseBenchmark.class.getClassLoader().getResourceAsStream("data/jjb/client.json")) {
+                utf8Bytes = is.readAllBytes();
+            }
         } catch (Throwable ex) {
             ex.printStackTrace();
         }

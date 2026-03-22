@@ -22,8 +22,10 @@ public class ClientsWriteUTF8Bytes {
 
     static {
         try {
-            InputStream is = ClientsWriteUTF8Bytes.class.getClassLoader().getResourceAsStream("data/jjb/client.json");
-            byte[] bytes = is.readAllBytes();
+            byte[] bytes;
+            try (InputStream is = ClientsWriteUTF8Bytes.class.getClassLoader().getResourceAsStream("data/jjb/client.json")) {
+                bytes = is.readAllBytes();
+            }
             clients = com.alibaba.fastjson2.JSON.parseObject(bytes, Clients.class);
             reflectWriter = com.alibaba.fastjson3.writer.ObjectWriterCreator.createObjectWriter(Clients.class);
             asmWriter = com.alibaba.fastjson3.writer.ObjectWriterCreatorASM.createObjectWriter(Clients.class);

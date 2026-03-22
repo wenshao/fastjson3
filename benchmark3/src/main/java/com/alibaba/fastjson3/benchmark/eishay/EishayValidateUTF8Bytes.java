@@ -22,9 +22,10 @@ public class EishayValidateUTF8Bytes {
 
     static {
         try {
-            InputStream is = EishayValidateUTF8Bytes.class.getClassLoader()
-                    .getResourceAsStream("data/eishay/eishay_compact.json");
-            utf8Bytes = is.readAllBytes();
+            try (InputStream is = EishayValidateUTF8Bytes.class.getClassLoader()
+                    .getResourceAsStream("data/eishay/eishay_compact.json")) {
+                utf8Bytes = is.readAllBytes();
+            }
             str = new String(utf8Bytes, StandardCharsets.UTF_8);
         } catch (Throwable ex) {
             ex.printStackTrace();

@@ -26,9 +26,10 @@ public class EishayParseTreeUTF8Bytes {
 
     static {
         try {
-            InputStream is = EishayParseTreeUTF8Bytes.class.getClassLoader()
-                    .getResourceAsStream("data/eishay/eishay_compact.json");
-            utf8Bytes = is.readAllBytes();
+            try (InputStream is = EishayParseTreeUTF8Bytes.class.getClassLoader()
+                    .getResourceAsStream("data/eishay/eishay_compact.json")) {
+                utf8Bytes = is.readAllBytes();
+            }
         } catch (Throwable ex) {
             ex.printStackTrace();
         }

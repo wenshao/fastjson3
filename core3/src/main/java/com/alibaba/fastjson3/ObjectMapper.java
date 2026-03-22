@@ -1180,7 +1180,7 @@ public final class ObjectMapper {
         }
         // Fast path: UTF8 serialize → Latin-1 String (bypasses char[] entirely).
         // Inlined to minimize call chain depth for JIT inlining.
-        if ((com.alibaba.fastjson3.util.JDKUtils.STRING_CREATOR != null || com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION)
+        if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION
                 && propertyFilters == null && valueFilters == null && nameFilters == null
                 && features == 0) {
             ObjectWriter<Object> writer = (ObjectWriter<Object>) getObjectWriter(obj.getClass());

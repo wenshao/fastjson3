@@ -25,9 +25,10 @@ public class EishayParseUTF8Bytes {
 
     static {
         try {
-            InputStream is = EishayParseUTF8Bytes.class.getClassLoader()
-                    .getResourceAsStream("data/eishay/eishay_compact.json");
-            utf8Bytes = is.readAllBytes();
+            try (InputStream is = EishayParseUTF8Bytes.class.getClassLoader()
+                    .getResourceAsStream("data/eishay/eishay_compact.json")) {
+                utf8Bytes = is.readAllBytes();
+            }
             reflectReader = com.alibaba.fastjson3.reader.ObjectReaderCreator.createObjectReader(MediaContent.class);
             asmReader = com.alibaba.fastjson3.reader.ObjectReaderCreatorASM.createObjectReader(MediaContent.class);
         } catch (Throwable ex) {

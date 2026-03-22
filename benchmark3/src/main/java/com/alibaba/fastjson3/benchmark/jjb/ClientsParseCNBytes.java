@@ -17,8 +17,9 @@ public class ClientsParseCNBytes {
 
     static {
         try {
-            InputStream is = ClientsParseCNBytes.class.getClassLoader().getResourceAsStream("data/jjb/client_cn.json");
-            utf8Bytes = is.readAllBytes();
+            try (InputStream is = ClientsParseCNBytes.class.getClassLoader().getResourceAsStream("data/jjb/client_cn.json")) {
+                utf8Bytes = is.readAllBytes();
+            }
         } catch (Throwable ex) {
             ex.printStackTrace();
         }

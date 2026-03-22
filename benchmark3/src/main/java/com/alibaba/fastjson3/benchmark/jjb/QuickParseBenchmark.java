@@ -24,8 +24,9 @@ public class QuickParseBenchmark {
 
     static {
         try {
-            InputStream is = QuickParseBenchmark.class.getClassLoader().getResourceAsStream("data/jjb/client.json");
-            utf8Bytes = is.readAllBytes();
+            try (InputStream is = QuickParseBenchmark.class.getClassLoader().getResourceAsStream("data/jjb/client.json")) {
+                utf8Bytes = is.readAllBytes();
+            }
         } catch (Throwable ex) {
             ex.printStackTrace();
         }
