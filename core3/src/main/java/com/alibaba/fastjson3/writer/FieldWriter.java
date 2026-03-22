@@ -466,7 +466,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     private void writeDouble(JSONGenerator generator, Object bean, long features) {
         if (fieldOffset >= 0 && fieldClass == double.class) {
             double val = JDKUtils.getDouble(bean, fieldOffset);
-            if (generator.notWriteDefaultValue && val == 0.0) {
+            if (generator.notWriteDefaultValue && Double.doubleToRawLongBits(val) == 0L) {
                 return;
             }
             generator.writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
@@ -483,7 +483,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     private void writeFloat(JSONGenerator generator, Object bean, long features) {
         if (fieldOffset >= 0 && fieldClass == float.class) {
             float val = JDKUtils.getFloat(bean, fieldOffset);
-            if (generator.notWriteDefaultValue && val == 0.0f) {
+            if (generator.notWriteDefaultValue && Float.floatToRawIntBits(val) == 0) {
                 return;
             }
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);

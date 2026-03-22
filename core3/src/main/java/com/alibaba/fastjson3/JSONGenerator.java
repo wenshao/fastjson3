@@ -93,15 +93,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         // Browser-compatible: standard + < > ( )
         System.arraycopy(ESCAPE_CHARS, 0, ESCAPE_CHARS_BROWSER, 0, 128);
-        ESCAPE_CHARS_BROWSER['<'] = 'L'; // marker for \u003C
-        ESCAPE_CHARS_BROWSER['>'] = 'G'; // marker for \u003E
-        ESCAPE_CHARS_BROWSER['('] = 'P'; // marker for \u0028
-        ESCAPE_CHARS_BROWSER[')'] = 'Q'; // marker for \u0029
+        ESCAPE_CHARS_BROWSER['<'] = '\1'; // marker for \u003C
+        ESCAPE_CHARS_BROWSER['>'] = '\2'; // marker for \u003E
+        ESCAPE_CHARS_BROWSER['('] = '\3'; // marker for \u0028
+        ESCAPE_CHARS_BROWSER[')'] = '\4'; // marker for \u0029
 
         // Secure: browser + & '
         System.arraycopy(ESCAPE_CHARS_BROWSER, 0, ESCAPE_CHARS_SECURE, 0, 128);
-        ESCAPE_CHARS_SECURE['&'] = 'A'; // marker for \u0026
-        ESCAPE_CHARS_SECURE['\''] = 'S'; // marker for \u0027
+        ESCAPE_CHARS_SECURE['&'] = '\5'; // marker for \u0026
+        ESCAPE_CHARS_SECURE['\''] = '\6'; // marker for \u0027
     }
 
     static final int MAX_WRITE_DEPTH = 512;
@@ -1230,6 +1230,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeInt32(int val) {
+            if (nonStringAsString) {
+                writeString(Integer.toString(val));
+                return;
+            }
             ensureCapacity(count + 12);
             count += writeIntToChars(val, buf, count);
             buf[count++] = ',';
@@ -1237,7 +1241,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeInt64(long val) {
-            if (longAsString) {
+            if (longAsString || nonStringAsString) {
                 writeString(Long.toString(val));
                 return;
             }
@@ -1248,6 +1252,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeFloat(float val) {
+            if (nonStringAsString) {
+                writeString(Float.toString(val));
+                return;
+            }
             if (Float.isNaN(val) || Float.isInfinite(val)) {
                 writeNull();
                 return;
@@ -1262,6 +1270,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeDouble(double val) {
+            if (nonStringAsString) {
+                writeString(Double.toString(val));
+                return;
+            }
             if (Double.isNaN(val) || Double.isInfinite(val)) {
                 writeNull();
                 return;
@@ -1309,11 +1321,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     char escaped = escapeChars[ch];
                     if (escaped != 0 && ch != '/') {
                         ensureCapacity(count + 6 + (len - i) + 3);
-                        if (escaped == '"' || escaped == '\\') {
-                            buf[count++] = '\\';
-                            buf[count++] = escaped;
-                        } else if (escaped == 'b' || escaped == 'f' || escaped == 'n'
-                                || escaped == 'r' || escaped == 't') {
+                        if (escaped == '"' || escaped == '\\' || escaped == 'b' || escaped == 'f'
+                                || escaped == 'n' || escaped == 'r' || escaped == 't') {
                             buf[count++] = '\\';
                             buf[count++] = escaped;
                         } else {
@@ -1784,6 +1793,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeInt32(int val) {
+            if (nonStringAsString) {
+                writeString(Integer.toString(val));
+                return;
+            }
             // max 11 digits, within SAFE_MARGIN
             count += writeIntToBytes(val, buf, count);
             buf[count++] = ',';
@@ -1791,7 +1804,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeInt64(long val) {
-            if (longAsString) {
+            if (longAsString || nonStringAsString) {
                 writeString(Long.toString(val));
                 return;
             }
@@ -1802,6 +1815,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeFloat(float val) {
+            if (nonStringAsString) {
+                writeString(Float.toString(val));
+                return;
+            }
             if (Float.isNaN(val) || Float.isInfinite(val)) {
                 writeNull();
                 return;
@@ -1812,6 +1829,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeDouble(double val) {
+            if (nonStringAsString) {
+                writeString(Double.toString(val));
+                return;
+            }
             count = com.alibaba.fastjson3.util.NumberUtils.writeDouble(buf, count, val, true, false);
             buf[count++] = ',';
         }
@@ -1986,7 +2007,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
 
-            if (JDKUtils.getStringCoder(val) == 0) {
+            if (JDKUtils.getStringCoder(val) == 0 && escapeChars == ESCAPE_CHARS) {
                 byte[] value = (byte[]) JDKUtils.getStringValue(val);
                 // Inline writeLatinString: eliminates 1 method call level for list string elements
                 ensureCapacity(value.length + 3);
@@ -1996,7 +2017,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
             // General path: char-by-char with escaping and UTF-8 encoding
             int len = val.length();
-            ensureCapacity(len + 3);
+            int capacity = escapeNoneAscii ? len * 6 + 6 : len * 3 + 6;
+            ensureCapacity(capacity);
             int pos = count;
             buf[pos++] = '"';
             for (int i = 0; i < len; i++) {
@@ -2004,11 +2026,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 if (ch < 128) {
                     char escaped = escapeChars[ch];
                     if (escaped != 0 && ch != '/') {
-                        if (escaped == '"' || escaped == '\\') {
-                            buf[pos++] = '\\';
-                            buf[pos++] = (byte) escaped;
-                        } else if (escaped == 'b' || escaped == 'f' || escaped == 'n'
-                                || escaped == 'r' || escaped == 't') {
+                        if (escaped == '"' || escaped == '\\' || escaped == 'b' || escaped == 'f'
+                                || escaped == 'n' || escaped == 'r' || escaped == 't') {
                             buf[pos++] = '\\';
                             buf[pos++] = (byte) escaped;
                         } else {

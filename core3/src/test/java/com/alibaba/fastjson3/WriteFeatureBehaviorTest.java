@@ -196,4 +196,64 @@ class WriteFeatureBehaviorTest {
         String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
         assertEquals(String.valueOf(Thread.State.BLOCKED.ordinal()), json);
     }
+
+    // POJO serialization with NotWriteDefaultValue
+    @Test
+    void notWriteDefaultValue_pojo() {
+        DefaultValueBean bean = new DefaultValueBean();
+        bean.name = "hello";
+        String json = JSON.toJSONString(bean, WriteFeature.NotWriteDefaultValue, WriteFeature.FieldBased);
+        assertFalse(json.contains("\"count\""), "int 0 should be skipped: " + json);
+        assertFalse(json.contains("\"flag\""), "boolean false should be skipped: " + json);
+        assertTrue(json.contains("\"name\""), "non-default should be present: " + json);
+    }
+
+    public static class DefaultValueBean {
+        public int count;
+        public boolean flag;
+        public String name;
+    }
+
+    // BrowserCompatible with pure ASCII in UTF8 mode
+    @Test
+    void browserCompatible_pureAscii_utf8() {
+        String input = "<div>test</div>";
+        byte[] bytes = JSON.toJSONBytes(input, WriteFeature.BrowserCompatible);
+        String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        assertFalse(json.contains("<"), "< should be escaped in UTF8: " + json);
+        assertFalse(json.contains(">"), "> should be escaped in UTF8: " + json);
+    }
+
+    // EscapeNoneAscii with emoji (surrogate pairs)
+    @Test
+    void escapeNoneAscii_emoji() {
+        String input = "Hello \uD83D\uDE0D";
+        String json = JSON.toJSONString(input, WriteFeature.EscapeNoneAscii);
+        assertTrue(json.contains("Hello"), "ASCII preserved");
+        assertTrue(json.contains("\\u"), "Emoji should be escaped: " + json);
+        // Round-trip
+        String parsed = JSON.parseObject(json, String.class);
+        assertEquals(input, parsed);
+    }
+
+    // WriteNonStringValueAsString
+    @Test
+    void nonStringValueAsString() {
+        JSONObject obj = new JSONObject();
+        obj.put("num", 42);
+        obj.put("pi", 3.14);
+        String json = obj.toJSONString(WriteFeature.WriteNonStringValueAsString);
+        assertTrue(json.contains("\"42\""), "int should be string: " + json);
+        assertTrue(json.contains("\"3.14\""), "double should be string: " + json);
+    }
+
+    // NonStringValueAsString UTF8
+    @Test
+    void nonStringValueAsString_utf8() {
+        JSONObject obj = new JSONObject();
+        obj.put("num", 42);
+        byte[] bytes = JSON.toJSONBytes(obj, WriteFeature.WriteNonStringValueAsString);
+        String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(json.contains("\"42\""), "int should be string in UTF8: " + json);
+    }
 }
