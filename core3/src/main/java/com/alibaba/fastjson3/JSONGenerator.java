@@ -1940,6 +1940,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         /**
          * Check 4 bytes (as an int) for JSON escape characters.
+         * Also rejects bytes >= 0x80 (Latin-1 high chars that need 2-byte UTF-8 output).
          */
         public static boolean noEscape4(int v) {
             int hiMask = 0x80808080;
@@ -1949,7 +1950,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             int quote = (xq - lo) & ~xq & hiMask;
             int xb = v ^ 0x5C5C5C5C;
             int bslash = (xb - lo) & ~xb & hiMask;
-            return (ctrl | quote | bslash) == 0;
+            int hi = v & hiMask; // bytes >= 0x80 require 2-byte UTF-8
+            return (ctrl | quote | bslash | hi) == 0;
         }
 
         /**
@@ -1984,12 +1986,19 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         pos += 4; i += 4;
                     }
                 }
-                // Remaining 0-3 bytes
+                // Tail loop: 0-7 bytes remain after 8-byte chunks (further reduced to 0-3 if 4-byte loop runs)
                 for (; i < len; i++) {
                     byte b = value[i];
                     if (b >= 0x20 && b != '"' && b != '\\') {
                         buf[pos++] = b;
                     } else {
+                        // Max 6 bytes output per char: control chars use \\uXXXX (6 bytes),
+                        // Latin-1 high bytes (>= 0x80) use 2-byte UTF-8.
+                        if (pos + 6 > buf.length) {
+                            count = pos;
+                            ensureCapacity((len - i) * 2 + 6);
+                            pos = count;
+                        }
                         pos = writeEscapedByte(b, pos);
                     }
                 }
