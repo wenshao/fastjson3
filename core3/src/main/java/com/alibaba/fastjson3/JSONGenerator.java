@@ -1986,13 +1986,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         pos += 4; i += 4;
                     }
                 }
-                // Remaining 0-7 bytes (after 8-byte chunks; at most 3 after 4-byte acceleration)
+                // Tail loop: 0-7 bytes remain after 8-byte chunks (further reduced to 0-3 if 4-byte loop runs)
                 for (; i < len; i++) {
                     byte b = value[i];
                     if (b >= 0x20 && b != '"' && b != '\\') {
                         buf[pos++] = b;
                     } else {
-                        // Capacity check: writeEscapedByte may write 2 bytes for Latin-1 high chars
+                        // Max 6 bytes output per char: control chars use \\uXXXX (6 bytes),
+                        // Latin-1 high bytes (>= 0x80) use 2-byte UTF-8.
                         if (pos + 6 > buf.length) {
                             count = pos;
                             ensureCapacity((len - i) * 2 + 6);
