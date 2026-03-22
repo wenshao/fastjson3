@@ -28,8 +28,14 @@ public final class JSONPatch {
      * @throws JSONException if any operation fails
      */
     public static String apply(String target, String patch) {
+        if (patch == null) {
+            throw new JSONException("JSON Patch document must not be null");
+        }
         Object targetObj = JSON.parse(target);
         JSONArray operations = JSON.parseArray(patch);
+        if (operations == null) {
+            throw new JSONException("JSON Patch document must be a JSON array");
+        }
         Object result = apply(targetObj, operations);
         return JSON.toJSONString(result);
     }
@@ -43,6 +49,9 @@ public final class JSONPatch {
      * @throws JSONException if any operation fails
      */
     public static Object apply(Object target, JSONArray operations) {
+        if (operations == null) {
+            throw new JSONException("JSON Patch operations array must not be null");
+        }
         Object current = target;
         for (int i = 0; i < operations.size(); i++) {
             Object op = operations.get(i);
@@ -239,12 +248,13 @@ public final class JSONPatch {
                 return bda.compareTo(bdb) == 0;
             }
             if (na instanceof java.math.BigDecimal bda) {
-                return bda.compareTo(java.math.BigDecimal.valueOf(nb.doubleValue())) == 0;
+                return bda.compareTo(new java.math.BigDecimal(nb.toString())) == 0;
             }
             if (nb instanceof java.math.BigDecimal bdb) {
-                return bdb.compareTo(java.math.BigDecimal.valueOf(na.doubleValue())) == 0;
+                return bdb.compareTo(new java.math.BigDecimal(na.toString())) == 0;
             }
-            return Double.compare(na.doubleValue(), nb.doubleValue()) == 0;
+            return new java.math.BigDecimal(na.toString())
+                    .compareTo(new java.math.BigDecimal(nb.toString())) == 0;
         }
         return a.equals(b);
     }

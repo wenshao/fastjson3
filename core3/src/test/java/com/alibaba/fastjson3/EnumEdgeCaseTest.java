@@ -98,9 +98,8 @@ class EnumEdgeCaseTest {
     @Test
     void writeEnum_withJsonValue() {
         String json = JSON.toJSONString(Priority.LOW);
-        // With @JSONField(value=true) on getCode(), should serialize as the code
-        assertTrue(json.equals("1") || json.equals("\"LOW\""),
-                "Expected code or name: " + json);
+        // @JSONField(value=true) on getCode() serializes as the code value
+        assertEquals("1", json, "Expected code representation: " + json);
     }
 
     @Test

@@ -284,13 +284,8 @@ class TypeCoercionTest {
     @Test
     void emptyString_getIntValue() {
         JSONObject obj = JSON.parseObject("{\"val\":\"\"}");
-        // Empty string to int should be 0 or throw
-        try {
-            int val = obj.getIntValue("val");
-            assertEquals(0, val);
-        } catch (Exception ignored) {
-            // Also acceptable: throw on empty string
-        }
+        // Empty string coerces to 0 via getIntValue
+        assertEquals(0, obj.getIntValue("val"));
     }
 
     @Test
