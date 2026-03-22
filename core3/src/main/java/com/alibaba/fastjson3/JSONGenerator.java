@@ -896,7 +896,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                                             com.alibaba.fastjson3.writer.FieldWriter fw,
                                             Object bean, long features) {
         if (fw.customWriter != null || fw.format != null || fw.label != null || gen.bypassStaticPath
-                || fw.inclusion != com.alibaba.fastjson3.annotation.Inclusion.DEFAULT) {
+                || fw.inclusion != com.alibaba.fastjson3.annotation.Inclusion.DEFAULT
+                || fw.fieldFeatures != 0) {
             gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
         }
         switch (fw.typeTag) {
@@ -1147,7 +1148,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                                                 com.alibaba.fastjson3.writer.FieldWriter fw,
                                                 Object bean, long features) {
         if (fw.customWriter != null || fw.format != null || fw.label != null || gen.bypassStaticPath
-                || fw.inclusion != com.alibaba.fastjson3.annotation.Inclusion.DEFAULT) {
+                || fw.inclusion != com.alibaba.fastjson3.annotation.Inclusion.DEFAULT
+                || fw.fieldFeatures != 0) {
             gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
         }
         char[] nameChars = fw.nameChars;
