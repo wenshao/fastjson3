@@ -2055,8 +2055,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             }
 
             // General path: char-by-char with escaping and UTF-8 encoding
+            // Worst case: each char may expand to 6 bytes (e.g. control chars, unicode escapes)
             int len = val.length();
-            int capacity = (escapeNoneAscii || extendedEscape) ? len * 6 + 6 : len * 3 + 6;
+            int capacity = len * 6 + 6;
             ensureCapacity(capacity);
             int pos = count;
             buf[pos++] = '"';
