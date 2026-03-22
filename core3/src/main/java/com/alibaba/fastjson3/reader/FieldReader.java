@@ -569,16 +569,15 @@ public final class FieldReader implements Comparable<FieldReader> {
     }
 
     /**
-     * Resolve an enum constant by name from the cached enum constants.
+     * Resolve an enum constant by name using Java's optimized Enum.valueOf lookup.
      */
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     private Object resolveEnumValue(String name) {
-        for (Object ec : enumConstants) {
-            if (((Enum) ec).name().equals(name)) {
-                return ec;
-            }
+        try {
+            return Enum.valueOf((Class) fieldClass, name);
+        } catch (IllegalArgumentException e) {
+            throw new JSONException("no enum constant " + fieldClass.getName() + "." + name, e);
         }
-        throw new JSONException("no enum constant " + fieldClass.getName() + "." + name);
     }
 
     private Object parseWithFormatter(String str) {

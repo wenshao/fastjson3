@@ -907,8 +907,6 @@ public final class ObjectReaderCreator {
                     } else if (tt == FieldReader.TAG_ENUM && b[off] == '"') {
                         // Fast path for enum string values — readStringOff + setObjectValue does String→enum conversion
                         off = utf8.readStringOff(off, instance, reader);
-                    } else if (tt == FieldReader.TAG_ENUM && off + 3 < end && b[off] == 'n' && b[off + 1] == 'u' && b[off + 2] == 'l' && b[off + 3] == 'l') {
-                        off += 4;
                     } else {
                         // Sync offset for complex types (POJO, LIST, ARRAY, etc.)
                         // Also handles TAG_STRING with custom deserializeUsing
