@@ -1192,10 +1192,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (pretty) {
                 indentLevel--;
                 if (count > 0 && buf[count - 1] == '{') {
-                    // empty object: {}
                     ensureCapacity(count + 2);
-                    buf[count++] = '}';
-                    buf[count++] = ',';
+                    buf[count] = '}'; buf[count + 1] = ',';
+                    count += 2;
                     return;
                 }
                 if (count > 0 && buf[count - 1] == ',') {
@@ -1203,16 +1202,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 }
                 writeNewlineIndent();
                 ensureCapacity(count + 2);
-                buf[count++] = '}';
-                buf[count++] = ',';
+                buf[count] = '}'; buf[count + 1] = ',';
+                count += 2;
             } else {
-                // remove trailing comma if present
                 if (count > 0 && buf[count - 1] == ',') {
                     count--;
                 }
                 ensureCapacity(count + 2);
-                buf[count++] = '}';
-                buf[count++] = ',';
+                buf[count] = '}'; buf[count + 1] = ',';
+                count += 2;
             }
         }
 
@@ -1436,32 +1434,25 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         @Override
         public void writeNull() {
             ensureCapacity(count + 5);
-            buf[count++] = 'n';
-            buf[count++] = 'u';
-            buf[count++] = 'l';
-            buf[count++] = 'l';
-            buf[count++] = ',';
+            int pos = count;
+            buf[pos] = 'n'; buf[pos + 1] = 'u'; buf[pos + 2] = 'l'; buf[pos + 3] = 'l'; buf[pos + 4] = ',';
+            count = pos + 5;
         }
 
         @Override
         public void writeTrue() {
             ensureCapacity(count + 5);
-            buf[count++] = 't';
-            buf[count++] = 'r';
-            buf[count++] = 'u';
-            buf[count++] = 'e';
-            buf[count++] = ',';
+            int pos = count;
+            buf[pos] = 't'; buf[pos + 1] = 'r'; buf[pos + 2] = 'u'; buf[pos + 3] = 'e'; buf[pos + 4] = ',';
+            count = pos + 5;
         }
 
         @Override
         public void writeFalse() {
             ensureCapacity(count + 6);
-            buf[count++] = 'f';
-            buf[count++] = 'a';
-            buf[count++] = 'l';
-            buf[count++] = 's';
-            buf[count++] = 'e';
-            buf[count++] = ',';
+            int pos = count;
+            buf[pos] = 'f'; buf[pos + 1] = 'a'; buf[pos + 2] = 'l'; buf[pos + 3] = 's'; buf[pos + 4] = 'e'; buf[pos + 5] = ',';
+            count = pos + 6;
         }
 
         @Override
@@ -1588,17 +1579,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                                 // UseSingleQuotes: don't escape double quotes
                                 buf[count++] = ch;
                             } else {
-                                buf[count++] = '\\';
-                                buf[count++] = escaped;
+                                buf[count] = '\\';
+                                buf[count + 1] = escaped;
+                                count += 2;
                             }
                         } else {
-                            // Browser/secure unicode escape
-                            buf[count++] = '\\';
-                            buf[count++] = 'u';
-                            buf[count++] = '0';
-                            buf[count++] = '0';
-                            buf[count++] = DIGITS[ch >> 4];
-                            buf[count++] = DIGITS[ch & 0xF];
+                            buf[count] = '\\'; buf[count + 1] = 'u';
+                            buf[count + 2] = '0'; buf[count + 3] = '0';
+                            buf[count + 4] = DIGITS[ch >> 4]; buf[count + 5] = DIGITS[ch & 0xF];
+                            count += 6;
                         }
                     } else if (q != '"' && ch == q) {
                         // UseSingleQuotes: escape the single quote character
@@ -1606,19 +1595,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         buf[count++] = '\\';
                         buf[count++] = q;
                     } else if (ch < 0x20) {
-                        // control character
                         ensureCapacity(count + 6 + (len - i) + 3);
-                        buf[count++] = '\\';
-                        buf[count++] = 'u';
-                        buf[count++] = '0';
-                        buf[count++] = '0';
-                        buf[count++] = DIGITS[ch >> 4];
-                        buf[count++] = DIGITS[ch & 0xF];
+                        buf[count] = '\\'; buf[count + 1] = 'u';
+                        buf[count + 2] = '0'; buf[count + 3] = '0';
+                        buf[count + 4] = DIGITS[ch >> 4]; buf[count + 5] = DIGITS[ch & 0xF];
+                        count += 6;
                     } else {
                         buf[count++] = ch;
                     }
                 } else {
-                    // Non-ASCII
                     if (escapeNoneAscii) {
                         ensureCapacity(count + 6 + (len - i) + 3);
                         buf[count++] = '\\';
