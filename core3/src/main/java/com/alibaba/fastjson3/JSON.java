@@ -255,7 +255,7 @@ public final class JSON {
         }
         // Fast path: UTF8 serialize → Latin-1 String.
         // Fully inlined to help JIT optimization.
-        if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+        if (com.alibaba.fastjson3.util.JDKUtils.STRING_CREATOR != null || com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
             ObjectWriter<Object> writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(obj.getClass());
             if (writer != null) {
                 try (JSONGenerator.UTF8 gen = (JSONGenerator.UTF8) JSONGenerator.ofUTF8()) {
