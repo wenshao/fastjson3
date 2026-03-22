@@ -78,6 +78,9 @@ public final class FieldReader implements Comparable<FieldReader> {
     // Optional: JSON Schema for validation during deserialization (from @JSONField(schema=))
     public final JSONSchema jsonSchema;
 
+    // Cached enum constants for enum fields (null for non-enum fields)
+    final Object[] enumConstants;
+
     // Index in the fieldReaders array (set after construction)
     public int index = -1;
 
@@ -96,6 +99,7 @@ public final class FieldReader implements Comparable<FieldReader> {
     public static final int TAG_POJO = 12;
     public static final int TAG_STRING_ARRAY = 13;
     public static final int TAG_LONG_ARRAY = 14;
+    public static final int TAG_ENUM = 15;
     public static final int TAG_GENERIC = 0;
 
     public int typeTag;
@@ -185,6 +189,9 @@ public final class FieldReader implements Comparable<FieldReader> {
         // Extract element class for List<X>
         this.elementClass = resolveElementClass(fieldType, fieldClass);
 
+        // Cache enum constants for enum fields
+        this.enumConstants = fieldClass.isEnum() ? fieldClass.getEnumConstants() : null;
+
         // Resolve Unsafe field offset (look up corresponding field if we only have a setter)
         this.fieldOffset = resolveFieldOffset(field, setter, fieldName, fieldClass);
 
@@ -245,6 +252,8 @@ public final class FieldReader implements Comparable<FieldReader> {
             return TAG_STRING_ARRAY;
         } else if (fc == long[].class) {
             return TAG_LONG_ARRAY;
+        } else if (fc.isEnum()) {
+            return TAG_ENUM;
         }
         return TAG_GENERIC;
     }
@@ -327,6 +336,9 @@ public final class FieldReader implements Comparable<FieldReader> {
      * Set a reference-type value directly via Unsafe, skipping primitive type checks.
      */
     public void setObjectValue(Object bean, Object value) {
+        if (enumConstants != null && value instanceof String name) {
+            value = resolveEnumValue(name);
+        }
         if (jsonSchema != null && value != null) {
             jsonSchema.assertValidate(value);
         }
@@ -512,6 +524,20 @@ public final class FieldReader implements Comparable<FieldReader> {
             }
         }
 
+        // String/Number → Enum conversion
+        if (enumConstants != null) {
+            if (value instanceof String name) {
+                return resolveEnumValue(name);
+            }
+            if (value instanceof Number number) {
+                int ordinal = number.intValue();
+                if (ordinal >= 0 && ordinal < enumConstants.length) {
+                    return enumConstants[ordinal];
+                }
+                throw new JSONException("no enum ordinal " + ordinal + " for " + fieldClass.getName());
+            }
+        }
+
         // Number → Year conversion
         if (value instanceof Number number && fieldClass == Year.class) {
             return Year.of(number.intValue());
@@ -540,6 +566,18 @@ public final class FieldReader implements Comparable<FieldReader> {
 
         // No conversion found; return as-is
         return value;
+    }
+
+    /**
+     * Resolve an enum constant by name using Java's optimized Enum.valueOf lookup.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private Object resolveEnumValue(String name) {
+        try {
+            return Enum.valueOf((Class) fieldClass, name);
+        } catch (IllegalArgumentException e) {
+            throw new JSONException("no enum constant " + fieldClass.getName() + "." + name, e);
+        }
     }
 
     private Object parseWithFormatter(String str) {
