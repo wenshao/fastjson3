@@ -444,7 +444,11 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 writeNull(generator, features);
                 return;
             }
-            generator.writeNameInt32(nameByteLongs, nameBytesLen, nameBytes, nameChars, (Integer) value);
+            int val = (Integer) value;
+            if (generator.notWriteDefaultValue && val == 0) {
+                return;
+            }
+            generator.writeNameInt32(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         }
     }
 
@@ -461,7 +465,11 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 writeNull(generator, features);
                 return;
             }
-            generator.writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars, (Long) value);
+            long val = (Long) value;
+            if (generator.notWriteDefaultValue && val == 0L) {
+                return;
+            }
+            generator.writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         }
     }
 
@@ -478,7 +486,11 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 writeNull(generator, features);
                 return;
             }
-            generator.writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars, (Double) value);
+            double val = (Double) value;
+            if (generator.notWriteDefaultValue && Double.doubleToRawLongBits(val) == 0L) {
+                return;
+            }
+            generator.writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         }
     }
 
@@ -496,8 +508,12 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 writeNull(generator, features);
                 return;
             }
+            float val = (Float) value;
+            if (generator.notWriteDefaultValue && Float.floatToRawIntBits(val) == 0) {
+                return;
+            }
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-            generator.writeFloat((Float) value);
+            generator.writeFloat(val);
         }
     }
 
@@ -514,7 +530,11 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 writeNull(generator, features);
                 return;
             }
-            generator.writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars, (Boolean) value);
+            boolean val = (Boolean) value;
+            if (generator.notWriteDefaultValue && !val) {
+                return;
+            }
+            generator.writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         }
     }
 
