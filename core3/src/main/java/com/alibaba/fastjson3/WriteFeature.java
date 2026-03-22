@@ -91,7 +91,7 @@ public enum WriteFeature {
     ReferenceDetection,
 
     /**
-     * Browser compatible mode (escape special chars)
+     * Browser compatible mode: escape &lt;, &gt;, (, )
      */
     BrowserCompatible,
 
@@ -103,7 +103,25 @@ public enum WriteFeature {
     /**
      * Optimize output for ASCII content
      */
-    OptimizedForAscii;
+    OptimizedForAscii,
+
+    /** Skip fields with default values: 0/0L/0.0/0.0f/false for both primitive and boxed types */
+    NotWriteDefaultValue,
+
+    /** Skip empty collections/arrays */
+    NotWriteEmptyArray,
+
+    /** Write enum using ordinal() instead of name() */
+    WriteEnumUsingOrdinal,
+
+    /** Write boolean as 0/1 */
+    WriteBooleanAsNumber,
+
+    /** Strict browser escaping: escape &lt;, &gt;, (, ), &amp;, ' (combine with EscapeNoneAscii for U+2028/U+2029) */
+    BrowserSecure,
+
+    /** Shorthand: null numbers→0, null strings→"", null booleans→false, null lists→[] */
+    NullAsDefaultValue;
 
     public final long mask;
 

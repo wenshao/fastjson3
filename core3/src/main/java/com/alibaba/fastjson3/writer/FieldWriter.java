@@ -319,6 +319,8 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     }
 
     private void writeNull(JSONGenerator generator, long features) {
+        // Merge with generator features to pick up NullAsDefaultValue expansion
+        features |= generator.getFeatures();
         if (inclusion == Inclusion.ALWAYS
                 || (features & WriteFeature.WriteNulls.mask) != 0) {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
@@ -342,7 +344,15 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 || Number.class.isAssignableFrom(fieldClass))
                 && (features & WriteFeature.WriteNullNumberAsZero.mask) != 0) {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-            generator.writeInt32(0);
+            if (typeTag == TYPE_LONG) {
+                generator.writeInt64(0L);
+            } else if (typeTag == TYPE_DOUBLE) {
+                generator.writeDouble(0D);
+            } else if (typeTag == TYPE_FLOAT) {
+                generator.writeFloat(0F);
+            } else {
+                generator.writeInt32(0);
+            }
         } else if ((typeTag == TYPE_BOOL || fieldClass == Boolean.class)
                 && (features & WriteFeature.WriteNullBooleanAsFalse.mask) != 0) {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
@@ -431,72 +441,108 @@ public final class FieldWriter implements Comparable<FieldWriter> {
 
     private void writeInt(JSONGenerator generator, Object bean, long features) {
         if (fieldOffset >= 0 && fieldClass == int.class) {
-            generator.writeNameInt32(nameByteLongs, nameBytesLen, nameBytes, nameChars,
-                    JDKUtils.getInt(bean, fieldOffset));
+            int val = JDKUtils.getInt(bean, fieldOffset);
+            if (generator.notWriteDefaultValue && val == 0) {
+                return;
+            }
+            generator.writeNameInt32(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         } else {
             Object value = getObjectValue(bean);
             if (value == null) {
                 writeNull(generator, features);
                 return;
             }
-            generator.writeNameInt32(nameByteLongs, nameBytesLen, nameBytes, nameChars, (Integer) value);
+            int val = (Integer) value;
+            if (generator.notWriteDefaultValue && val == 0) {
+                return;
+            }
+            generator.writeNameInt32(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         }
     }
 
     private void writeLong(JSONGenerator generator, Object bean, long features) {
         if (fieldOffset >= 0 && fieldClass == long.class) {
-            generator.writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars,
-                    JDKUtils.getLongField(bean, fieldOffset));
+            long val = JDKUtils.getLongField(bean, fieldOffset);
+            if (generator.notWriteDefaultValue && val == 0L) {
+                return;
+            }
+            generator.writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         } else {
             Object value = getObjectValue(bean);
             if (value == null) {
                 writeNull(generator, features);
                 return;
             }
-            generator.writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars, (Long) value);
+            long val = (Long) value;
+            if (generator.notWriteDefaultValue && val == 0L) {
+                return;
+            }
+            generator.writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         }
     }
 
     private void writeDouble(JSONGenerator generator, Object bean, long features) {
         if (fieldOffset >= 0 && fieldClass == double.class) {
-            generator.writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars,
-                    JDKUtils.getDouble(bean, fieldOffset));
+            double val = JDKUtils.getDouble(bean, fieldOffset);
+            if (generator.notWriteDefaultValue && Double.doubleToRawLongBits(val) == 0L) {
+                return;
+            }
+            generator.writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         } else {
             Object value = getObjectValue(bean);
             if (value == null) {
                 writeNull(generator, features);
                 return;
             }
-            generator.writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars, (Double) value);
+            double val = (Double) value;
+            if (generator.notWriteDefaultValue && Double.doubleToRawLongBits(val) == 0L) {
+                return;
+            }
+            generator.writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         }
     }
 
     private void writeFloat(JSONGenerator generator, Object bean, long features) {
         if (fieldOffset >= 0 && fieldClass == float.class) {
+            float val = JDKUtils.getFloat(bean, fieldOffset);
+            if (generator.notWriteDefaultValue && Float.floatToRawIntBits(val) == 0) {
+                return;
+            }
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-            generator.writeFloat(JDKUtils.getFloat(bean, fieldOffset));
+            generator.writeFloat(val);
         } else {
             Object value = getObjectValue(bean);
             if (value == null) {
                 writeNull(generator, features);
                 return;
             }
+            float val = (Float) value;
+            if (generator.notWriteDefaultValue && Float.floatToRawIntBits(val) == 0) {
+                return;
+            }
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-            generator.writeFloat((Float) value);
+            generator.writeFloat(val);
         }
     }
 
     private void writeBool(JSONGenerator generator, Object bean, long features) {
         if (fieldOffset >= 0 && fieldClass == boolean.class) {
-            generator.writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars,
-                    JDKUtils.getBoolean(bean, fieldOffset));
+            boolean val = JDKUtils.getBoolean(bean, fieldOffset);
+            if (generator.notWriteDefaultValue && !val) {
+                return;
+            }
+            generator.writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         } else {
             Object value = getObjectValue(bean);
             if (value == null) {
                 writeNull(generator, features);
                 return;
             }
-            generator.writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars, (Boolean) value);
+            boolean val = (Boolean) value;
+            if (generator.notWriteDefaultValue && !val) {
+                return;
+            }
+            generator.writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars, val);
         }
     }
 
@@ -509,6 +555,14 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         if (inclusion == Inclusion.NON_EMPTY && isEmpty(value)) {
             return;
+        }
+        if (generator.notWriteEmptyArray) {
+            if (value instanceof java.util.Collection && ((java.util.Collection<?>) value).isEmpty()) {
+                return;
+            }
+            if (value.getClass().isArray() && java.lang.reflect.Array.getLength(value) == 0) {
+                return;
+            }
         }
         // Format temporal types with explicit pattern
         if (formatter != null) {
@@ -579,9 +633,12 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && list.isEmpty()) {
             return;
         }
+        if (generator.notWriteEmptyArray && list.isEmpty()) {
+            return;
+        }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         generator.startArray();
-        
+
         int size = list.size();
         // Capacity pre-calculation for List<String>
         if (size > 0) {
@@ -609,6 +666,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             return;
         }
         if (inclusion == Inclusion.NON_EMPTY && list.isEmpty()) {
+            return;
+        }
+        if (generator.notWriteEmptyArray && list.isEmpty()) {
             return;
         }
         generator.incrementDepth();
@@ -659,6 +719,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && value.length == 0) {
             return;
         }
+        if (generator.notWriteEmptyArray && value.length == 0) {
+            return;
+        }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         generator.writeLongArray(value);
     }
@@ -670,6 +733,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             return;
         }
         if (inclusion == Inclusion.NON_EMPTY && value.length == 0) {
+            return;
+        }
+        if (generator.notWriteEmptyArray && value.length == 0) {
             return;
         }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
@@ -685,6 +751,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && value.length == 0) {
             return;
         }
+        if (generator.notWriteEmptyArray && value.length == 0) {
+            return;
+        }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         generator.writeStringArray(value);
     }
@@ -696,6 +765,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             return;
         }
         if (inclusion == Inclusion.NON_EMPTY && value.length == 0) {
+            return;
+        }
+        if (generator.notWriteEmptyArray && value.length == 0) {
             return;
         }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
@@ -710,6 +782,14 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         if (inclusion == Inclusion.NON_EMPTY && isEmpty(value)) {
             return;
+        }
+        if (generator.notWriteEmptyArray) {
+            if (value instanceof java.util.Collection && ((java.util.Collection<?>) value).isEmpty()) {
+                return;
+            }
+            if (value.getClass().isArray() && java.lang.reflect.Array.getLength(value) == 0) {
+                return;
+            }
         }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         if (value instanceof String s) {
@@ -727,9 +807,11 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         } else if (value instanceof BigDecimal bd) {
             generator.writeDecimal(bd);
         } else if (isContainerType(value)) {
-            // Container types still need writeAny for complex nested structures
-            // but we inline common cases
-            if (value instanceof java.util.List<?> list) {
+            // Container types: delegate to writeAny which handles sortMapKeys,
+            // reference detection, and depth limits
+            if (value instanceof java.util.Map<?, ?>) {
+                generator.writeAny(value);
+            } else if (value instanceof java.util.List<?> list) {
                 generator.incrementDepth();
                 generator.pushReference(list);
                 try {
@@ -771,50 +853,6 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                     generator.endArray();
                 } finally {
                     generator.popReference(list);
-                    generator.decrementDepth();
-                }
-            } else if (value instanceof java.util.Map<?, ?> map) {
-                generator.incrementDepth();
-                generator.pushReference(map);
-                try {
-                    generator.startObject();
-                    Class<?> previousClass = null;
-                    ObjectWriter<Object> previousWriter = null;
-                    for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
-                        generator.writeName(String.valueOf(entry.getKey()));
-                        Object item = entry.getValue();
-                        if (item == null) {
-                            generator.writeNull();
-                        } else if (item instanceof String s) {
-                            generator.writeString(s);
-                        } else if (item instanceof Integer in) {
-                            generator.writeInt32(in);
-                        } else if (item instanceof Long lo) {
-                            generator.writeInt64(lo);
-                        } else if (item instanceof Boolean bo) {
-                            generator.writeBool(bo);
-                        } else if (item instanceof Double dou) {
-                            generator.writeDouble(dou);
-                        } else {
-                            Class<?> itemClass = item.getClass();
-                            ObjectWriter<Object> writer;
-                            if (itemClass == previousClass) {
-                                writer = previousWriter;
-                            } else {
-                                writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(itemClass);
-                                previousClass = itemClass;
-                                previousWriter = writer;
-                            }
-                            if (writer != null) {
-                                writer.write(generator, item, null, null, features);
-                            } else {
-                                generator.writeAny(item);
-                            }
-                        }
-                    }
-                    generator.endObject();
-                } finally {
-                    generator.popReference(map);
                     generator.decrementDepth();
                 }
             } else {

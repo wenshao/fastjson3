@@ -17,7 +17,7 @@ class WriteFeatureTest {
     void testEnumValues_allPresent() {
         WriteFeature[] values = WriteFeature.values();
 
-        assertEquals(20, values.length);
+        assertEquals(26, values.length);
     }
 
     @Test
@@ -42,6 +42,12 @@ class WriteFeatureTest {
         assertEquals(17, WriteFeature.BrowserCompatible.ordinal());
         assertEquals(18, WriteFeature.WriteNonStringValueAsString.ordinal());
         assertEquals(19, WriteFeature.OptimizedForAscii.ordinal());
+        assertEquals(20, WriteFeature.NotWriteDefaultValue.ordinal());
+        assertEquals(21, WriteFeature.NotWriteEmptyArray.ordinal());
+        assertEquals(22, WriteFeature.WriteEnumUsingOrdinal.ordinal());
+        assertEquals(23, WriteFeature.WriteBooleanAsNumber.ordinal());
+        assertEquals(24, WriteFeature.BrowserSecure.ordinal());
+        assertEquals(25, WriteFeature.NullAsDefaultValue.ordinal());
     }
 
     // ==================== Mask tests ====================
@@ -87,6 +93,12 @@ class WriteFeatureTest {
         assertEquals(1L << 17, WriteFeature.BrowserCompatible.mask);
         assertEquals(1L << 18, WriteFeature.WriteNonStringValueAsString.mask);
         assertEquals(1L << 19, WriteFeature.OptimizedForAscii.mask);
+        assertEquals(1L << 20, WriteFeature.NotWriteDefaultValue.mask);
+        assertEquals(1L << 21, WriteFeature.NotWriteEmptyArray.mask);
+        assertEquals(1L << 22, WriteFeature.WriteEnumUsingOrdinal.mask);
+        assertEquals(1L << 23, WriteFeature.WriteBooleanAsNumber.mask);
+        assertEquals(1L << 24, WriteFeature.BrowserSecure.mask);
+        assertEquals(1L << 25, WriteFeature.NullAsDefaultValue.mask);
     }
 
     // ==================== of() tests ====================
@@ -123,8 +135,8 @@ class WriteFeatureTest {
     void testOf_allFeatures() {
         long mask = WriteFeature.of(WriteFeature.values());
 
-        // All 20 features should have their bits set
-        assertEquals(20, Long.bitCount(mask));
+        // All 26 features should have their bits set
+        assertEquals(26, Long.bitCount(mask));
     }
 
     @Test
@@ -175,18 +187,19 @@ class WriteFeatureTest {
         long mask = WriteFeature.of(WriteFeature.values());
         WriteFeature[] features = WriteFeature.valuesFrom(mask);
 
-        assertEquals(20, features.length);
+        assertEquals(26, features.length);
         // Verify order matches ordinal
         assertEquals(WriteFeature.FieldBased, features[0]);
         assertEquals(WriteFeature.PrettyFormat, features[1]);
         assertEquals(WriteFeature.WriteNulls, features[2]);
         assertEquals(WriteFeature.OptimizedForAscii, features[19]);
+        assertEquals(WriteFeature.NullAsDefaultValue, features[25]);
     }
 
     @Test
     void testValuesFrom_invalidBits() {
         // Mask with bits that don't correspond to any feature
-        long mask = 1L << 25; // Bit 25 is beyond our features
+        long mask = 1L << 35; // Bit 35 is beyond our features
         WriteFeature[] features = WriteFeature.valuesFrom(mask);
 
         assertEquals(0, features.length);
@@ -195,7 +208,7 @@ class WriteFeatureTest {
     @Test
     void testValuesFrom_mixedValidInvalid() {
         // Mix of valid and invalid bits
-        long mask = WriteFeature.PrettyFormat.mask | (1L << 25);
+        long mask = WriteFeature.PrettyFormat.mask | (1L << 35);
         WriteFeature[] features = WriteFeature.valuesFrom(mask);
 
         assertEquals(1, features.length);
@@ -391,5 +404,40 @@ class WriteFeatureTest {
 
         assertTrue((mask & WriteFeature.BrowserCompatible.mask) != 0);
         assertTrue((mask & WriteFeature.EscapeNoneAscii.mask) != 0);
+    }
+
+    // ==================== POJO-based feature behavior tests ====================
+
+    @Test
+    void nullAsDefaultValue_pojo() {
+        NullBean bean = new NullBean();
+        String json = JSON.toJSONString(bean, WriteFeature.NullAsDefaultValue, WriteFeature.FieldBased);
+        // null String -> "", null Number -> 0, null Boolean -> false, null List -> []
+        assertTrue(json.contains("\"name\":\"\""), "null String should be empty: " + json);
+        assertTrue(json.contains("\"count\":0"), "null Number should be 0: " + json);
+        assertTrue(json.contains("\"flag\":false"), "null Boolean should be false: " + json);
+        assertTrue(json.contains("\"items\":[]"), "null List should be []: " + json);
+    }
+
+    public static class NullBean {
+        public String name;
+        public Integer count;
+        public Boolean flag;
+        public java.util.List<String> items;
+    }
+
+    @Test
+    void notWriteEmptyArray_pojo() {
+        EmptyArrayBean bean = new EmptyArrayBean();
+        bean.name = "test";
+        bean.items = new java.util.ArrayList<>();
+        String json = JSON.toJSONString(bean, WriteFeature.NotWriteEmptyArray, WriteFeature.FieldBased);
+        assertFalse(json.contains("\"items\""), "empty list should be skipped: " + json);
+        assertTrue(json.contains("\"name\""), "non-empty should be present: " + json);
+    }
+
+    public static class EmptyArrayBean {
+        public String name;
+        public java.util.List<String> items;
     }
 }

@@ -57,6 +57,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     static final short[] PACKED_DIGITS = new short[100];
     // Pre-computed escape table
     static final char[] ESCAPE_CHARS = new char[128];
+    static final char[] ESCAPE_CHARS_BROWSER = new char[128];
+    static final char[] ESCAPE_CHARS_SECURE = new char[128];
 
     static {
         // Initialize 2-digit lookup table (char-based, for Char)
@@ -88,6 +90,18 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         ESCAPE_CHARS['\n'] = 'n';
         ESCAPE_CHARS['\r'] = 'r';
         ESCAPE_CHARS['\t'] = 't';
+
+        // Browser-compatible: standard + < > ( )
+        System.arraycopy(ESCAPE_CHARS, 0, ESCAPE_CHARS_BROWSER, 0, 128);
+        ESCAPE_CHARS_BROWSER['<'] = '\1'; // marker for \u003C
+        ESCAPE_CHARS_BROWSER['>'] = '\2'; // marker for \u003E
+        ESCAPE_CHARS_BROWSER['('] = '\3'; // marker for \u0028
+        ESCAPE_CHARS_BROWSER[')'] = '\4'; // marker for \u0029
+
+        // Secure: browser + & '
+        System.arraycopy(ESCAPE_CHARS_BROWSER, 0, ESCAPE_CHARS_SECURE, 0, 128);
+        ESCAPE_CHARS_SECURE['&'] = '\5'; // marker for \u0026
+        ESCAPE_CHARS_SECURE['\''] = '\6'; // marker for \u0027
     }
 
     static final int MAX_WRITE_DEPTH = 512;
@@ -117,6 +131,19 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     protected int count;
     protected int writeDepth;
     protected final boolean pretty;
+    protected final boolean bigDecimalPlain;
+    protected final boolean longAsString;
+    protected final boolean nonStringAsString;
+    protected final boolean boolAsNumber;
+    protected final boolean enumOrdinal;
+    protected final boolean escapeNoneAscii;
+    protected final boolean sortMapKeys;
+    public final boolean notWriteDefaultValue;
+    public final boolean notWriteEmptyArray;
+    protected final char[] escapeChars; // instance escape table
+    protected final boolean extendedEscape; // browser or secure escaping active
+    // True when any feature requires bypassing the static UTF8 fast path
+    public final boolean bypassStaticPath;
     protected int indentLevel;
 
     // Filters — null when no filters configured (zero overhead)
@@ -130,8 +157,40 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     private boolean referenceDetection;
 
     protected JSONGenerator(long features) {
+        // Expand NullAsDefaultValue into individual null-handling flags
+        if ((features & WriteFeature.NullAsDefaultValue.mask) != 0) {
+            features |= WriteFeature.WriteNullStringAsEmpty.mask
+                    | WriteFeature.WriteNullListAsEmpty.mask
+                    | WriteFeature.WriteNullNumberAsZero.mask
+                    | WriteFeature.WriteNullBooleanAsFalse.mask;
+        }
         this.features = features;
         this.pretty = (features & WriteFeature.PrettyFormat.mask) != 0;
+        this.bigDecimalPlain = (features & WriteFeature.WriteBigDecimalAsPlain.mask) != 0;
+        this.longAsString = (features & WriteFeature.WriteLongAsString.mask) != 0;
+        this.nonStringAsString = (features & WriteFeature.WriteNonStringValueAsString.mask) != 0;
+        this.boolAsNumber = (features & WriteFeature.WriteBooleanAsNumber.mask) != 0;
+        this.enumOrdinal = (features & WriteFeature.WriteEnumUsingOrdinal.mask) != 0;
+        this.escapeNoneAscii = (features & WriteFeature.EscapeNoneAscii.mask) != 0;
+        this.sortMapKeys = (features & WriteFeature.SortMapEntriesByKeys.mask) != 0;
+        this.notWriteDefaultValue = (features & WriteFeature.NotWriteDefaultValue.mask) != 0;
+        this.notWriteEmptyArray = (features & WriteFeature.NotWriteEmptyArray.mask) != 0;
+
+        boolean browserSecure = (features & WriteFeature.BrowserSecure.mask) != 0;
+        boolean browserCompatible = (features & WriteFeature.BrowserCompatible.mask) != 0;
+        this.escapeChars = browserSecure ? ESCAPE_CHARS_SECURE
+                : browserCompatible ? ESCAPE_CHARS_BROWSER
+                : ESCAPE_CHARS;
+        this.extendedEscape = (escapeChars != ESCAPE_CHARS);
+        boolean writeNulls = (features & WriteFeature.WriteNulls.mask) != 0
+                || (features & WriteFeature.WriteNullStringAsEmpty.mask) != 0
+                || (features & WriteFeature.WriteNullListAsEmpty.mask) != 0
+                || (features & WriteFeature.WriteNullNumberAsZero.mask) != 0
+                || (features & WriteFeature.WriteNullBooleanAsFalse.mask) != 0;
+        this.bypassStaticPath = longAsString || nonStringAsString || boolAsNumber
+                || notWriteDefaultValue || notWriteEmptyArray || extendedEscape || escapeNoneAscii
+                || writeNulls;
+
         if ((features & WriteFeature.ReferenceDetection.mask) != 0) {
             this.referenceDetection = true;
             this.references = new java.util.IdentityHashMap<>();
@@ -222,6 +281,13 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
      */
     public static JSONGenerator of() {
         return new Char(0);
+    }
+
+    /**
+     * Get the feature bitmask (includes NullAsDefaultValue expansion).
+     */
+    public long getFeatures() {
+        return features;
     }
 
     /**
@@ -578,7 +644,19 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             try {
                 pushReference(map);
                 startObject();
-                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                Iterable<? extends Map.Entry<?, ?>> entries;
+                if (sortMapKeys) {
+                    if (map instanceof java.util.SortedMap) {
+                        entries = map.entrySet();
+                    } else {
+                        java.util.List<? extends Map.Entry<?, ?>> list = new java.util.ArrayList<>(map.entrySet());
+                        list.sort(java.util.Comparator.comparing(e -> String.valueOf(e.getKey())));
+                        entries = list;
+                    }
+                } else {
+                    entries = map.entrySet();
+                }
+                for (Map.Entry<?, ?> entry : entries) {
                     writeName(String.valueOf(entry.getKey()));
                     writeAny(entry.getValue());
                 }
@@ -620,7 +698,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeDepth--;
             }
         } else if (value instanceof Enum<?> e) {
-            writeString(e.name());
+            if (enumOrdinal) {
+                writeInt32(e.ordinal());
+            } else {
+                writeString(e.name());
+            }
         } else if (value instanceof LocalDateTime ldt) {
             writeLocalDateTime(ldt);
         } else if (value instanceof LocalDate ld) {
@@ -654,7 +736,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         try {
             pushReference(obj);
             startObject();
-            for (Map.Entry<String, Object> entry : obj.entrySet()) {
+            Iterable<Map.Entry<String, Object>> entries;
+            if (sortMapKeys) {
+                java.util.List<Map.Entry<String, Object>> list = new java.util.ArrayList<>(obj.entrySet());
+                list.sort(java.util.Comparator.comparing(e -> String.valueOf(e.getKey())));
+                entries = list;
+            } else {
+                entries = obj.entrySet();
+            }
+            for (Map.Entry<String, Object> entry : entries) {
                 writeName(entry.getKey());
                 writeAny(entry.getValue());
             }
@@ -722,7 +812,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     private static int writeOneFieldStatic(UTF8 gen, byte[] buf, int pos,
                                             com.alibaba.fastjson3.writer.FieldWriter fw,
                                             Object bean, long features) {
-        if (fw.customWriter != null || fw.format != null || fw.label != null) {
+        if (fw.customWriter != null || fw.format != null || fw.label != null || gen.bypassStaticPath) {
             gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
         }
         switch (fw.typeTag) {
@@ -1160,6 +1250,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeBool(boolean val) {
+            if (boolAsNumber) {
+                writeInt32(val ? 1 : 0);
+                return;
+            }
+            if (nonStringAsString) {
+                writeString(Boolean.toString(val));
+                return;
+            }
             if (val) {
                 writeTrue();
             } else {
@@ -1169,6 +1267,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeInt32(int val) {
+            if (nonStringAsString) {
+                writeString(Integer.toString(val));
+                return;
+            }
             ensureCapacity(count + 12);
             count += writeIntToChars(val, buf, count);
             buf[count++] = ',';
@@ -1176,6 +1278,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeInt64(long val) {
+            if (longAsString || nonStringAsString) {
+                writeString(Long.toString(val));
+                return;
+            }
             ensureCapacity(count + 21);
             count += writeLongToChars(val, buf, count);
             buf[count++] = ',';
@@ -1183,6 +1289,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeFloat(float val) {
+            if (nonStringAsString) {
+                writeString(Float.toString(val));
+                return;
+            }
             if (Float.isNaN(val) || Float.isInfinite(val)) {
                 writeNull();
                 return;
@@ -1197,6 +1307,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeDouble(double val) {
+            if (nonStringAsString) {
+                writeString(Double.toString(val));
+                return;
+            }
             if (Double.isNaN(val) || Double.isInfinite(val)) {
                 writeNull();
                 return;
@@ -1215,11 +1329,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeNull();
                 return;
             }
-            String s;
-            if (isEnabled(WriteFeature.WriteBigDecimalAsPlain)) {
-                s = val.toPlainString();
-            } else {
-                s = val.toString();
+            String s = bigDecimalPlain ? val.toPlainString() : val.toString();
+            if (nonStringAsString) {
+                writeString(s);
+                return;
             }
             int len = s.length();
             ensureCapacity(count + len + 1);
@@ -1241,11 +1354,22 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             for (int i = 0; i < len; i++) {
                 char ch = val.charAt(i);
                 if (ch < 128) {
-                    char escaped = ESCAPE_CHARS[ch];
+                    char escaped = escapeChars[ch];
                     if (escaped != 0 && ch != '/') {
-                        ensureCapacity(count + 2 + (len - i) + 3);
-                        buf[count++] = '\\';
-                        buf[count++] = escaped;
+                        ensureCapacity(count + 6 + (len - i) + 3);
+                        if (escaped == '"' || escaped == '\\' || escaped == 'b' || escaped == 'f'
+                                || escaped == 'n' || escaped == 'r' || escaped == 't') {
+                            buf[count++] = '\\';
+                            buf[count++] = escaped;
+                        } else {
+                            // Browser/secure unicode escape
+                            buf[count++] = '\\';
+                            buf[count++] = 'u';
+                            buf[count++] = '0';
+                            buf[count++] = '0';
+                            buf[count++] = DIGITS[ch >> 4];
+                            buf[count++] = DIGITS[ch & 0xF];
+                        }
                     } else if (ch < 0x20) {
                         // control character
                         ensureCapacity(count + 6 + (len - i) + 3);
@@ -1259,7 +1383,18 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         buf[count++] = ch;
                     }
                 } else {
-                    buf[count++] = ch;
+                    // Non-ASCII
+                    if (escapeNoneAscii) {
+                        ensureCapacity(count + 6 + (len - i) + 3);
+                        buf[count++] = '\\';
+                        buf[count++] = 'u';
+                        buf[count++] = DIGITS[(ch >> 12) & 0xF];
+                        buf[count++] = DIGITS[(ch >> 8) & 0xF];
+                        buf[count++] = DIGITS[(ch >> 4) & 0xF];
+                        buf[count++] = DIGITS[ch & 0xF];
+                    } else {
+                        buf[count++] = ch;
+                    }
                 }
             }
             buf[count++] = '"';
@@ -1681,6 +1816,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeBool(boolean val) {
+            if (boolAsNumber) {
+                writeInt32(val ? 1 : 0);
+                return;
+            }
+            if (nonStringAsString) {
+                writeString(Boolean.toString(val));
+                return;
+            }
             if (val) {
                 writeTrue();
             } else {
@@ -1690,6 +1833,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeInt32(int val) {
+            if (nonStringAsString) {
+                writeString(Integer.toString(val));
+                return;
+            }
             // max 11 digits, within SAFE_MARGIN
             count += writeIntToBytes(val, buf, count);
             buf[count++] = ',';
@@ -1697,6 +1844,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeInt64(long val) {
+            if (longAsString || nonStringAsString) {
+                writeString(Long.toString(val));
+                return;
+            }
             // max 20 digits, within SAFE_MARGIN
             count += writeLongToBytes(val, buf, count);
             buf[count++] = ',';
@@ -1704,6 +1855,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeFloat(float val) {
+            if (nonStringAsString) {
+                writeString(Float.toString(val));
+                return;
+            }
             if (Float.isNaN(val) || Float.isInfinite(val)) {
                 writeNull();
                 return;
@@ -1714,6 +1869,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeDouble(double val) {
+            if (nonStringAsString) {
+                writeString(Double.toString(val));
+                return;
+            }
             count = com.alibaba.fastjson3.util.NumberUtils.writeDouble(buf, count, val, true, false);
             buf[count++] = ',';
         }
@@ -1744,7 +1903,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeNull();
                 return;
             }
-            String s = isEnabled(WriteFeature.WriteBigDecimalAsPlain) ? val.toPlainString() : val.toString();
+            String s = bigDecimalPlain ? val.toPlainString() : val.toString();
+            if (nonStringAsString) {
+                writeString(s);
+                return;
+            }
             writeNumericString(s);
         }
 
@@ -1782,6 +1945,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         /**
          * Check 4 bytes (as an int) for JSON escape characters.
+         * Also rejects bytes >= 0x80 (Latin-1 high chars that need 2-byte UTF-8 output).
          */
         public static boolean noEscape4(int v) {
             int hiMask = 0x80808080;
@@ -1791,7 +1955,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             int quote = (xq - lo) & ~xq & hiMask;
             int xb = v ^ 0x5C5C5C5C;
             int bslash = (xb - lo) & ~xb & hiMask;
-            return (ctrl | quote | bslash) == 0;
+            int hi = v & hiMask; // bytes >= 0x80 require 2-byte UTF-8
+            return (ctrl | quote | bslash | hi) == 0;
         }
 
         /**
@@ -1826,12 +1991,19 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         pos += 4; i += 4;
                     }
                 }
-                // Remaining 0-3 bytes
+                // Tail loop: 0-7 bytes remain after 8-byte chunks (further reduced to 0-3 if 4-byte loop runs)
                 for (; i < len; i++) {
                     byte b = value[i];
                     if (b >= 0x20 && b != '"' && b != '\\') {
                         buf[pos++] = b;
                     } else {
+                        // Max 6 bytes output per char: control chars use \\uXXXX (6 bytes),
+                        // Latin-1 high bytes (>= 0x80) use 2-byte UTF-8.
+                        if (pos + 6 > buf.length) {
+                            count = pos;
+                            ensureCapacity((len - i) * 2 + 6);
+                            pos = count;
+                        }
                         pos = writeEscapedByte(b, pos);
                     }
                 }
@@ -1864,6 +2036,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         private int writeEscapedByte(byte b, int pos) {
             int ch = b & 0xFF;
+            if (ch >= 128) {
+                // Latin-1 char 0x80-0xFF: encode as 2-byte UTF-8
+                buf[pos++] = (byte) (0xC0 | (ch >> 6));
+                buf[pos++] = (byte) (0x80 | (ch & 0x3F));
+                return pos;
+            }
             char escaped = ESCAPE_CHARS[ch];
             if (escaped != 0 && ch != '/') {
                 buf[pos++] = '\\';
@@ -1888,7 +2066,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
 
-            if (JDKUtils.getStringCoder(val) == 0) {
+            if (JDKUtils.getStringCoder(val) == 0 && escapeChars == ESCAPE_CHARS && !escapeNoneAscii) {
                 byte[] value = (byte[]) JDKUtils.getStringValue(val);
                 // Inline writeLatinString: eliminates 1 method call level for list string elements
                 ensureCapacity(value.length + 3);
@@ -1898,16 +2076,36 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
             // General path: char-by-char with escaping and UTF-8 encoding
             int len = val.length();
-            ensureCapacity(len + 3);
+            // Initial estimate: 4 bytes per char covers most CJK + surrogate pairs.
+            // Escape sequences (6 bytes) are rare; handled by inline capacity checks.
+            ensureCapacity(len * 4 + 6);
             int pos = count;
             buf[pos++] = '"';
             for (int i = 0; i < len; i++) {
+                // Ensure at least 6 bytes available for worst-case single char expansion
+                if (pos + 6 >= buf.length) {
+                    count = pos;
+                    ensureCapacity(6 + (len - i) * 4);
+                    buf = this.buf;
+                    pos = count;
+                }
                 char ch = val.charAt(i);
                 if (ch < 128) {
-                    char escaped = ESCAPE_CHARS[ch];
+                    char escaped = escapeChars[ch];
                     if (escaped != 0 && ch != '/') {
-                        buf[pos++] = '\\';
-                        buf[pos++] = (byte) escaped;
+                        if (escaped == '"' || escaped == '\\' || escaped == 'b' || escaped == 'f'
+                                || escaped == 'n' || escaped == 'r' || escaped == 't') {
+                            buf[pos++] = '\\';
+                            buf[pos++] = (byte) escaped;
+                        } else {
+                            // Browser/secure unicode escape
+                            buf[pos++] = '\\';
+                            buf[pos++] = 'u';
+                            buf[pos++] = '0';
+                            buf[pos++] = '0';
+                            buf[pos++] = (byte) DIGITS[ch >> 4];
+                            buf[pos++] = (byte) DIGITS[ch & 0xF];
+                        }
                     } else if (ch < 0x20) {
                         buf[pos++] = '\\';
                         buf[pos++] = 'u';
@@ -1918,6 +2116,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     } else {
                         buf[pos++] = (byte) ch;
                     }
+                } else if (escapeNoneAscii) {
+                    // Escape non-ASCII as unicode sequence
+                    buf[pos++] = '\\';
+                    buf[pos++] = 'u';
+                    buf[pos++] = (byte) DIGITS[(ch >> 12) & 0xF];
+                    buf[pos++] = (byte) DIGITS[(ch >> 8) & 0xF];
+                    buf[pos++] = (byte) DIGITS[(ch >> 4) & 0xF];
+                    buf[pos++] = (byte) DIGITS[ch & 0xF];
                 } else if (ch < 0x800) {
                     buf[pos++] = (byte) (0xC0 | (ch >> 6));
                     buf[pos++] = (byte) (0x80 | (ch & 0x3F));
@@ -2002,7 +2208,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameString(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
-            if (pretty) {
+            if (pretty || extendedEscape || escapeNoneAscii) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeString(value);
                 return;
@@ -2092,7 +2298,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt32(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
-            if (pretty) {
+            if (pretty || nonStringAsString) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeInt32(value);
                 return;
@@ -2118,7 +2324,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt64(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
-            if (pretty) {
+            if (pretty || longAsString || nonStringAsString) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeInt64(value);
                 return;
@@ -2144,7 +2350,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameDouble(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
-            if (pretty) {
+            if (pretty || nonStringAsString) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeDouble(value);
                 return;
@@ -2170,7 +2376,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameBool(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
-            if (pretty) {
+            if (pretty || boolAsNumber || nonStringAsString) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeBool(value);
                 return;
@@ -2229,6 +2435,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameStringCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
+            if (extendedEscape || escapeNoneAscii) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeString(value);
+                return;
+            }
             if (JDKUtils.getStringCoder(value) == 0) {
                 byte[] valBytes = (byte[]) JDKUtils.getStringValue(value);
                 int valLen = valBytes.length;
@@ -2256,6 +2467,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt32Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
+            if (nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeInt32(value);
+                return;
+            }
             // Optimized: remove ensureCapacity (caller ensures capacity), inline writeName0
             int pos = count;
             if (nameByteLongs != null) {
@@ -2276,6 +2492,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt64Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+            if (longAsString || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeInt64(value);
+                return;
+            }
             // Optimized: inline writeName0 for better performance
             int pos = count;
             if (nameByteLongs != null) {
@@ -2296,6 +2517,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameDoubleCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
+            if (nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeDouble(value);
+                return;
+            }
             // Optimized: inline writeName0 for better performance
             int pos = count;
             if (nameByteLongs != null) {
@@ -2316,6 +2542,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameBoolCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
+            if (boolAsNumber || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeBool(value);
+                return;
+            }
             int pos;
             if (nameByteLongs != null) {
                 writeName0(nameByteLongs, nameBytesLen);
@@ -2476,6 +2707,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
          */
         public static int writeEscapedByteDirect(byte b, byte[] buf, int pos) {
             int ch = b & 0xFF;
+            if (ch >= 128) {
+                // Latin-1 char 0x80-0xFF: encode as 2-byte UTF-8
+                buf[pos++] = (byte) (0xC0 | (ch >> 6));
+                buf[pos++] = (byte) (0x80 | (ch & 0x3F));
+                return pos;
+            }
             char escaped = ESCAPE_CHARS[ch];
             if (escaped != 0 && ch != '/') {
                 buf[pos++] = '\\';
