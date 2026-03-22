@@ -1305,6 +1305,134 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             }
         }
 
+        // ---- Fused name+value writers for Char (single ensureCapacity) ----
+
+        @Override
+        public void writeNameString(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
+            if (pretty || extendedEscape || escapeNoneAscii) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeString(value);
+                return;
+            }
+            int nameLen = nameChars.length;
+            if (value == null) {
+                ensureCapacity(count + nameLen + 5);
+                System.arraycopy(nameChars, 0, buf, count, nameLen);
+                count += nameLen;
+                buf[count++] = 'n'; buf[count++] = 'u'; buf[count++] = 'l'; buf[count++] = 'l'; buf[count++] = ',';
+                return;
+            }
+            int valLen = value.length();
+            ensureCapacity(count + nameLen + valLen + 4);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            buf[pos++] = '"';
+            // Fast path: check-and-copy without escape for common ASCII strings
+            value.getChars(0, valLen, buf, pos);
+            // Scan for chars needing escape
+            boolean needsEscape = false;
+            for (int i = 0; i < valLen; i++) {
+                char ch = buf[pos + i];
+                if (ch < 0x20 || ch == '"' || ch == '\\') {
+                    needsEscape = true;
+                    break;
+                }
+            }
+            if (!needsEscape) {
+                pos += valLen;
+                buf[pos++] = '"';
+                buf[pos++] = ',';
+                count = pos;
+            } else {
+                // Fallback: reset and use writeString which handles escaping
+                count = pos - 1; // undo the '"'
+                count -= nameLen; // undo name copy
+                writePreEncodedName(nameChars, nameBytes);
+                writeString(value);
+            }
+        }
+
+        @Override
+        public void writeNameInt32(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
+            if (pretty || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeInt32(value);
+                return;
+            }
+            int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 12);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            pos += writeIntToChars(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameInt64(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+            if (pretty || longAsString || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeInt64(value);
+                return;
+            }
+            int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 21);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            pos += writeLongToChars(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameBool(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
+            if (pretty) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeBool(value);
+                return;
+            }
+            int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 6);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            if (value) {
+                buf[pos++] = 't'; buf[pos++] = 'r'; buf[pos++] = 'u'; buf[pos++] = 'e';
+            } else {
+                buf[pos++] = 'f'; buf[pos++] = 'a'; buf[pos++] = 'l'; buf[pos++] = 's'; buf[pos++] = 'e';
+            }
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameDouble(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
+            if (pretty || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeDouble(value);
+                return;
+            }
+            if (Double.isNaN(value) || Double.isInfinite(value)) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeNull();
+                return;
+            }
+            String s = Double.toString(value);
+            int nameLen = nameChars.length;
+            int valLen = s.length();
+            ensureCapacity(count + nameLen + valLen + 1);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            s.getChars(0, valLen, buf, pos);
+            pos += valLen;
+            buf[pos++] = ',';
+            count = pos;
+        }
+
         @Override
         public void writeNull() {
             ensureCapacity(count + 5);
