@@ -17,7 +17,7 @@ class WriteFeatureTest {
     void testEnumValues_allPresent() {
         WriteFeature[] values = WriteFeature.values();
 
-        assertEquals(29, values.length);
+        assertEquals(26, values.length);
     }
 
     @Test
@@ -124,7 +124,7 @@ class WriteFeatureTest {
         long mask = WriteFeature.of(WriteFeature.values());
 
         // All 29 features should have their bits set
-        assertEquals(29, Long.bitCount(mask));
+        assertEquals(26, Long.bitCount(mask));
     }
 
     @Test
@@ -175,13 +175,13 @@ class WriteFeatureTest {
         long mask = WriteFeature.of(WriteFeature.values());
         WriteFeature[] features = WriteFeature.valuesFrom(mask);
 
-        assertEquals(29, features.length);
+        assertEquals(26, features.length);
         // Verify order matches ordinal
         assertEquals(WriteFeature.FieldBased, features[0]);
         assertEquals(WriteFeature.PrettyFormat, features[1]);
         assertEquals(WriteFeature.WriteNulls, features[2]);
         assertEquals(WriteFeature.OptimizedForAscii, features[19]);
-        assertEquals(WriteFeature.WriteNonStringKeyAsString, features[28]);
+        assertEquals(WriteFeature.NullAsDefaultValue, features[25]);
     }
 
     @Test

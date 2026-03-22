@@ -121,16 +121,7 @@ public enum WriteFeature {
     BrowserSecure,
 
     /** Shorthand: null numbers→0, null strings→"", null booleans→false, null lists→[] */
-    NullAsDefaultValue,
-
-    /** Swallow getter exceptions instead of throwing (not yet implemented) */
-    IgnoreErrorGetter,
-
-    /** Skip getters without backing field (not yet implemented) */
-    IgnoreNonFieldGetter,
-
-    /** Map non-string keys → String.valueOf() (not yet implemented) */
-    WriteNonStringKeyAsString;
+    NullAsDefaultValue;
 
     public final long mask;
 

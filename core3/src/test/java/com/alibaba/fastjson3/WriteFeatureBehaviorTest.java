@@ -160,9 +160,8 @@ class WriteFeatureBehaviorTest {
 
     @Test
     void browserSecure_utf8Bytes() {
-        // BrowserSecure escaping works via the char-by-char path (non-Latin1 strings).
-        // Latin-1 strings take a fast path that only escapes standard JSON chars.
-        // Use a string with non-ASCII to force the general path.
+        // BrowserSecure escaping: Latin-1 fast path is disabled when extended escape is active,
+        // so both ASCII and non-ASCII chars are properly escaped.
         String input = "a&b'c\u4e2d";
         byte[] bytes = JSON.toJSONBytes(input, WriteFeature.BrowserSecure);
         String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
