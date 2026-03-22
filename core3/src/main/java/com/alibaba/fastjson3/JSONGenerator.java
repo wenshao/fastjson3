@@ -952,7 +952,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     if (sv instanceof byte[] strBytes && strBytes.length == s.length()) {
                         int needed = fw.nameBytesLen + strBytes.length + 3;
                         if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
-                            gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count;
+                            gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count;
                         }
                         pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
                         return UTF8.writeLatinStringStatic(buf, pos, strBytes, strBytes.length);
@@ -1581,10 +1581,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             count = pos;
         }
 
-        // ---- Compact variants for ASM-generated writers (no ensureCapacity, no pretty checks) ----
+        // ---- Compact variants for ASM-generated writers ----
+        // Guard: if pretty or bypass features active, delegate to non-compact methods.
 
         @Override
         public void writeNameInt32Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
+            if (pretty || bypassStaticPath) { writeNameInt32(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
             int nameLen = nameChars.length;
             int pos = count;
             System.arraycopy(nameChars, 0, buf, pos, nameLen);
@@ -1596,6 +1598,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameInt64Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+            if (pretty || bypassStaticPath) { writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
             int nameLen = nameChars.length;
             int pos = count;
             System.arraycopy(nameChars, 0, buf, pos, nameLen);
@@ -1607,6 +1610,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameStringCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
+            if (pretty || bypassStaticPath) { writeNameString(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
             int nameLen = nameChars.length;
             int valLen = (value != null) ? value.length() : 4; // "null".length()
             ensureCapacity(count + nameLen + valLen + 4); // quotes, comma, margin
@@ -1641,6 +1645,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameBoolCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
+            if (pretty || bypassStaticPath) { writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
             int nameLen = nameChars.length;
             int pos = count;
             System.arraycopy(nameChars, 0, buf, pos, nameLen);
@@ -1658,7 +1663,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameDoubleCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
-            if (Double.isNaN(value) || Double.isInfinite(value)) {
+            if (pretty || bypassStaticPath || Double.isNaN(value) || Double.isInfinite(value)) {
                 writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
                 return;
             }
