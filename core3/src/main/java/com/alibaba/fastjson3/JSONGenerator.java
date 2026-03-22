@@ -2510,6 +2510,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             int ch = b & 0xFF;
             if (ch >= 128) {
                 // Latin-1 char 0x80-0xFF: encode as 2-byte UTF-8
+                hasNonAscii = true;
                 buf[pos++] = (byte) (0xC0 | (ch >> 6));
                 buf[pos++] = (byte) (0x80 | (ch & 0x3F));
                 return pos;
@@ -2546,6 +2547,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
 
+            // Non-Latin1 string — mark as having non-ASCII output
+            hasNonAscii = true;
             // General path: char-by-char with escaping and UTF-8 encoding
             int len = val.length();
             // Initial estimate: 4 bytes per char covers most CJK + surrogate pairs.
@@ -3072,6 +3075,29 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             return result;
         }
 
+        /** Tracks if any non-ASCII byte was written */
+        boolean hasNonAscii;
+
+        /**
+         * Create String directly from internal byte[] buffer as Latin-1.
+         * Only works if output is all ASCII (common case for JSON).
+         * Returns null if non-ASCII bytes were written (caller should fall back).
+         */
+        public String toStringLatin1() {
+            if (hasNonAscii || JDKUtils.STRING_CREATOR == null) return null;
+            int c = outputCount();
+            // buf is pooled — must copy for String to own the data.
+            // But avoid copy if buf is exactly the right size (rare).
+            byte[] value;
+            if (buf.length == c) {
+                value = buf;
+                this.pooled = false; // don't return to pool
+            } else {
+                value = java.util.Arrays.copyOfRange(buf, 0, c);
+            }
+            return JDKUtils.STRING_CREATOR.apply(value, (byte) 0);
+        }
+
         @Override
         public String toString() {
             return new String(buf, 0, outputCount(), StandardCharsets.UTF_8);
@@ -3181,6 +3207,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             int ch = b & 0xFF;
             if (ch >= 128) {
                 // Latin-1 char 0x80-0xFF: encode as 2-byte UTF-8
+                // Note: hasNonAscii is set by the caller (writeLatinStringStatic) if needed
                 buf[pos++] = (byte) (0xC0 | (ch >> 6));
                 buf[pos++] = (byte) (0x80 | (ch & 0x3F));
                 return pos;

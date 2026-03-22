@@ -249,6 +249,22 @@ public final class JSON {
      * Serialize object to JSON string.
      */
     public static String toJSONString(Object obj) {
+        if (obj == null) {
+            return "null";
+        }
+        // Fast path: UTF8 serialize → Latin-1 String (bypasses char[] entirely)
+        if (com.alibaba.fastjson3.util.JDKUtils.STRING_CREATOR != null) {
+            try (JSONGenerator gen = JSONGenerator.ofUTF8()) {
+                gen.writeAny(obj);
+                if (gen instanceof JSONGenerator.UTF8 utf8) {
+                    String result = utf8.toStringLatin1();
+                    if (result != null) {
+                        return result;
+                    }
+                }
+                return gen.toString();
+            }
+        }
         return ObjectMapper.shared().writeValueAsString(obj);
     }
 

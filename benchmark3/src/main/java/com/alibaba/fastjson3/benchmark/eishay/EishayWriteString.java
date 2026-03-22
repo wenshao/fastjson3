@@ -61,6 +61,22 @@ public class EishayWriteString {
         }
     }
 
+    /** Direct UTF8→Latin1 path, bypassing ObjectMapper overhead */
+    @Benchmark
+    public void fastjson3_utf8latin1(Blackhole bh) {
+        try (com.alibaba.fastjson3.JSONGenerator gen = com.alibaba.fastjson3.JSONGenerator.ofUTF8()) {
+            gen.writeAny(mc);
+            if (gen instanceof com.alibaba.fastjson3.JSONGenerator.UTF8 utf8) {
+                String result = utf8.toStringLatin1();
+                if (result != null) {
+                    bh.consume(result);
+                    return;
+                }
+            }
+            bh.consume(gen.toString());
+        }
+    }
+
     @Benchmark
     public void jackson(Blackhole bh) throws Exception {
         bh.consume(jackson.writeValueAsString(mc));
