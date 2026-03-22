@@ -250,6 +250,22 @@ public final class JSON {
      */
     @SuppressWarnings("unchecked")
     public static String toJSONString(Object obj) {
+        if (obj == null) {
+            return "null";
+        }
+        if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+            ObjectWriter<Object> writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(obj.getClass());
+            if (writer != null) {
+                try (JSONGenerator.UTF8 gen = (JSONGenerator.UTF8) JSONGenerator.ofUTF8()) {
+                    writer.write(gen, obj, null, null, 0);
+                    String result = gen.toStringLatin1();
+                    if (result != null) {
+                        return result;
+                    }
+                    return gen.toString();
+                }
+            }
+        }
         return ObjectMapper.shared().writeValueAsString(obj);
     }
 

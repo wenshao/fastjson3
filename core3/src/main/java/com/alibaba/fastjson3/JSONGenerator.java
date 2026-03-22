@@ -3087,16 +3087,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
          */
         public String toStringLatin1() {
             if (hasNonAscii) return null;
+            if (!JDKUtils.FAST_STRING_CREATION) return null;
             int c = outputCount();
-            if (JDKUtils.STRING_CREATOR != null) {
-                // Zero-copy via String(byte[], byte) constructor — safest approach
-                byte[] value = java.util.Arrays.copyOfRange(buf, 0, c);
-                return JDKUtils.STRING_CREATOR.apply(value, (byte) 0);
-            }
-            if (JDKUtils.FAST_STRING_CREATION) {
-                return JDKUtils.createLatin1String(buf, 0, c);
-            }
-            return null;
+            return JDKUtils.createLatin1String(buf, 0, c);
         }
 
         @Override
