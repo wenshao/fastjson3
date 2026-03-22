@@ -306,6 +306,21 @@ class WriteFeatureBehaviorTest {
         public int count;
     }
 
+    // BrowserCompatible on POJO string field via UTF8
+    @Test
+    void browserCompatible_pojo_utf8() {
+        StringBean bean = new StringBean();
+        bean.html = "<b>bold</b>";
+        byte[] bytes = JSON.toJSONBytes(bean, WriteFeature.BrowserCompatible, WriteFeature.FieldBased);
+        String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        assertFalse(json.contains("<"), "< should be escaped in POJO UTF8: " + json);
+        assertFalse(json.contains(">"), "> should be escaped in POJO UTF8: " + json);
+    }
+
+    public static class StringBean {
+        public String html;
+    }
+
     // NonStringValueAsString UTF8
     @Test
     void nonStringValueAsString_utf8() {

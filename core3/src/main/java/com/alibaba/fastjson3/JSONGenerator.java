@@ -142,6 +142,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     public final boolean notWriteEmptyArray;
     protected final char[] escapeChars; // instance escape table
     protected final boolean extendedEscape; // browser or secure escaping active
+    // True when any feature requires bypassing the static UTF8 fast path
+    public final boolean bypassStaticPath;
     protected int indentLevel;
 
     // Filters — null when no filters configured (zero overhead)
@@ -180,6 +182,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 : browserCompatible ? ESCAPE_CHARS_BROWSER
                 : ESCAPE_CHARS;
         this.extendedEscape = (escapeChars != ESCAPE_CHARS);
+        this.bypassStaticPath = longAsString || nonStringAsString || boolAsNumber
+                || notWriteDefaultValue || notWriteEmptyArray || extendedEscape || escapeNoneAscii;
 
         if ((features & WriteFeature.ReferenceDetection.mask) != 0) {
             this.referenceDetection = true;
@@ -790,7 +794,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     private static int writeOneFieldStatic(UTF8 gen, byte[] buf, int pos,
                                             com.alibaba.fastjson3.writer.FieldWriter fw,
                                             Object bean, long features) {
-        if (fw.customWriter != null || fw.format != null || fw.label != null) {
+        if (fw.customWriter != null || fw.format != null || fw.label != null || gen.bypassStaticPath) {
             gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
         }
         switch (fw.typeTag) {
@@ -2163,7 +2167,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameString(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
-            if (pretty) {
+            if (pretty || extendedEscape || escapeNoneAscii) {
                 writePreEncodedName(nameChars, nameBytes);
                 writeString(value);
                 return;
@@ -2390,6 +2394,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         @Override
         public void writeNameStringCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
+            if (extendedEscape || escapeNoneAscii) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeString(value);
+                return;
+            }
             if (JDKUtils.getStringCoder(value) == 0) {
                 byte[] valBytes = (byte[]) JDKUtils.getStringValue(value);
                 int valLen = valBytes.length;
