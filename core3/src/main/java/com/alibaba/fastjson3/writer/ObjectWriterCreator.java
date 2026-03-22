@@ -576,7 +576,7 @@ public final class ObjectWriterCreator {
     static void writeFields(com.alibaba.fastjson3.JSONGenerator generator, FieldWriter[] writers, Object object, long features) {
         // Static path: bypass virtual dispatch for UTF8 and Char generators
         if (!generator.hasFilters() && generator.labelFilter == null) {
-            if (!generator.pretty) {
+            if (!generator.isPretty()) {
                 if (generator instanceof com.alibaba.fastjson3.JSONGenerator.UTF8 utf8) {
                     com.alibaba.fastjson3.JSONGenerator.writeFieldsStaticUTF8NoFrame(utf8, writers, object, features);
                     return;

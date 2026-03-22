@@ -149,7 +149,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     protected final long features;
     protected int count;
     protected int writeDepth;
-    public final boolean pretty;
+    protected final boolean pretty;
+    public boolean isPretty() { return pretty; }
     protected final boolean bigDecimalPlain;
     protected final boolean longAsString;
     protected final boolean nonStringAsString;
@@ -977,7 +978,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 if (fw.fieldOffset >= 0 && fw.elementClass != null) {
                     @SuppressWarnings("unchecked")
                     java.util.List<?> list = (java.util.List<?>) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
-                    if (list == null || list.isEmpty()) return pos;
+                    if (list == null) return pos;
+                    if (list.isEmpty()) {
+                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                        buf[pos++] = '['; buf[pos++] = ']'; buf[pos++] = ',';
+                        return pos;
+                    }
                     com.alibaba.fastjson3.writer.FieldWriter[] elemFws = getElementWriters(fw.elementClass);
                     if (elemFws != null) {
                         pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
@@ -1006,8 +1012,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 if (fw.fieldOffset >= 0) {
                     @SuppressWarnings("unchecked")
                     java.util.List<String> list = (java.util.List<String>) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
-                    if (list == null || list.isEmpty()) return pos;
+                    if (list == null) return pos;
                     pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    if (list.isEmpty()) { buf[pos++] = '['; buf[pos++] = ']'; buf[pos++] = ','; return pos; }
                     buf[pos++] = '[';
                     for (int j = 0, size = list.size(); j < size; j++) {
                         String s = list.get(j);
@@ -1588,6 +1595,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         public void writeNameInt32Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
             if (pretty || bypassStaticPath) { writeNameInt32(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
             int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 12);
             int pos = count;
             System.arraycopy(nameChars, 0, buf, pos, nameLen);
             pos += nameLen;
@@ -1600,6 +1608,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         public void writeNameInt64Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
             if (pretty || bypassStaticPath) { writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
             int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 21);
             int pos = count;
             System.arraycopy(nameChars, 0, buf, pos, nameLen);
             pos += nameLen;
@@ -1647,6 +1656,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         public void writeNameBoolCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
             if (pretty || bypassStaticPath) { writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
             int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 6);
             int pos = count;
             System.arraycopy(nameChars, 0, buf, pos, nameLen);
             pos += nameLen;
@@ -1670,6 +1680,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             String s = Double.toString(value);
             int nameLen = nameChars.length;
             int sLen = s.length();
+            ensureCapacity(count + nameLen + sLen + 1);
             int pos = count;
             System.arraycopy(nameChars, 0, buf, pos, nameLen);
             pos += nameLen;
