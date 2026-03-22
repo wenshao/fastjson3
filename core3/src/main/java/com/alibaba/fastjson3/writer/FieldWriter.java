@@ -1034,8 +1034,25 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         // Write name + value (use generic path since name/value may be transformed)
         if (value == null) {
             if (!unwrapped) {
-                // Delegate to writeNull which handles WriteNulls, WriteNullStringAsEmpty, etc.
-                writeNull(generator, features);
+                // Inline writeNull logic using the NameFilter-transformed name
+                long mergedFeatures = features | generator.getFeatures();
+                if ((mergedFeatures & WriteFeature.WriteNulls.mask) != 0
+                        || inclusion == Inclusion.ALWAYS) {
+                    generator.writeName(name);
+                    generator.writeNull();
+                } else if (typeTag == TYPE_STRING
+                        && (mergedFeatures & WriteFeature.WriteNullStringAsEmpty.mask) != 0) {
+                    generator.writeName(name);
+                    generator.writeString("");
+                } else if ((typeTag == TYPE_INT || typeTag == TYPE_LONG || typeTag == TYPE_DOUBLE || typeTag == TYPE_FLOAT)
+                        && (mergedFeatures & WriteFeature.WriteNullNumberAsZero.mask) != 0) {
+                    generator.writeName(name);
+                    generator.writeInt32(0);
+                } else if (typeTag == TYPE_BOOL
+                        && (mergedFeatures & WriteFeature.WriteNullBooleanAsFalse.mask) != 0) {
+                    generator.writeName(name);
+                    generator.writeBool(false);
+                }
             }
             return;
         }

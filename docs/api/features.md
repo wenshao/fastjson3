@@ -115,7 +115,7 @@ public enum WriteFeature {
     WriteNullNumberAsZero,             // null 数字输出为 0
     WriteNullBooleanAsFalse,           // null 布尔输出为 false
     NullAsDefaultValue,                // 综合：null 数字→0，null 字符串→""，null 布尔→false，null 列表→[]
-    WriteMapNullValue,                 // Map 中的 null 值也输出（独立于 WriteNulls，后者控制 POJO 字段）
+    WriteMapNullValue,                 // 兼容性声明：Map null 值默认已输出，此特性为 fastjson2 API 兼容保留
 
     // ===== 枚举输出 =====
     WriteEnumsUsingName,               // 枚举使用 name()

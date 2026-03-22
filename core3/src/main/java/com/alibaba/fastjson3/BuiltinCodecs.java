@@ -563,7 +563,10 @@ public final class BuiltinCodecs {
                           Object fieldName, java.lang.reflect.Type fieldType, long features) {
             Throwable t = (Throwable) object;
             generator.startObject();
-            if (generator.writeThrowableClassName || generator.writeClassName) {
+            boolean writeType = generator.writeThrowableClassName
+                    || (generator.writeClassName
+                        && !(generator.notWriteRootClassName && generator.getWriteDepth() == 0));
+            if (writeType) {
                 generator.writeName("@type");
                 generator.writeString(t.getClass().getName());
             }
