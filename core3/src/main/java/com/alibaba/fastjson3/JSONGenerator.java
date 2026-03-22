@@ -1574,6 +1574,98 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             count = pos;
         }
 
+        // ---- Compact variants for ASM-generated writers (no ensureCapacity, no pretty checks) ----
+
+        @Override
+        public void writeNameInt32Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
+            int nameLen = nameChars.length;
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            pos += writeIntToChars(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameInt64Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+            int nameLen = nameChars.length;
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            pos += writeLongToChars(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameStringCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
+            int nameLen = nameChars.length;
+            if (value == null) {
+                int pos = count;
+                System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                pos += nameLen;
+                buf[pos] = 'n'; buf[pos+1] = 'u'; buf[pos+2] = 'l'; buf[pos+3] = 'l'; buf[pos+4] = ',';
+                count = pos + 5;
+                return;
+            }
+            int valLen = value.length();
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            buf[pos++] = '"';
+            value.getChars(0, valLen, buf, pos);
+            boolean needsEscape = false;
+            for (int i = 0; i < valLen; i++) {
+                char ch = buf[pos + i];
+                if (ch < 0x20 || ch == '"' || ch == '\\') { needsEscape = true; break; }
+            }
+            if (!needsEscape) {
+                pos += valLen;
+                buf[pos] = '"'; buf[pos + 1] = ',';
+                count = pos + 2;
+            } else {
+                // Fallback for escaped strings
+                count = pos - 1 - nameLen;
+                writeNameString(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
+            }
+        }
+
+        @Override
+        public void writeNameBoolCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
+            int nameLen = nameChars.length;
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            if (value) {
+                buf[pos] = 't'; buf[pos+1] = 'r'; buf[pos+2] = 'u'; buf[pos+3] = 'e';
+                pos += 4;
+            } else {
+                buf[pos] = 'f'; buf[pos+1] = 'a'; buf[pos+2] = 'l'; buf[pos+3] = 's'; buf[pos+4] = 'e';
+                pos += 5;
+            }
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameDoubleCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
+            if (Double.isNaN(value) || Double.isInfinite(value)) {
+                writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
+                return;
+            }
+            String s = Double.toString(value);
+            int nameLen = nameChars.length;
+            int sLen = s.length();
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            s.getChars(0, sLen, buf, pos);
+            pos += sLen;
+            buf[pos++] = ',';
+            count = pos;
+        }
+
         @Override
         public void writeNull() {
             ensureCapacity(count + 5);
