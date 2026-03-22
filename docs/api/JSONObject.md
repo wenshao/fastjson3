@@ -49,13 +49,13 @@ double score = obj.getDoubleValue("score");
 boolean vip = obj.getBooleanValue("vip");
 ```
 
-### 安全获取（带默认值）
+### null 处理
 
 ```java
-// 如果不存在，返回默认值
-String name = obj.getString("name", "Unknown");
-int age = obj.getIntValue("age", 0);
-boolean vip = obj.getBooleanValue("vip", false);
+// getString 返回 null，getIntValue 返回 0（基本类型方法有默认值）
+String name = obj.getString("name");       // null if missing
+int age = obj.getIntValue("age");          // 0 if missing
+boolean vip = obj.getBooleanValue("vip");  // false if missing
 ```
 
 ### 获取对象
@@ -137,13 +137,12 @@ JSONObject obj = JSON.parseObject("{\"name\":\"张三\",\"age\":25}");
 
 // 转为 JSON 字符串
 String json = obj.toString();
-String pretty = obj.toJSONString(JSONWriter.Feature.PrettyFormat);
+String pretty = obj.toJSONString(WriteFeature.PrettyFormat);
 
 // 转为 byte[]
-byte[] bytes = obj.toJSONBytes();
+byte[] bytes = JSON.toJSONBytes(obj);
 
-// 转为 Map
-Map<String, Object> map = obj.getInnerMap();
+// JSONObject extends LinkedHashMap，可直接当 Map 使用
 
 // 转为 Java 对象
 User user = obj.toJavaObject(User.class);
@@ -196,7 +195,7 @@ Object result = obj.eval("$.user.address.city");
 | `put(String, Object)` | 添加/替换值 | `obj.put("key", "value")` |
 | `get(String)` | 获取任意值 | `obj.get("key")` |
 | `getString(String)` | 获取字符串 | `obj.getString("name")` |
-| `getString(String, String)` | 获取字符串（带默认） | `obj.getString("name", "")` |
+| `getInteger(String)` | 获取 Integer | `obj.getInteger("age")` |
 | `getIntValue(String)` | 获取 int | `obj.getIntValue("age")` |
 | `getLongValue(String)` | 获取 long | `obj.getLongValue("id")` |
 | `getDoubleValue(String)` | 获取 double | `obj.getDoubleValue("price")` |

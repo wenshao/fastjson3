@@ -19,7 +19,7 @@ String schemaJson = """
         }
     }
     """;
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 
 // 从 JSONObject 创建
 JSONObject schemaObj = JSON.parseObject(schemaJson);
@@ -27,7 +27,7 @@ JSONSchema schema = JSONSchema.of(schemaObj);
 
 // 从文件创建
 String schemaJson = Files.readString(Path.of("schema.json"));
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 ```
 
 ### 验证数据
@@ -302,7 +302,7 @@ boolean valid = validator.isValid("invalid");  // false
 ```java
 @RestController
 public class UserController {
-    private static final JSONSchema USER_SCHEMA = JSONSchema.of("""
+    private static final JSONSchema USER_SCHEMA = JSONSchema.parseSchema("""
         {
             "type": "object",
             "properties": {
@@ -332,7 +332,7 @@ public class UserController {
 
 ```java
 public class ConfigValidator {
-    private static final JSONSchema CONFIG_SCHEMA = JSONSchema.of("""
+    private static final JSONSchema CONFIG_SCHEMA = JSONSchema.parseSchema("""
         {
             "type": "object",
             "properties": {
@@ -368,7 +368,7 @@ public class ConfigValidator {
 
 ```java
 // ✅ 好：编译一次，重复使用
-private static final JSONSchema USER_SCHEMA = JSONSchema.of(schemaJson);
+private static final JSONSchema USER_SCHEMA = JSONSchema.parseSchema(schemaJson);
 
 public void validateUser(String json) {
     USER_SCHEMA.validate(json);
@@ -376,7 +376,7 @@ public void validateUser(String json) {
 
 // ❌ 不好：每次创建
 public void validateUser(String json) {
-    JSONSchema schema = JSONSchema.of(schemaJson);  // 每次编译
+    JSONSchema schema = JSONSchema.parseSchema(schemaJson);  // 每次编译
     schema.validate(json);
 }
 ```
@@ -446,7 +446,7 @@ public class SchemaDemo {
             }
             """;
 
-        JSONSchema schema = JSONSchema.of(schemaJson);
+        JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 
         // 验证有效数据
         String validJson = "{\"name\":\"张三\",\"age\":25,\"email\":\"test@example.com\"}";

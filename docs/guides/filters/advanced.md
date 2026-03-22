@@ -252,7 +252,13 @@ public class FilteringObjectMapper extends ObjectMapper {
 
     @Override
     public String writeValueAsString(Object object) {
-        return JSON.toJSONString(object, filters.toArray(new Filter[0]));
+        ObjectMapper.Builder builder = ObjectMapper.builder();
+        for (Filter f : filters) {
+            if (f instanceof NameFilter) builder.addNameFilter((NameFilter) f);
+            else if (f instanceof ValueFilter) builder.addValueFilter((ValueFilter) f);
+            else if (f instanceof PropertyFilter) builder.addPropertyFilter((PropertyFilter) f);
+        }
+        return builder.build().writeValueAsString(object);
     }
 }
 ```
@@ -278,10 +284,11 @@ public class FilterModules {
 }
 
 // 使用
-String json = JSON.toJSONString(obj,
-    FilterModules.security(),
-    FilterModules.desensitization()
-);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addPropertyFilter((PropertyFilter) FilterModules.security()[0])
+    .addValueFilter((ValueFilter) FilterModules.desensitization()[0])
+    .build();
+String json = mapper.writeValueAsString(obj);
 ```
 
 ---
@@ -309,7 +316,10 @@ public class Filters {
 }
 
 // ❌ 不好：每次创建
-String json = JSON.toJSONString(obj, (obj, name, val) -> !name.equals("password"));
+ObjectMapper mapper = ObjectMapper.builder()
+    .addPropertyFilter((obj2, name, val) -> !name.equals("password"))
+    .build();
+String json = mapper.writeValueAsString(obj);
 ```
 
 ### 3. 可测试的过滤器

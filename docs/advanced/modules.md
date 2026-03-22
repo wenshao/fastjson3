@@ -67,7 +67,8 @@ public class DeserializationModule implements ObjectReaderModule {
 
 ```java
 ObjectMapper mapper = ObjectMapper.builder()
-    .registerModule(new MoneyModule())
+    .addReaderModule(new MoneyModule())
+    .addWriterModule(new MoneyModule())
     .build();
 ```
 
@@ -75,9 +76,12 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 ```java
 ObjectMapper mapper = ObjectMapper.builder()
-    .registerModule(new MoneyModule())
-    .registerModule(new JavaTimeModule())
-    .registerModule(new JodaTimeModule())
+    .addReaderModule(new MoneyModule())
+    .addWriterModule(new MoneyModule())
+    .addReaderModule(new JavaTimeModule())
+    .addWriterModule(new JavaTimeModule())
+    .addReaderModule(new JodaTimeModule())
+    .addWriterModule(new JodaTimeModule())
     .build();
 ```
 
@@ -210,8 +214,10 @@ public class DebugModule implements ObjectWriterModule {
 
 ```java
 ObjectMapper mapper = ObjectMapper.builder()
-    .registerModule(new BaseModule())        // 先执行
-    .registerModule(new OverrideModule())     // 可能覆盖前面的
+    .addReaderModule(new BaseModule())        // 先执行
+    .addWriterModule(new BaseModule())
+    .addReaderModule(new OverrideModule())     // 可能覆盖前面的
+    .addWriterModule(new OverrideModule())
     .build();
 ```
 
@@ -261,7 +267,11 @@ public class CompleteModule implements ObjectWriterModule, ObjectReaderModule {
 
 // 使用
 ObjectMapper mapper = ObjectMapper.builder()
-    .registerModule(new CompleteModule()
+    .addReaderModule(new CompleteModule()
+        .addModule(new JavaTimeModule())
+        .addModule(new MoneyModule())
+    )
+    .addWriterModule(new CompleteModule()
         .addModule(new JavaTimeModule())
         .addModule(new MoneyModule())
     )
@@ -307,8 +317,10 @@ public class JsonConfig {
             .enableWrite(WriteFeature.PrettyFormat)
 
             // 注册模块
-            .registerModule(new JavaTimeModule())
-            .registerModule(new BusinessModule())
+            .addReaderModule(new JavaTimeModule())
+            .addWriterModule(new JavaTimeModule())
+            .addReaderModule(new BusinessModule())
+            .addWriterModule(new BusinessModule())
 
             // ASM 优化
             .readerCreator(ObjectReaderCreatorASM::createObjectReader)

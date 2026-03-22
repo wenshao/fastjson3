@@ -179,7 +179,7 @@ WriteFeature.WriteEnumUsingToString
 ```java
 ReadFeature.ErrorOnUnknownProperties
 ReadFeature.SupportSmartMatch
-ReadFeature.AllowComment
+ReadFeature.AllowComments
 ReadFeature.AllowSingleQuotes
 ```
 

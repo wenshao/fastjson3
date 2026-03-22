@@ -109,10 +109,10 @@ private transient String tempData;  // transient
 
 ### Q: 枚举输出为数字？
 
-**A:** 默认输出名称，要输出序数：
+**A:** 默认输出序号，要输出名称：
 
 ```java
-JSON.toJSONString(obj, WriteFeature.WriteEnumUsingOrdinal)
+JSON.toJSONString(obj, WriteFeature.WriteEnumsUsingName)
 ```
 
 ### Q: 如何美化输出？
@@ -158,10 +158,8 @@ JSON.toJSONString(obj, WriteFeature.PrettyFormat)
 // ❌ 不安全：允许任意类型
 .enableRead(ReadFeature.SupportAutoType)
 
-// ✅ 安全：使用白名单
-.autoTypeFilter(AutoTypeFilter.whitelist()
-    .addClass("com.example.model.")
-    .build())
+// ✅ 安全：保持默认禁用即可
+// ReadFeature.SupportAutoType 默认关闭，无需额外配置
 ```
 
 ### Q: 如何防御恶意 JSON？
@@ -221,12 +219,12 @@ public class Config {
 
 **A:**
 
+参见 [Spring Boot 集成指南](guides/spring-boot.md) 中的自定义 HttpMessageConverter 实现。
+
 ```java
 @Override
 public void configureMessageConverters(List<HttpMessageConverter<?>> converters) {
-    Fastjson3HttpMessageConverter converter = new Fastjson3HttpMessageConverter();
-    converter.setObjectMapper(objectMapper);
-    converters.add(0, converter);
+    converters.add(0, new Fastjson3HttpMessageConverter(objectMapper));
 }
 ```
 
@@ -241,7 +239,7 @@ public void configureMessageConverters(List<HttpMessageConverter<?>> converters)
 使用专用 JAR：
 
 ```gradle
-implementation 'com.alibaba:fastjson3:3.0.0:android@aar'
+implementation 'com.alibaba.fastjson3:fastjson3:3.0.0:android'
 ```
 
 ### Q: Android 上性能如何？

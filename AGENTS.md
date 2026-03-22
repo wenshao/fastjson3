@@ -52,8 +52,8 @@ See `benchmark3/README.md` for details.
 
 ## Design Docs
 
-- `core3/docs/design.md` — Overall architecture, platform support, module structure
-- `core3/docs/serialization_optimization.md` — Performance optimization techniques (SWAR, putLong, etc.)
+- `docs/internals/architecture.md` — Overall architecture, platform support, module structure
+- `docs/internals/optimization/` — Performance optimization techniques (SWAR, putLong, etc.)
 
 ## User Documentation
 
@@ -64,3 +64,22 @@ See `benchmark3/README.md` for details.
 - `docs/advanced/` — Advanced topics
 - `docs/migration/` — Migration guides
 - `docs/samples/` — Runnable code samples
+- `docs/api/quick-reference.md` — Consolidated API index (best entry point for AI)
+
+## Documentation Quality
+
+When modifying documentation, run `./scripts/check-docs.sh` to verify accuracy.
+The script checks for common errors:
+- Non-existent enum values, annotation parameters, builder methods
+- Wrong class references (JSONReader/JSONWriter don't exist in fastjson3)
+- Wrong JSONGenerator method names (use startObject not writeStartObject)
+- Broken internal links
+
+Key rules for documentation:
+- Use `ReadFeature` / `WriteFeature`, NOT `JSONReader.Feature` / `JSONWriter.Feature`
+- Use `addMixIn` (capital I), NOT `addMixin`
+- Use `enableRead` / `enableWrite`, NOT `enableReader` / `readFeatures`
+- `JSONSchema.parseSchema(String)`, NOT `JSONSchema.of(String)` (of() only takes JSONObject)
+- No `.dateFormat()` or `.namingStrategy()` on ObjectMapper.builder() — use annotations instead
+- `@JSONField` has NO `unwrapped`, `raw`, `using`, or `writeEnumUsingName` parameters
+- `@JSONType` has NO `serializer`, `deserializer`, `format`, or `ignore` (boolean) parameters

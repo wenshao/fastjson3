@@ -22,7 +22,7 @@
 
 ```java
 // ===== fastjson3 =====
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 ValidateResult result = schema.validate(dataJson);
 
 // ===== networknt =====
@@ -58,7 +58,7 @@ Set<ValidationMessage> errors = schema.validate(dataJson, InputFormat.JSON);
 
 ```java
 // ===== fastjson3 =====
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 ValidateResult result = schema.validate(dataJson);
 
 // ===== everit =====
@@ -87,7 +87,7 @@ Schema schema = SchemaLoader
     .require("name");
 
 // ===== fastjson3 =====
-JSONSchema schema = JSONSchema.of("""
+JSONSchema schema = JSONSchema.parseSchema("""
     {
         "type": "object",
         "properties": {"name": {"type": "string"}},
@@ -104,7 +104,7 @@ JSONSchema schema = JSONSchema.of("""
 
 ```java
 // ===== fastjson3 =====
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 ValidateResult result = schema.validate(dataJson);
 
 // ===== Jackson (json-schema-validator) =====
@@ -149,7 +149,7 @@ public boolean validateUser(JSONObject json) {
 }
 
 // ===== fastjson3 JSON Schema =====
-private static final JSONSchema SCHEMA = JSONSchema.of("""
+private static final JSONSchema SCHEMA = JSONSchema.parseSchema("""
     {
         "type": "object",
         "properties": {
@@ -223,7 +223,7 @@ if (!errors.isEmpty()) {
 }
 
 // ===== fastjson3 =====
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 ValidateResult result = schema.validate(dataJson);
 
 if (!result.isSuccess()) {
@@ -241,7 +241,7 @@ Schema schema = SchemaLoader.load(schemaJson);
 schema.validate(dataJson);  // 抛出 ValidationException
 
 // ===== fastjson3 =====
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 ValidateResult result = schema.validate(dataJson);
 
 if (!result.isSuccess()) {
@@ -261,7 +261,7 @@ Set<ValidationMessage> errors = schema.validate(dataJson);
 
 // ===== fastjson3 =====
 // Schema 完全兼容，直接使用即可
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 ValidateResult result = schema.validate(dataJson);
 ```
 

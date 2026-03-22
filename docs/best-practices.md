@@ -230,13 +230,8 @@ ObjectMapper.builder()
 // ❌ 危险：允许任意类型
 .enableRead(ReadFeature.SupportAutoType)
 
-// ✅ 安全：禁用或使用白名单
-.disableRead(ReadFeature.SupportAutoType)
-
-// 或使用白名单
-.autoTypeFilter(AutoTypeFilter.whitelist()
-    .addClass("com.example.model.")
-    .build())
+// ✅ 安全：保持默认禁用即可
+// ReadFeature.SupportAutoType 默认关闭，无需额外配置
 ```
 
 ### 2. 输入验证
@@ -266,9 +261,9 @@ public void process(String json) {
 
 ```gradle
 // ✅ 好：使用 android 版本
-implementation 'com.alibaba:fastjson3:3.0.0:android@aar'
+implementation 'com.alibaba.fastjson3:fastjson3:3.0.0:android'
 
-// ⚠️ 普通 JAR 包含 ASM，Android 不支持
+// ⚠️ 不带 :android 分类器的 JAR 包含 ASM，Android 不支持
 ```
 
 ### 2. 避免反射
@@ -288,12 +283,10 @@ public class Data {
 ### 1. 正确配置 MessageConverter
 
 ```java
-// ✅ 好：添加到最前面
+// ✅ 好：添加到最前面（实现参见 Spring Boot 集成指南）
 @Override
 public void configureMessageConverters(List<HttpMessageConverter<?>> converters) {
-    Fastjson3HttpMessageConverter converter = new Fastjson3HttpMessageConverter();
-    converter.setObjectMapper(objectMapper);
-    converters.add(0, converter);  // 优先级最高
+    converters.add(0, new Fastjson3HttpMessageConverter(objectMapper));
 }
 ```
 
@@ -331,4 +324,4 @@ public class GlobalExceptionHandler {
 
 - ❓ [常见问题 →](faq.md)
 - 📖 [性能调优 →](guides/performance.md)
-- 🔧 [安全配置 →](guides/security.md)
+- 🔧 [安全配置 →](advanced/security.md)

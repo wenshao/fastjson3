@@ -83,9 +83,9 @@ TypeToken<List<User>> type = TypeToken.listOf(User.class);
 
 A: 使用 ObjectMapper.builder()：
 ```java
+// 日期格式请使用 @JSONField(format = "yyyy-MM-dd") 注解
 ObjectMapper mapper = ObjectMapper.builder()
     .enableWrite(WriteFeature.PrettyFormat)
-    .dateFormat("yyyy-MM-dd")
     .build();
 ```
 

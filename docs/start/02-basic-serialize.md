@@ -137,16 +137,16 @@ public class User {
     private Status status;
 }
 
-// 默认输出名称
-// {"status":"ACTIVE"}
-
-// 输出序号
-String json = JSON.toJSONString(user,
-    WriteFeature.WriteEnumUsingOrdinal);
+// 默认输出序号
 // {"status":0}
 
+// 输出名称
+String json = JSON.toJSONString(user,
+    WriteFeature.WriteEnumsUsingName);
+// {"status":"ACTIVE"}
+
 // 使用 toString()
-@JSONField(writeUsing = StatusSerializer.class)
+@JSONField(serializeUsing = StatusSerializer.class)
 private Status status;
 ```
 

@@ -26,7 +26,8 @@ String json = mapper.writer(filters).writeValueAsString(obj);
 // ===== fastjson3 =====
 PropertyFilter filter = (obj, name, value) ->
     List.of("name", "age").contains(name);
-String json = JSON.toJSONString(obj, filter);
+ObjectMapper mapper = ObjectMapper.builder().addPropertyFilter(filter).build();
+String json = mapper.writeValueAsString(obj);
 ```
 
 ### Jackson ValueFilter
@@ -52,7 +53,8 @@ Gson gson = new GsonBuilder()
 
 // ===== fastjson3 =====
 PropertyFilter filter = (obj, name, value) -> !name.equals("password");
-String json = JSON.toJSONString(obj, filter);
+ObjectMapper mapper = ObjectMapper.builder().addPropertyFilter(filter).build();
+String json = mapper.writeValueAsString(obj);
 ```
 
 ---
@@ -100,7 +102,8 @@ ValueFilter phoneFilter = (obj, name, value) -> {
     }
     return value;
 };
-String json = JSON.toJSONString(user, phoneFilter);
+ObjectMapper mapper = ObjectMapper.builder().addValueFilter(phoneFilter).build();
+String json = mapper.writeValueAsString(user);
 
 // ===== Jackson =====
 // 需要自定义 JsonSerializer

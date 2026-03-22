@@ -42,6 +42,28 @@ boolean isObj = JSON.isValidObject(json);     // 是对象
 boolean isArr = JSON.isValidArray(json);      // 是数组
 ```
 
+## 语义化 API（推荐）
+
+```java
+// ===== parse + ParseConfig =====
+User user = JSON.parse(json, User.class);                          // 默认
+User user = JSON.parse(json, User.class, ParseConfig.LENIENT);    // 宽松（配置文件）
+User user = JSON.parse(json, User.class, ParseConfig.STRICT);     // 严格（API）
+User user = JSON.parse(json, User.class, ParseConfig.API);        // 金融（BigDecimal）
+
+// ===== write + WriteConfig =====
+String json = JSON.write(user);                                    // 默认
+String json = JSON.write(user, WriteConfig.PRETTY);                // 美化输出
+String json = JSON.write(user, WriteConfig.WITH_NULLS);            // 包含 null
+String json = JSON.write(user, WriteConfig.PRETTY_WITH_NULLS);    // 美化 + null
+
+// ===== 集合类型 =====
+List<User> users = JSON.parseList(json, User.class);
+Set<String> tags = JSON.parseSet(json, String.class);
+Map<String, User> map = JSON.parseMap(json, User.class);
+User[] arr = JSON.parseTypedArray(json, User.class);
+```
+
 ## 常用注解
 
 ```java
@@ -132,17 +154,17 @@ byte[] json = JSON.toJSONBytes(obj);
 ## 泛型处理
 
 ```java
-// List
-TypeToken<List<User>> type = new TypeToken<List<User>>() {};
-List<User> users = mapper.readValue(json, type);
+// 方式1: TypeToken + JSON.parse (推荐)
+List<User> users = JSON.parse(json, TypeToken.listOf(User.class));
+Map<String, User> map = JSON.parse(json, TypeToken.mapOf(User.class));
 
-// Map<String, User>
-TypeToken<Map<String, User>> type = new TypeToken<Map<String, User>>() {};
-Map<String, User> map = mapper.readValue(json, type);
+// 方式2: TypeReference + ObjectMapper
+TypeReference<List<User>> ref = new TypeReference<List<User>>() {};
+List<User> users = mapper.readValue(json, ref);
 
-// 复杂泛型
-TypeToken<Map<String, List<User>>> type =
-    new TypeToken<Map<String, List<User>>>() {};
+// 方式3: 便捷方法（最简单）
+List<User> users = JSON.parseList(json, User.class);
+Map<String, User> map = JSON.parseMap(json, User.class);
 ```
 
 ## 日期处理
@@ -177,9 +199,11 @@ ObjectMapper.builder()
 
 ```java
 // 过滤字段
-PropertyFilter filter = (obj, name, val) ->
-    !Set.of("password", "token").contains(name);
-String json = JSON.toJSONString(obj, filter);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addPropertyFilter((obj, name, val) ->
+        !Set.of("password", "token").contains(name))
+    .build();
+String json = mapper.writeValueAsString(obj);
 
 // 脱敏
 ValueFilter desensitize = (obj, name, val) -> {
@@ -223,7 +247,7 @@ User user = MAPPER.readValue(json, User.class);
 |------|------|----------|
 | `NumberFormatException` | 数字格式错误 | 检查字段值 |
 | `JSONException: syntax error` | JSON 语法错误 | 用 `JSON.isValid()` 验证 |
-| `NullPointerException` | 字段为 null | 使用 `getString("key", default)` |
+| `NullPointerException` | 字段为 null | 使用 `getString("key")` 并检查 null |
 | `undefined` | 字段不存在 | 检查字段名 |
 
 ## 更多信息

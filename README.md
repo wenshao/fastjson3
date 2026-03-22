@@ -65,6 +65,25 @@ User user = mapper.readValue(jsonStr, User.class);
 String json = mapper.writeValueAsString(user);
 ```
 
+## Modern API
+
+```java
+// Parse with semantic configuration
+User user = JSON.parse(json, User.class);                          // default
+User user = JSON.parse(json, User.class, ParseConfig.LENIENT);    // config files
+User user = JSON.parse(json, User.class, ParseConfig.STRICT);     // API contracts
+
+// Serialize with semantic configuration
+String json = JSON.write(user);                                    // default
+String json = JSON.write(user, WriteConfig.PRETTY);                // pretty print
+String json = JSON.write(user, WriteConfig.WITH_NULLS);            // include nulls
+
+// Type-safe collection parsing
+List<User> users = JSON.parseList(json, User.class);
+Map<String, User> map = JSON.parseMap(json, User.class);
+Set<String> tags = JSON.parseSet(json, String.class);
+```
+
 ## Quick Start
 
 ```java
@@ -128,13 +147,21 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 ```java
 // Register custom codec
-mapper.registerReader(Money.class, (parser, type, features) -> {
-    return new Money(parser.readString());
-});
+ObjectReader<Money> moneyReader = new ObjectReader<>() {
+    @Override
+    public Money readObject(JSONParser parser, Type fieldType, Object fieldName, long features) {
+        return new Money(parser.readString());
+    }
+};
+mapper.registerReader(Money.class, moneyReader);
 
-mapper.registerWriter(Money.class, (gen, obj, features) -> {
-    gen.writeString(obj.toString());
-});
+ObjectWriter<Money> moneyWriter = new ObjectWriter<>() {
+    @Override
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
+        gen.writeString(((Money) object).toString());
+    }
+};
+mapper.registerWriter(Money.class, moneyWriter);
 ```
 
 ## JSONPath (RFC 9535)
@@ -150,11 +177,11 @@ String title = path.eval(jsonObject, String.class);
 String title = path.extract(jsonString, String.class);
 
 // Multi-path typed extraction
-JSONPath.TypedMultiPath multi = JSONPath.typedMulti()
-    .path("$.name", String.class)
-    .path("$.age", Integer.class)
-    .build();
-Object[] values = multi.extract(jsonString);
+JSONPath multi = JSONPath.of(
+    new String[]{"$.name", "$.age"},
+    new Type[]{String.class, Integer.class}
+);
+Object[] values = (Object[]) multi.extract(jsonString);
 ```
 
 ## JSONValidator
@@ -177,7 +204,7 @@ JSON.isValidArray(jsonStr);         // must be [ ... ]
 ## JSON Schema (Draft 2020-12)
 
 ```java
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 ValidateResult result = schema.validate(dataJson);
 if (!result.isSuccess()) {
     System.out.println(result.getMessage());

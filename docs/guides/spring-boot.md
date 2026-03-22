@@ -8,7 +8,7 @@ fastjson3 可以轻松集成到 Spring Boot 应用中。
 
 ```xml
 <dependency>
-    <groupId>com.alibaba</groupId>
+    <groupId>com.alibaba.fastjson3</groupId>
     <artifactId>fastjson3</artifactId>
     <version>3.0.0</version>
 </dependency>
@@ -35,7 +35,39 @@ public class Fastjson3Config {
 
 ### 自定义 HttpMessageConverter
 
+fastjson3 目前没有内置的 Spring HttpMessageConverter，需要手动实现：
+
 ```java
+public class Fastjson3HttpMessageConverter
+        extends AbstractHttpMessageConverter<Object> {
+
+    private final ObjectMapper mapper;
+
+    public Fastjson3HttpMessageConverter(ObjectMapper mapper) {
+        super(MediaType.APPLICATION_JSON, new MediaType("application", "*+json"));
+        this.mapper = mapper;
+    }
+
+    @Override
+    protected boolean supports(Class<?> clazz) {
+        return true;
+    }
+
+    @Override
+    protected Object readInternal(Class<?> clazz,
+            HttpInputMessage inputMessage) throws IOException {
+        byte[] bytes = inputMessage.getBody().readAllBytes();
+        return mapper.readValue(bytes, clazz);
+    }
+
+    @Override
+    protected void writeInternal(Object obj,
+            HttpOutputMessage outputMessage) throws IOException {
+        byte[] bytes = mapper.writeValueAsBytes(obj);
+        outputMessage.getBody().write(bytes);
+    }
+}
+
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
@@ -44,9 +76,7 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void configureMessageConverters(List<HttpMessageConverter<?>> converters) {
-        Fastjson3HttpMessageConverter converter = new Fastjson3HttpMessageConverter();
-        converter.setObjectMapper(objectMapper);
-        converters.add(0, converter);  // 添加到最前面
+        converters.add(0, new Fastjson3HttpMessageConverter(objectMapper));
     }
 }
 ```
@@ -87,7 +117,7 @@ public class UserController {
 @RestController
 public class UserController {
 
-    private static final JSONSchema USER_SCHEMA = JSONSchema.of("""
+    private static final JSONSchema USER_SCHEMA = JSONSchema.parseSchema("""
         {
             "type": "object",
             "properties": {
@@ -134,7 +164,7 @@ public class JsonSchemaValidator implements
 
     @Override
     public void initialize(ValidJsonSchema annotation) {
-        this.schema = JSONSchema.of(annotation.schema());
+        this.schema = JSONSchema.parseSchema(annotation.schema());
     }
 
     @Override
@@ -184,9 +214,9 @@ public class RedisConfig {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(factory);
 
-        // 使用 fastjson3 序列化
-        GenericFastjson3RedisSerializer serializer =
-            new GenericFastjson3RedisSerializer(Object.class);
+        // 使用 fastjson3 序列化（参见下方自定义 RedisSerializer）
+        Fastjson3RedisSerializer<Object> serializer =
+            new Fastjson3RedisSerializer<>(Object.class);
 
         template.setKeySerializer(new StringRedisSerializer());
         template.setHashKeySerializer(new StringRedisSerializer());

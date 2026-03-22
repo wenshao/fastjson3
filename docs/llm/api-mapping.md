@@ -75,7 +75,7 @@
 |---------------------------|----------------------|
 | `WriteMapNullValue` | `WriteNulls` |
 | `PrettyFormat` | `PrettyFormat` |
-| `WriteDateUseDateFormat` | 使用 `dateFormat()` 配置 |
+| `WriteDateUseDateFormat` | 使用 `@JSONField(format = "...")` 注解 |
 | `WriteEnumUsingToString` | `WriteEnumUsingToString` |
 | `DisableCircularReferenceDetect` | 禁用 `ReferenceDetection` |
 | `BrowserCompatible` | (默认行为) |
@@ -87,13 +87,13 @@
 |----------------------------------|---------------------|
 | `FAIL_ON_UNKNOWN_PROPERTIES` | `ErrorOnUnknownProperties` |
 | `ACCEPT_SINGLE_VALUE_AS_ARRAY` | `SupportArrayToBean` |
-| `ALLOW_UNQUOTED_FIELD_NAMES` | `AllowUnQuotedFieldNames` |
-| `ALLOW_COMMENTS` | `AllowComment` |
+| `ALLOW_UNQUOTED_FIELD_NAMES` | `AllowUnquotedFieldNames` |
+| `ALLOW_COMMENTS` | `AllowComments` |
 
 | fastjson1 Feature | fastjson3 ReadFeature |
 |------------------|---------------------|
-| `AllowComment` | `AllowComment` |
-| `AllowUnQuotedFieldNames` | `AllowUnQuotedFieldNames` |
+| `AllowComments` | `AllowComments` |
+| `AllowUnquotedFieldNames` | `AllowUnquotedFieldNames` |
 | `SupportSmartMatch` | `SupportSmartMatch` |
 | `SupportArrayToBean` | `SupportArrayToBean` |
 | `AutoCloseSource` | (默认行为) |
@@ -111,7 +111,7 @@
 | `@JsonIgnore` | `@JSONField(serialize = false)` | ✅ 原生支持 |
 | `@JsonFormat(pattern = "fmt")` | `@JSONField(format = "fmt")` | ✅ 原生支持 |
 | `@JsonInclude(NON_NULL)` | `@JSONField(inclusion = Inclusion.NON_NULL)` | ✅ 原生支持 |
-| `@JsonUnwrapped` | `@JSONField(unwrapped = true)` | ✅ 原生支持 |
+| `@JsonUnwrapped` | 不支持，需自定义序列化器 | ⚠️ 手动处理 |
 | `@JsonProperty(required = true)` | `@JSONField(required = true)` | ✅ 原生支持 |
 | `@JsonSerialize(using = X.class)` | `@JSONField(serializeUsing = X.class)` | ✅ 原生支持 |
 | `@JsonDeserialize(using = X.class)` | `@JSONField(deserializeUsing = X.class)` | ✅ 原生支持 |
@@ -143,7 +143,7 @@
 | Jackson | fastjson3 |
 |---------|-----------|
 | `PropertyNamingStrategies.SnakeCaseStrategy` | `NamingStrategy.SnakeCase` |
-| `PropertyNamingStrategies.LowerCaseStrategy` | `NamingStrategy.ToLowerCamelCase` |
+| `PropertyNamingStrategies.LowerCaseStrategy` | `NamingStrategy.CamelCase` |
 | `PropertyNamingStrategies.KebabCaseStrategy` | `NamingStrategy.KebabCase` |
 | `PropertyNamingStrategies.UpperCamelCaseStrategy` | `NamingStrategy.PascalCase` |
 

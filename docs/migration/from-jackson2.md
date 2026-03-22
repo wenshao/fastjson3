@@ -98,13 +98,13 @@ public class User {
 | `@JsonIgnore` | `@JSONField(serialize=false)` | ✅ | 保留或替换 |
 | `@JsonFormat` | `@JSONField(format)` | ✅ | 保留或替换 |
 | `@JsonInclude` | `@JSONField(inclusion)` | ✅ | 保留或替换 |
-| `@JsonUnwrapped` | `@JSONField(unwrapped=true)` | ✅ | 保留或替换 |
+| `@JsonUnwrapped` | - | ❌ | 需自定义 ObjectWriter 实现 |
 | `@JsonNaming` | `@JSONType(naming)` | ✅ | 保留或替换 |
 | `@JsonCreator` | `@JSONCreator` | ✅ | 保留或替换 |
 | `@JsonDeserialize` | `@JSONField(deserializeUsing)` | ✅ | 保留或替换 |
 | `@JsonSerialize` | `@JSONField(serializeUsing)` | ✅ | 保留或替换 |
-| `@JsonRawValue` | `@JSONField(raw=true)` | ✅ | 保留或替换 |
-| `@JsonValue` | `@JSONField(using=ValueSerializer.class)` | ✅ | 保留或替换 |
+| `@JsonRawValue` | - | ❌ | 需自定义 ObjectWriter |
+| `@JsonValue` | `@JSONField(value=true)` | ✅ | 保留或替换 |
 | `@JsonView` | - | ❌ | 需要改用 Filter |
 | `@JsonIdentityInfo` | - | ❌ | 需要自定义序列化 |
 | `@JsonBackReference` | - | ❌ | 需要改用 `@JSONField(serialize=false)` |
@@ -226,7 +226,7 @@ public class Address {
 public class User {
     private String name;
 
-    @JSONField(unwrapped = true)
+    // @JsonUnwrapped 不支持，需使用自定义 ObjectWriter 实现
     private Address address;
 }
 ```
@@ -374,13 +374,13 @@ mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
 mapper.setDateFormat(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"));
 
 // ===== fastjson3 =====
+// 命名策略请使用 @JSONType(naming = NamingStrategy.SnakeCase) 注解
+// 日期格式请使用 @JSONField(format = "yyyy-MM-dd HH:mm:ss") 注解
 ObjectMapper mapper = ObjectMapper.builder()
     .enableWrite(WriteFeature.PrettyFormat)
     .enableWrite(WriteFeature.WriteNulls)
     .disableRead(ReadFeature.ErrorOnUnknownProperties)
     .enableRead(ReadFeature.SupportArrayToBean)
-    .namingStrategy(NamingStrategy.SnakeCase)
-    .dateFormat("yyyy-MM-dd HH:mm:ss")
     .build();
 ```
 
@@ -483,7 +483,10 @@ PropertyFilter publicFilter = (obj, name, value) -> {
     return true;
 };
 
-String json = JSON.toJSONString(user, publicFilter);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addPropertyFilter(publicFilter)
+    .build();
+String json = mapper.writeValueAsString(user);
 ```
 
 ### 场景 4：循环引用处理
@@ -529,7 +532,7 @@ public class Order {
 // ===== fastjson3 =====
 public class MoneyWriter implements ObjectWriter<BigDecimal> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         BigDecimal value = (BigDecimal) object;
         gen.writeString(value.setScale(2, RoundingMode.HALF_UP) + "元");
     }
@@ -570,7 +573,10 @@ PropertyFilter filter = (obj, name, value) -> {
     return !name.equals("sensitiveData");  // 其他人排除敏感字段
 };
 
-String json = JSON.toJSONString(user, filter);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addPropertyFilter(filter)
+    .build();
+String json = mapper.writeValueAsString(user);
 ```
 
 ---
@@ -667,11 +673,11 @@ public class Fastjson3Config {
     @Bean
     @Primary
     public ObjectMapper objectMapper() {
+        // 命名策略请使用 @JSONType(naming = NamingStrategy.CamelCase) 注解
+        // 日期格式请使用 @JSONField(format = "yyyy-MM-dd HH:mm:ss") 注解
         return ObjectMapper.builder()
             .enableRead(ReadFeature.SupportSmartMatch)
             .enableWrite(WriteFeature.PrettyFormat)
-            .namingStrategy(NamingStrategy.CamelCase)
-            .dateFormat("yyyy-MM-dd HH:mm:ss")
             .build();
     }
 
@@ -702,7 +708,7 @@ A: fastjson3 使用类似概念的 ObjectReaderModule/ObjectWriterModule。
 
 ### Q: 循环引用如何处理？
 
-A: 使用 `@JSONField(serialize = false)` 或 `JSONWriter.Feature.IgnoreCircularReference`
+A: 使用 `@JSONField(serialize = false)` 或 `WriteFeature.ReferenceDetection`
 
 ---
 
@@ -758,7 +764,7 @@ public class UserRequest {
     @JSONField(serialize = false)
     private String password;
 
-    @JSONField(unwrapped = true)
+    // @JsonUnwrapped 不支持，需使用自定义 ObjectWriter 实现
     private UserProfile profile;
 }
 ```

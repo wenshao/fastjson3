@@ -97,8 +97,9 @@ public class User {
     private String internalId;
 }
 
-// 自定义序列化器
-@JSONType(serializer = UserSerializer.class)
+// 自定义序列化器（通过字段注解指定）
+// 注意：@JSONType 不支持 serializer 参数，
+// 请使用 @JSONField(serializeUsing = ...) 或通过 ObjectMapper 注册
 public class User {
     // ...
 }
@@ -238,16 +239,16 @@ public class User {
     private Status status;
 }
 
-// 默认输出名称
-// {"status":"ACTIVE"}
+// 默认输出序号
+// {"status":0}
 
-// 配置输出序号
+// 配置输出名称
 String json = JSON.toJSONString(user,
-    WriteFeature.WriteEnumUsingOrdinal);
+    WriteFeature.WriteEnumsUsingName);
 
-// 或使用注解
-@JSONField(writeEnumUsingName = false)
-private Status status;
+// 或在序列化时指定 WriteFeature
+// 注意：@JSONField 不支持 writeEnumUsingName 参数，
+// 请使用 WriteFeature.WriteEnumsUsingName
 ```
 
 ## 多态类型

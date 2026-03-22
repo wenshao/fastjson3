@@ -177,7 +177,7 @@ User user = JSON.parseObject(json, User.class);
 |--------------|-----------|
 | `WriteMapNullValue` | `WriteNulls` |
 | `PrettyFormat` | `PrettyFormat` |
-| `WriteDateUseDateFormat` | 使用 ObjectMapper.dateFormat() |
+| `WriteDateUseDateFormat` | 使用 `@JSONField(format = "...")` 注解 |
 | `DisableCircularReferenceDetect` | 禁用 `ReferenceDetection` |
 
 ---
@@ -193,7 +193,7 @@ User user = JSON.parseObject(json, User.class);
 | `@JsonIgnore` | `@JSONField(serialize=false)` | ✅ 原生支持 |
 | `@JsonFormat` | `@JSONField(format)` | ✅ 原生支持 |
 | `@JsonInclude` | `@JSONField(inclusion)` | ✅ 原生支持 |
-| `@JsonUnwrapped` | `@JSONField(unwrapped=true)` | ✅ 原生支持 |
+| `@JsonUnwrapped` | - | ❌ 不支持，需自定义序列化 |
 | `@JsonNaming` | `@JSONType(naming)` | ✅ 原生支持 |
 | `@JsonCreator` | `@JSONCreator` | ✅ 原生支持 |
 

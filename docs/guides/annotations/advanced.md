@@ -18,11 +18,11 @@ public class User {
 
 ### 展开嵌套对象
 
+> **注意：** `@JSONField(unwrapped = true)` 不受支持。如需展开嵌套对象，请使用自定义序列化器（`serializeUsing`）实现。
+
 ```java
 public class User {
     private String name;
-
-    @JSONField(unwrapped = true)
     private Address address;
 }
 
@@ -30,7 +30,8 @@ public class Address {
     private String city;
     private String street;
 }
-// 输出: {"name":"Tom","city":"Beijing","street":"Main"}
+// 如需输出 {"name":"Tom","city":"Beijing","street":"Main"}，
+// 请使用 @JSONField(serializeUsing = ...) 自定义序列化器。
 ```
 
 ### 单值序列化
@@ -104,7 +105,7 @@ public class Money {
 
     public static class MoneyWriter implements ObjectWriter<BigDecimal> {
         @Override
-        public void write(JSONGenerator gen, Object object, long features) {
+        public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
             BigDecimal value = (BigDecimal) object;
             gen.writeString(value.setScale(2, RoundingMode.HALF_UP) + "元");
         }
@@ -114,21 +115,19 @@ public class Money {
 
 ### 类级序列化器
 
+> **注意：** `@JSONType` 不支持 `serializer` 参数。请在字段上使用 `@JSONField(serializeUsing = ...)` 指定自定义序列化器，或通过 `ObjectMapper.builder()` 注册全局 `ObjectWriter`。
+
 ```java
-@JSONType(serializer = UserSerializer.class)
-public class User {
-    // ...
+// 方式1：字段级自定义序列化器
+public class Order {
+    @JSONField(serializeUsing = UserWriter.class)
+    private User user;
 }
 
-public class UserSerializer implements ObjectWriter<User> {
-    @Override
-    public void write(JSONGenerator gen, Object object, long features) {
-        User user = (User) object;
-        gen.writeStartObject();
-        gen.writeStringField("username", user.getName());
-        gen.writeEndObject();
-    }
-}
+// 方式2：通过 ObjectMapper 注册
+ObjectMapper mapper = ObjectMapper.builder()
+    .build();
+// 注册自定义 ObjectWriter<User>
 ```
 
 ### 自定义反序列化器
@@ -141,8 +140,8 @@ public class User {
 
 public class EmailReader implements ObjectReader<String> {
     @Override
-    public String readObject(JSONReader reader, long features) {
-        String email = reader.readString();
+    public String readObject(JSONParser parser, Type fieldType, Object fieldName, long features) {
+        String email = parser.readString();
         // 自定义验证逻辑
         if (!email.contains("@")) {
             throw new RuntimeException("Invalid email");

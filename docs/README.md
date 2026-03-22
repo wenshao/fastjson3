@@ -38,6 +38,7 @@
 
 | 类/接口 | 描述 |
 |---------|------|
+| [quick-reference.md](api/quick-reference.md) | **API 速查索引（推荐入口）** |
 | [JSON.md](api/JSON.md) | 静态工具类 |
 | [ObjectMapper.md](api/ObjectMapper.md) | 核心映射器 |
 | [JSONObject.md](api/JSONObject.md) | 动态 JSON 对象 |

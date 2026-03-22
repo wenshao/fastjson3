@@ -90,7 +90,7 @@ ObjectMapper mapper = ObjectMapper.shared();  // 从一开始就支持
 | `@JsonIgnore` | `@JSONField(serialize=false)` | ✅ |
 | `@JsonFormat` | `@JSONField(format)` | ✅ |
 | `@JsonInclude` | `@JSONField(inclusion)` | ✅ |
-| `@JsonUnwrapped` | `@JSONField(unwrapped=true)` | ✅ |
+| `@JsonUnwrapped` | - | ❌ 不支持，需自定义序列化 |
 | `@JsonCreator` | `@JSONCreator` | ✅ |
 | `@JsonNaming` | `@JSONType(naming)` | ✅ |
 
@@ -130,9 +130,9 @@ ObjectMapper mapper = ObjectMapper.builder()
     // ReadFeature
     .disableRead(ReadFeature.ErrorOnUnknownProperties)
     .enableRead(ReadFeature.SupportArrayToBean)
-    // JSONReader.Feature
-    .enableReader(JSONReader.Feature.AllowComment)
-    .enableReader(JSONReader.Feature.AllowUnQuotedFieldNames)
+    // ReadFeature (宽松解析)
+    .enableRead(ReadFeature.AllowComments)
+    .enableRead(ReadFeature.AllowUnquotedFieldNames)
     .build();
 ```
 
@@ -142,8 +142,8 @@ ObjectMapper mapper = ObjectMapper.builder()
 |-------------|-----------|------|
 | `INDENT_OUTPUT` | `PrettyFormat` | 格式化 |
 | `FAIL_ON_UNKNOWN_PROPERTIES` | `ErrorOnUnknownProperties` | 未知属性报错 |
-| `ALLOW_COMMENTS` | `AllowComment` | 允许注释 |
-| `ALLOW_UNQUOTED_FIELD_NAMES` | `AllowUnQuotedFieldNames` | 允许无引号字段 |
+| `ALLOW_COMMENTS` | `AllowComments` | 允许注释 |
+| `ALLOW_UNQUOTED_FIELD_NAMES` | `AllowUnquotedFieldNames` | 允许无引号字段 |
 | `ACCEPT_SINGLE_VALUE_AS_ARRAY` | `SupportArrayToBean` | 单值转数组 |
 | `WRITE_DATES_AS_TIMESTAMPS` | `@JSONField(format="millis")` | 日期用时间戳 |
 
@@ -184,10 +184,10 @@ try (JsonGenerator generator = mapper.createGenerator(writer)) {
 
 // ===== fastjson3 =====
 JSONGenerator generator = JSONGenerator.of();
-generator.writeStartObject();
-generator.writeStringField("name", "Tom");
-generator.writeIntField("age", 25);
-generator.writeEndObject();
+generator.startObject();
+generator.writeNameValue("name", "Tom");
+generator.writeNameValue("age", 25);
+generator.endObject();
 String json = generator.toString();
 ```
 
@@ -461,8 +461,8 @@ ObjectMapper mapper = JsonMapper.builder()
     .build();
 
 // ===== fastjson3 =====
+// JavaTime 自动支持，日期格式请使用 @JSONField(format = "yyyy-MM-dd HH:mm:ss") 注解
 ObjectMapper mapper = ObjectMapper.builder()
-    .dateFormat("yyyy-MM-dd HH:mm:ss")  // JavaTime 自动支持
     .build();
 ```
 
@@ -490,11 +490,11 @@ public class Fastjson3Config {
     @Bean
     @Primary
     public ObjectMapper objectMapper() {
+        // 命名策略请使用 @JSONType(naming = NamingStrategy.CamelCase) 注解
+        // 日期格式请使用 @JSONField(format = "yyyy-MM-dd HH:mm:ss") 注解
         return ObjectMapper.builder()
             .enableRead(ReadFeature.SupportSmartMatch)
             .enableWrite(WriteFeature.PrettyFormat)
-            .namingStrategy(NamingStrategy.CamelCase)
-            .dateFormat("yyyy-MM-dd HH:mm:ss")
             .build();
     }
 }
@@ -626,7 +626,7 @@ A: fastjson3 通常比 Jackson 3.x 快 10-20%。
 |-------------|-----------|
 | `SerializationFeature.INDENT_OUTPUT` | `WriteFeature.PrettyFormat` |
 | `DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES` | `ReadFeature.ErrorOnUnknownProperties` |
-| `JsonParser.Feature.ALLOW_COMMENTS` | `JSONReader.Feature.AllowComment` |
+| `JsonParser.Feature.ALLOW_COMMENTS` | `ReadFeature.AllowComments` |
 
 ## 相关文档
 

@@ -88,14 +88,13 @@ private Date createTime;
 ### 枚举输出是数字
 
 ```java
-// 默认输出名称
-// {"status":"ACTIVE"}
+// 默认输出序号
+// {"status":0}
 
-// 输出序号
+// 输出名称：使用 WriteEnumsUsingName
 String json = JSON.toJSONString(obj,
-    WriteFeature.WriteEnumUsingOrdinal);
-
-// 推荐：使用 name()
+    WriteFeature.WriteEnumsUsingName);
+// {"status":"ACTIVE"}
 ```
 
 ## 性能问题
