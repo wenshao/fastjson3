@@ -344,7 +344,15 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 || Number.class.isAssignableFrom(fieldClass))
                 && (features & WriteFeature.WriteNullNumberAsZero.mask) != 0) {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-            generator.writeInt32(0);
+            if (typeTag == TYPE_LONG) {
+                generator.writeInt64(0L);
+            } else if (typeTag == TYPE_DOUBLE) {
+                generator.writeDouble(0D);
+            } else if (typeTag == TYPE_FLOAT) {
+                generator.writeFloat(0F);
+            } else {
+                generator.writeInt32(0);
+            }
         } else if ((typeTag == TYPE_BOOL || fieldClass == Boolean.class)
                 && (features & WriteFeature.WriteNullBooleanAsFalse.mask) != 0) {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
