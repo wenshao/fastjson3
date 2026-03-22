@@ -3084,18 +3084,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
          * Returns null if non-ASCII bytes were written (caller should fall back).
          */
         public String toStringLatin1() {
-            if (hasNonAscii || JDKUtils.STRING_CREATOR == null) return null;
+            if (hasNonAscii || !JDKUtils.FAST_STRING_CREATION) return null;
             int c = outputCount();
-            // buf is pooled — must copy for String to own the data.
-            // But avoid copy if buf is exactly the right size (rare).
-            byte[] value;
-            if (buf.length == c) {
-                value = buf;
-                this.pooled = false; // don't return to pool
-            } else {
-                value = java.util.Arrays.copyOfRange(buf, 0, c);
-            }
-            return JDKUtils.STRING_CREATOR.apply(value, (byte) 0);
+            return JDKUtils.createLatin1String(buf, 0, c);
         }
 
         @Override
