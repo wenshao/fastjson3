@@ -149,7 +149,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     protected final long features;
     protected int count;
     protected int writeDepth;
-    protected final boolean pretty;
+    public final boolean pretty;
     protected final boolean bigDecimalPlain;
     protected final boolean longAsString;
     protected final boolean nonStringAsString;
@@ -895,7 +895,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     private static int writeOneFieldStatic(UTF8 gen, byte[] buf, int pos,
                                             com.alibaba.fastjson3.writer.FieldWriter fw,
                                             Object bean, long features) {
-        if (fw.customWriter != null || fw.format != null || fw.label != null || gen.bypassStaticPath) {
+        if (fw.customWriter != null || fw.format != null || fw.label != null || gen.bypassStaticPath
+                || fw.inclusion != com.alibaba.fastjson3.annotation.Inclusion.DEFAULT) {
             gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
         }
         switch (fw.typeTag) {
@@ -1103,6 +1104,148 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             } catch (Exception ignored) {}
             return null;
         });
+    }
+
+    // ---- Static field-writing paths (no braces, called between startObject/endObject) ----
+
+    /**
+     * Write all fields using static dispatch for UTF8 generator.
+     * Called from ObjectWriterCreator.writeFields — no {/} framing.
+     */
+    public static void writeFieldsStaticUTF8NoFrame(UTF8 gen, com.alibaba.fastjson3.writer.FieldWriter[] writers,
+                                                     Object bean, long features) {
+        gen.ensureCapacity(writers.length * 48);
+        byte[] buf = gen.buf;
+        int pos = gen.count;
+        for (com.alibaba.fastjson3.writer.FieldWriter fw : writers) {
+            pos = writeOneFieldStatic(gen, buf, pos, fw, bean, features);
+            buf = gen.buf;
+        }
+        gen.count = pos;
+    }
+
+    /**
+     * Write all fields using static dispatch for Char generator.
+     * Uses char[] nameChars directly — no virtual dispatch per field.
+     */
+    public static void writeFieldsStaticChar(Char gen, com.alibaba.fastjson3.writer.FieldWriter[] writers,
+                                              Object bean, long features) {
+        gen.ensureCapacity(writers.length * 48);
+        char[] buf = gen.buf;
+        int pos = gen.count;
+        for (com.alibaba.fastjson3.writer.FieldWriter fw : writers) {
+            pos = writeOneFieldStaticChar(gen, buf, pos, fw, bean, features);
+            buf = gen.buf;
+        }
+        gen.count = pos;
+    }
+
+    /**
+     * Write a single field for Char generator. Returns new pos.
+     */
+    private static int writeOneFieldStaticChar(Char gen, char[] buf, int pos,
+                                                com.alibaba.fastjson3.writer.FieldWriter fw,
+                                                Object bean, long features) {
+        if (fw.customWriter != null || fw.format != null || fw.label != null || gen.bypassStaticPath
+                || fw.inclusion != com.alibaba.fastjson3.annotation.Inclusion.DEFAULT) {
+            gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
+        }
+        char[] nameChars = fw.nameChars;
+        int nameLen = nameChars.length;
+        switch (fw.typeTag) {
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_INT: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == int.class) {
+                    int needed = nameLen + 12;
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count; }
+                    System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                    pos += nameLen;
+                    pos += Char.writeIntToChars(com.alibaba.fastjson3.util.JDKUtils.getInt(bean, fw.fieldOffset), buf, pos);
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_LONG: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == long.class) {
+                    int needed = nameLen + 21;
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count; }
+                    System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                    pos += nameLen;
+                    pos += Char.writeLongToChars(com.alibaba.fastjson3.util.JDKUtils.getLongField(bean, fw.fieldOffset), buf, pos);
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_DOUBLE: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == double.class) {
+                    double val = com.alibaba.fastjson3.util.JDKUtils.getDouble(bean, fw.fieldOffset);
+                    if (!Double.isNaN(val) && !Double.isInfinite(val)) {
+                        String s = Double.toString(val);
+                        int sLen = s.length();
+                        int needed = nameLen + sLen + 1;
+                        if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count; }
+                        System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                        pos += nameLen;
+                        s.getChars(0, sLen, buf, pos);
+                        pos += sLen;
+                        buf[pos++] = ',';
+                        return pos;
+                    }
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_BOOL: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == boolean.class) {
+                    int needed = nameLen + 6;
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count; }
+                    System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                    pos += nameLen;
+                    if (com.alibaba.fastjson3.util.JDKUtils.getBoolean(bean, fw.fieldOffset)) {
+                        buf[pos] = 't'; buf[pos+1] = 'r'; buf[pos+2] = 'u'; buf[pos+3] = 'e';
+                        pos += 4;
+                    } else {
+                        buf[pos] = 'f'; buf[pos+1] = 'a'; buf[pos+2] = 'l'; buf[pos+3] = 's'; buf[pos+4] = 'e';
+                        pos += 5;
+                    }
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_STRING: {
+                if (fw.fieldOffset >= 0) {
+                    String s = (String) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (s == null) return pos;
+                    int sLen = s.length();
+                    int needed = nameLen + sLen + 4;
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count; }
+                    System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                    pos += nameLen;
+                    buf[pos++] = '"';
+                    s.getChars(0, sLen, buf, pos);
+                    // Check for escape chars
+                    boolean needsEscape = false;
+                    for (int i = 0; i < sLen; i++) {
+                        char ch = buf[pos + i];
+                        if (ch < 0x20 || ch == '"' || ch == '\\') { needsEscape = true; break; }
+                    }
+                    if (!needsEscape) {
+                        pos += sLen;
+                        buf[pos] = '"'; buf[pos+1] = ',';
+                        pos += 2;
+                        return pos;
+                    }
+                    // Fall back to gen.writeString for escape handling
+                    pos -= (nameLen + 1); // undo name + opening quote
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        // Fallback: use virtual dispatch
+        gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
     }
 
     // ---- Output ----
