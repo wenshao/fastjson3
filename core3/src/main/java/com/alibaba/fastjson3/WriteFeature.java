@@ -105,7 +105,7 @@ public enum WriteFeature {
      */
     OptimizedForAscii,
 
-    /** Skip fields with primitive default values (0, false, 0.0) */
+    /** Skip fields with default values: 0/0L/0.0/0.0f/false for both primitive and boxed types */
     NotWriteDefaultValue,
 
     /** Skip empty collections/arrays */
