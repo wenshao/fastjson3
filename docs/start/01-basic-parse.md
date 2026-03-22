@@ -43,8 +43,8 @@ String name = obj.getString("name");
 int age = obj.getIntValue("age");
 Boolean vip = obj.getBooleanValue("vip");
 
-// 安全获取（不存在时返回默认值）
-String city = obj.getString("city", "未知");
+// 安全获取（不存在时返回 null）
+String city = obj.getString("city");  // null if missing
 ```
 
 ## 处理复杂结构

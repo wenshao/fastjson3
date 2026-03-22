@@ -83,13 +83,14 @@ fastjson2 和 fastjson3 在以下方面有所不同：
 | 功能 | fastjson2 | fastjson3 |
 |------|-----------|-----------|
 | **ObjectMapper** | 基础支持 | 完整 Jackson 风格 |
-| **JSONReader.Feature** | ✅ | ✅（相同） |
-| **JSONWriter.Feature** | ✅ | ✅（相同） |
+| **Feature 枚举** | JSONReader.Feature / JSONWriter.Feature | ReadFeature / WriteFeature |
 | **直接使用 ASM** | 内部 | 内部（更优化） |
 | **Kotlin 数据类** | 支持 | 更好支持 |
 | **Record** | 支持 | 原生支持 |
 
-### JSONReader / JSONWriter（完全相同）
+### JSONParser / JSONGenerator（API 变更）
+
+fastjson3 将 `JSONReader`/`JSONWriter` 重命名为 `JSONParser`/`JSONGenerator`，Feature 枚举也有变更：
 
 ```java
 // ===== fastjson2 =====
@@ -100,12 +101,11 @@ JSONWriter writer = JSONWriter.of(JSONWriter.Feature.PrettyFormat);
 writer.writeObject(user);
 
 // ===== fastjson3 =====
-// API 完全相同
-JSONReader reader = JSONReader.of(json);
-User user = reader.read(User.class);
+JSONParser parser = JSONParser.of(json);
+User user = parser.read(User.class);
 
-JSONWriter writer = JSONWriter.of(JSONWriter.Feature.PrettyFormat);
-writer.writeObject(user);
+JSONGenerator generator = JSONGenerator.of(WriteFeature.PrettyFormat);
+generator.writeAny(user);
 ```
 
 ### JSONPath（完全相同）
@@ -230,7 +230,7 @@ find . -name "*.java" -type f -exec sed -i 's/com\.alibaba\.fastjson2\./com.alib
 ### 可选优化
 
 - [ ] 采用 `ObjectMapper.shared()` 替代静态方法
-- [ ] 使用 `JSONReader.Feature` / `JSONWriter.Feature`
+- [ ] 使用 `ReadFeature` / `WriteFeature` 替代 `JSONReader.Feature` / `JSONWriter.Feature`
 - [ ] 利用 Java 21+ 新特性（Record、sealed class）
 
 ---

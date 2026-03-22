@@ -93,9 +93,8 @@ Gson gson = new GsonBuilder()
 @JSONField(format = "yyyy-MM-dd HH:mm:ss")
 private Date createTime;
 
-// 方式2：全局配置
+// 方式2：ObjectMapper（日期格式通过注解配置，不支持 .dateFormat()）
 ObjectMapper mapper = ObjectMapper.builder()
-    .dateFormat("yyyy-MM-dd HH:mm:ss")
     .build();
 ```
 
@@ -115,11 +114,11 @@ Gson gson = new GsonBuilder()
 ### fastjson3 等价配置
 
 ```java
+// 命名策略请使用 @JSONType(naming = NamingStrategy.SnakeCase) 注解
 ObjectMapper mapper = ObjectMapper.builder()
     .enableWrite(WriteFeature.PrettyFormat)      // 美化输出
     .enableWrite(WriteFeature.WriteNulls)         // 序列化 null
-    .disableWrite(WriteFeature.EscapeHtmlChars)   // 禁用 HTML 转义
-    .namingStrategy(NamingStrategy.SnakeCase)     // 命名策略
+    .disableWrite(WriteFeature.EscapeNoneAscii)   // 禁用 HTML 转义
     .build();
 ```
 

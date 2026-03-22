@@ -27,7 +27,7 @@ samples/
 
 ```xml
 <dependency>
-    <groupId>com.alibaba</groupId>
+    <groupId>com.alibaba.fastjson3</groupId>
     <artifactId>fastjson3</artifactId>
     <version>3.0.0</version>
 </dependency>

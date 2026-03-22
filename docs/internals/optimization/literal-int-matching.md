@@ -136,7 +136,7 @@ private static final int DIGITS_0123 = ('0' << 24) | ('1' << 16) | ('2' << 8) | 
 
 ## 相关优化
 
-- [位掩码优化](whitespace-bitmask-optimization.md) - 类似的位操作技巧
+- [位掩码优化](whitespace-bitmask.md) - 类似的位操作技巧
 - [SWAR 并行处理](swar.md) - 更宽的 SIMD 处理
 
 [← 返回索引](README.md)

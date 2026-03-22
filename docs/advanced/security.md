@@ -28,50 +28,28 @@ ObjectMapper mapper = ObjectMapper.builder()
     .build();
 ```
 
-### 使用白名单
+### 推荐做法
+
+`SupportAutoType` 默认关闭，生产环境不要开启。如果确实需要多态反序列化，使用 `@JSONType` 注解限定已知子类型：
 
 ```java
-// ✅ 安全：只允许信任的包
-AutoTypeFilter whitelist = AutoTypeFilter.whitelist()
-    .addClass("com.example.model.")      // 允许这个包下的所有类
-    .addClass("com.example.dto.")        // 允许 DTO
-    .addClass("java.lang.")              // 允许 Java 核心类
-    .addClass("java.util.")              // 允许集合类
-    .build();
+// ✅ 安全：通过注解显式声明已知子类型
+@JSONType(seeAlso = {Cat.class, Dog.class}, typeKey = "type")
+public abstract class Animal {
+    private String name;
+}
 
-ObjectMapper mapper = ObjectMapper.builder()
-    .enableRead(ReadFeature.SupportAutoType)
-    .autoTypeFilter(whitelist)
-    .build();
+@JSONType(typeName = "cat")
+public class Cat extends Animal { }
+
+@JSONType(typeName = "dog")
+public class Dog extends Animal { }
+
+// 反序列化时只接受声明的子类型
+Animal animal = JSON.parse(json, Animal.class);
 ```
 
-### 使用黑名单
-
-```java
-// ✅ 安全：禁止危险类
-AutoTypeFilter blacklist = AutoTypeFilter.blacklist()
-    .denyClass("javax.script.")      // 禁止脚本引擎
-    .denyClass("com.sun.")            // 禁止内部类
-    .denyClass("org.apache.commons.") // 禁止某些库
-    .denyClass("bsh.")                // 禁止 BeanShell
-    .build();
-
-ObjectMapper mapper = ObjectMapper.builder()
-    .enableRead(ReadFeature.SupportAutoType)
-    .autoTypeFilter(blacklist)
-    .build();
-```
-
-### 组合使用
-
-```java
-AutoTypeFilter filter = AutoTypeFilter.builder()
-    .allowClass("com.example.model.")
-    .allowClass("java.lang.")
-    .denyClass("com.example.dangerous.")
-    .denyClass("javax.script.")
-    .build();
-```
+这比开启 `SupportAutoType` 安全得多，因为只有 `seeAlso` 中声明的类型会被实例化。
 
 ---
 
@@ -89,7 +67,7 @@ if (!JSON.isValid(input)) {
 ### JSON Schema 验证
 
 ```java
-private static final JSONSchema USER_SCHEMA = JSONSchema.of("""
+private static final JSONSchema USER_SCHEMA = JSONSchema.parseSchema("""
     {
         "type": "object",
         "properties": {
@@ -219,7 +197,10 @@ ValueFilter desensitize = (obj, name, val) -> {
     return val;
 };
 
-String json = JSON.toJSONString(user, desensitize);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addValueFilter(desensitize)
+    .build();
+String json = mapper.writeValueAsString(user);
 ```
 
 ### 排除字段
@@ -233,7 +214,10 @@ PropertyFilter securityFilter = (obj, name, val) -> {
     return !sensitiveFields.contains(name);
 };
 
-String json = JSON.toJSONString(user, securityFilter);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addPropertyFilter(securityFilter)
+    .build();
+String json = mapper.writeValueAsString(user);
 ```
 
 ### 使用 Mixin
@@ -248,7 +232,7 @@ public abstract class SecureUserMixin {
 }
 
 ObjectMapper mapper = ObjectMapper.builder()
-    .addMixin(User.class, SecureUserMixin.class)
+    .addMixIn(User.class, SecureUserMixin.class)
     .build();
 ```
 
@@ -369,7 +353,10 @@ PropertyFilter logFilter = (obj, name, val) -> {
     return !Set.of("password", "token", "ssn").contains(name);
 };
 
-log.info("User data: {}", JSON.toJSONString(user, logFilter));
+ObjectMapper logMapper = ObjectMapper.builder()
+    .addPropertyFilter(logFilter)
+    .build();
+log.info("User data: {}", logMapper.writeValueAsString(user));
 ```
 
 ---

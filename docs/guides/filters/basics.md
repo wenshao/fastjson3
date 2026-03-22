@@ -16,18 +16,24 @@ fastjson3 提供三种类型的过滤器用于控制 JSON 序列化。
 
 ```java
 // 方式1：单个过滤器
-String json = JSON.toJSONString(obj, filter);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addPropertyFilter(filter)
+    .build();
+String json = mapper.writeValueAsString(obj);
 
 // 方式2：多个过滤器
-String json = JSON.toJSONString(obj, filter1, filter2);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addNameFilter(nameFilter)
+    .addValueFilter(valueFilter)
+    .build();
+String json = mapper.writeValueAsString(obj);
 
-// 方式3：列表形式
-List<Filter> filters = Arrays.asList(filter1, filter2);
-String json = JSON.toJSONString(obj, filters);
-
-// 方式4：ObjectMapper
-ObjectMapper mapper = ObjectMapper.shared();
-String json = mapper.writeValueAsString(obj, filters);
+// 方式3：复用 ObjectMapper
+ObjectMapper mapper = ObjectMapper.builder()
+    .addPropertyFilter(filter1)
+    .addValueFilter(filter2)
+    .build();
+String json = mapper.writeValueAsString(obj);
 ```
 
 ---
@@ -40,7 +46,8 @@ String json = mapper.writeValueAsString(obj, filters);
 // 所有字段转为大写
 NameFilter filter = (obj, name, value) -> name.toUpperCase();
 
-String json = JSON.toJSONString(user, filter);
+ObjectMapper mapper = ObjectMapper.builder().addNameFilter(filter).build();
+String json = mapper.writeValueAsString(user);
 // 输出: {"NAME":"张三","AGE":25}
 ```
 

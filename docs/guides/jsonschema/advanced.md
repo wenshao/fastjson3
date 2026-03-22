@@ -284,7 +284,7 @@ uuidValidator.isValid("550e8400-e29b-41d4-a716-446655440000");  // true
 
 ```java
 // ✅ 好：编译一次，重复使用
-private static final JSONSchema USER_SCHEMA = JSONSchema.of(schemaJson);
+private static final JSONSchema USER_SCHEMA = JSONSchema.parseSchema(schemaJson);
 
 public void validateUser(String userJson) {
     ValidateResult result = USER_SCHEMA.validate(userJson);
@@ -293,7 +293,7 @@ public void validateUser(String userJson) {
 
 // ❌ 不好：每次都编译
 public void validateUser(String userJson) {
-    JSONSchema schema = JSONSchema.of(schemaJson);
+    JSONSchema schema = JSONSchema.parseSchema(schemaJson);
     ValidateResult result = schema.validate(userJson);
     // ...
 }
@@ -358,7 +358,7 @@ public void validateUser(String userJson) {
 
 ```java
 public class RequestValidator {
-    private static final JSONSchema CREATE_USER_SCHEMA = JSONSchema.of("""
+    private static final JSONSchema CREATE_USER_SCHEMA = JSONSchema.parseSchema("""
         {
             "type": "object",
             "properties": {
@@ -408,9 +408,9 @@ public class DynamicValidator {
 
     private JSONSchema getSchemaForType(String type) {
         return switch (type) {
-            case "user" -> JSONSchema.of(USER_SCHEMA_JSON);
-            case "product" -> JSONSchema.of(PRODUCT_SCHEMA_JSON);
-            case "order" -> JSONSchema.of(ORDER_SCHEMA_JSON);
+            case "user" -> JSONSchema.parseSchema(USER_SCHEMA_JSON);
+            case "product" -> JSONSchema.parseSchema(PRODUCT_SCHEMA_JSON);
+            case "order" -> JSONSchema.parseSchema(ORDER_SCHEMA_JSON);
             default -> throw new IllegalArgumentException("Unknown type: " + type);
         };
     }
@@ -422,7 +422,7 @@ public class DynamicValidator {
 ```java
 // 使用 allOf 验证多个条件
 public class MultiSchemaValidator {
-    private static final JSONSchema BASE_SCHEMA = JSONSchema.of("""
+    private static final JSONSchema BASE_SCHEMA = JSONSchema.parseSchema("""
         {
             "type": "object",
             "properties": {
@@ -433,7 +433,7 @@ public class MultiSchemaValidator {
         }
         """);
 
-    private static final JSONSchema EXTENDED_SCHEMA = JSONSchema.of("""
+    private static final JSONSchema EXTENDED_SCHEMA = JSONSchema.parseSchema("""
         {
             "type": "object",
             "properties": {

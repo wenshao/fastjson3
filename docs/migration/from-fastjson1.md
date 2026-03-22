@@ -115,8 +115,8 @@ import com.alibaba.fastjson3.util.*;
 | fastjson 1.x | fastjson3 | 说明 |
 |--------------|-----------|------|
 | `AutoCloseSource` | (默认行为) | 自动关闭源 |
-| `AllowComment` | `AllowComment` | 允许注释 |
-| `AllowUnQuotedFieldNames` | `AllowUnQuotedFieldNames` | 允许无引号字段 |
+| `AllowComments` | `AllowComments` | 允许注释 |
+| `AllowUnquotedFieldNames` | `AllowUnquotedFieldNames` | 允许无引号字段 |
 | `AllowSingleQuotes` | `AllowSingleQuotes` | 允许单引号 |
 | `IgnoreAutoMatch` | - | 忽略自动匹配 |
 | `SupportSmartMatch` | `SupportSmartMatch` | 智能匹配 |
@@ -132,28 +132,29 @@ String json = JSON.toJSONString(obj,
     SerializerFeature.WriteDateUseDateFormat);
 
 User user = JSON.parseObject(json,
-    Feature.AllowComment,
+    Feature.AllowComments,
     Feature.AllowSingleQuotes);
 
 // ===== fastjson3 =====
-// 方式1：使用 writeFeatures/readFeatures
+// 方式1：使用 WriteFeature/ReadFeature 枚举
 String json = JSON.toJSONString(obj,
     WriteFeature.WriteNulls,
     WriteFeature.PrettyFormat);
 
 User user = JSON.parseObject(json,
-    ReadFeature.AllowComment,
+    ReadFeature.AllowComments,
     ReadFeature.AllowSingleQuotes);
 
-// 方式2：使用 ObjectMapper 配置日期格式
+// 方式2：使用 @JSONField 注解配置日期格式
+// ObjectMapper.builder() 不支持 .dateFormat()，请使用注解：
+// @JSONField(format = "yyyy-MM-dd HH:mm:ss")
 ObjectMapper mapper = ObjectMapper.builder()
-    .dateFormat("yyyy-MM-dd HH:mm:ss")
     .build();
 String json = mapper.writeValueAsString(obj);
 
 User user = JSON.parseObject(json,
-    JSONReader.Feature.AllowComment,
-    JSONReader.Feature.AllowSingleQuotes);
+    ReadFeature.AllowComments,
+    ReadFeature.AllowSingleQuotes);
 ```
 
 ---
@@ -197,7 +198,7 @@ fastjson 1.x 有一些特殊的配置方式，在 fastjson3 中已改变：
 // ===== fastjson 1.x =====
 // 静态配置（全局生效）
 JSON.DEFAULT_GENERATE_FEATURE |= SerializerFeature.WriteMapNullValue.getMask();
-JSON.DEFAULT_PARSER_FEATURE |= Feature.AllowComment.getMask();
+JSON.DEFAULT_PARSER_FEATURE |= Feature.AllowComments.getMask();
 JSON.DEFFAULT_DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
 
 // 动态配置
@@ -205,10 +206,10 @@ SerializerFeature.config(SerializerFeature.WriteDateUseDateFormat, true);
 
 // ===== fastjson3 =====
 // 使用 ObjectMapper（推荐）
+// 日期格式请使用 @JSONField(format = "yyyy-MM-dd HH:mm:ss") 注解
 ObjectMapper mapper = ObjectMapper.builder()
     .enableWrite(WriteFeature.WriteNulls)
-    .enableRead(ReadFeature.AllowComment)
-    .dateFormat("yyyy-MM-dd HH:mm:ss")
+    .enableRead(ReadFeature.AllowComments)
     .build();
 
 // 或使用静态方式（不推荐，避免全局状态）
@@ -253,7 +254,10 @@ String json = JSON.toJSONString(obj, filter);
 ValueFilter filter = (obj, name, value) -> {
     return value;
 };
-String json = JSON.toJSONString(obj, filter);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addValueFilter(filter)
+    .build();
+String json = mapper.writeValueAsString(obj);
 ```
 
 ---
@@ -281,7 +285,7 @@ private LocalDateTime createTime;  // 支持 Java Time API
 | `defaultValue` | 默认值 | `@JSONField(defaultValue = "0")` |
 | `inclusion` | 包含策略 | `@JSONField(inclusion = Inclusion.NON_NULL)` |
 | `alternateNames` | 别名 | `@JSONField(alternateNames = {"email", "mail"})` |
-| `unwrapped` | 展开嵌套 | `@JSONField(unwrapped = true)` |
+| `unwrapped` | 展开嵌套 | ❌ 不支持，需自定义 ObjectWriter 实现 |
 
 ---
 
@@ -399,14 +403,14 @@ ValueFilter valueFilter = (obj, name, value) -> {
 ```java
 // ===== fastjson 1.x =====
 JSON.DEFAULT_GENERATE_FEATURE |= SerializerFeature.WriteMapNullValue.getMask();
-JSON.DEFAULT_PARSER_FEATURE |= Feature.AllowComment.getMask();
+JSON.DEFAULT_PARSER_FEATURE |= Feature.AllowComments.getMask();
 
 // ===== fastjson3 =====
 // 推荐：使用 ObjectMapper
+// 日期格式请使用 @JSONField(format = "yyyy-MM-dd HH:mm:ss") 注解
 ObjectMapper mapper = ObjectMapper.builder()
     .enableWrite(WriteFeature.WriteNulls)
-    .enableRead(ReadFeature.AllowComment)
-    .dateFormat("yyyy-MM-dd HH:mm:ss")
+    .enableRead(ReadFeature.AllowComments)
     .build();
 
 String json = mapper.writeValueAsString(obj);
@@ -420,11 +424,7 @@ JSON.DEFFAULT_DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
 SerializerFeature.config(SerializerFeature.WriteDateUseDateFormat, true);
 
 // ===== fastjson3 =====
-ObjectMapper mapper = ObjectMapper.builder()
-    .dateFormat("yyyy-MM-dd HH:mm:ss")
-    .build();
-
-// 或使用注解
+// 使用注解配置日期格式（ObjectMapper.builder() 不支持 .dateFormat()）
 @JSONField(format = "yyyy-MM-dd HH:mm:ss")
 private Date createTime;
 ```
@@ -451,7 +451,7 @@ SerializeConfig.get().put(BigDecimal.class, new MoneySerializer());
 // ===== fastjson3 =====
 public class MoneyWriter implements ObjectWriter<BigDecimal> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         BigDecimal value = (BigDecimal) object;
         gen.writeString(value.setScale(2, RoundingMode.HALF_UP) + "元");
     }
@@ -534,7 +534,10 @@ String json = JSON.toJSONString(obj, filter);
 
 // ===== fastjson3 =====
 PropertyFilter filter = (obj, name, value) -> !name.equals("password");
-String json = JSON.toJSONString(obj, filter);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addPropertyFilter(filter)
+    .build();
+String json = mapper.writeValueAsString(obj);
 ```
 
 ### 场景 4：字段重命名
@@ -557,6 +560,10 @@ NameFilter filter = (obj, name, value) -> {
     if ("userName".equals(name)) return "username";
     return name;
 };
+ObjectMapper mapper = ObjectMapper.builder()
+    .addNameFilter(filter)
+    .build();
+String json = mapper.writeValueAsString(obj);
 ```
 
 ---

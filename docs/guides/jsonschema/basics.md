@@ -21,7 +21,7 @@ String schemaJson = """
     """;
 
 // 创建 Schema
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 
 // 验证数据
 String dataJson = """{"name": "张三", "age": 25, "email": "zhangsan@example.com"}""";

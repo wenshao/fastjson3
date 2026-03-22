@@ -9,7 +9,7 @@
 ```java
 public class MoneyWriter implements ObjectWriter<Money> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         Money money = (Money) object;
         // 自定义序列化逻辑
         gen.writeString(money.toString());  // "$100.00"
@@ -27,26 +27,27 @@ ObjectMapper mapper = ObjectMapper.builder()
 ```java
 public class UserWriter implements ObjectWriter<User> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         User user = (User) object;
 
         try {
-            gen.writeStartObject();
+            gen.startObject();
 
             // 自定义字段名
-            gen.writeFieldName("user_id");
-            gen.writeLong(user.getId());
+            gen.writeName("user_id");
+            gen.writeInt64(user.getId());
 
             // 条件输出
             if (user.getEmail() != null) {
-                gen.writeStringField("email", user.getEmail());
+                gen.writeName("email");
+                gen.writeString(user.getEmail());
             }
 
             // 自定义格式
-            gen.writeFieldName("full_name");
+            gen.writeName("full_name");
             gen.writeString(user.getFirstName() + " " + user.getLastName());
 
-            gen.writeEndObject();
+            gen.endObject();
         } catch (Exception e) {
             throw new JSONException("Write error", e);
         }
@@ -58,7 +59,7 @@ public class UserWriter implements ObjectWriter<User> {
 
 ```java
 public class Product {
-    @JSONField(writeUsing = MoneyWriter.class)
+    @JSONField(serializeUsing = MoneyWriter.class)
     private Money price;
 }
 ```
@@ -133,7 +134,7 @@ public class UserReader implements ObjectReader<User> {
 
 ```java
 ObjectMapper mapper = ObjectMapper.builder()
-    .registerWriter(Money.class, (gen, obj, features) -> {
+    .registerWriter(Money.class, (gen, obj, fieldName, fieldType, features) -> {
         Money money = (Money) obj;
         gen.writeString(money.toString());
     })
@@ -160,20 +161,22 @@ ObjectMapper mapper = ObjectMapper.builder()
 ```java
 public class ResponseWriter implements ObjectWriter<Response<?>> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         Response<?> response = (Response<?>) object;
-        gen.writeStartObject();
-        gen.writeIntField("code", response.getCode());
-        gen.writeStringField("message", response.getMessage());
+        gen.startObject();
+        gen.writeName("code");
+        gen.writeInt32(response.getCode());
+        gen.writeName("message");
+        gen.writeString(response.getMessage());
 
         // 处理泛型数据
         if (response.getData() != null) {
-            gen.writeFieldName("data");
+            gen.writeName("data");
             // 需要根据实际类型序列化
             gen.writeAny(response.getData());
         }
 
-        gen.writeEndObject();
+        gen.endObject();
     }
 }
 ```
@@ -210,18 +213,20 @@ public class SecureUserWriter implements ObjectWriter<User> {
     }
 
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         User user = (User) object;
-        gen.writeStartObject();
+        gen.startObject();
 
-        gen.writeStringField("name", user.getName());
+        gen.writeName("name");
+        gen.writeString(user.getName());
 
         // 根据权限决定是否输出
         if (includeSensitive) {
-            gen.writeStringField("ssn", user.getSsn());
+            gen.writeName("ssn");
+            gen.writeString(user.getSsn());
         }
 
-        gen.writeEndObject();
+        gen.endObject();
     }
 }
 ```
@@ -231,18 +236,20 @@ public class SecureUserWriter implements ObjectWriter<User> {
 ```java
 public class EnvironmentAwareWriter implements ObjectWriter<Config> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         Config config = (Config) object;
-        gen.writeStartObject();
+        gen.startObject();
 
         // 生产环境不输出敏感信息
         if ("prod".equals(System.getProperty("env"))) {
-            gen.writeStringField("apiKey", "***");
+            gen.writeName("apiKey");
+            gen.writeString("***");
         } else {
-            gen.writeStringField("apiKey", config.getApiKey());
+            gen.writeName("apiKey");
+            gen.writeString(config.getApiKey());
         }
 
-        gen.writeEndObject();
+        gen.endObject();
     }
 }
 ```
@@ -262,7 +269,7 @@ public class CustomDateSerializer implements ObjectWriter<Date> {
     }
 
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         Date date = (Date) object;
         SimpleDateFormat sdf = new SimpleDateFormat(pattern);
         gen.writeString(sdf.format(date));
@@ -280,7 +287,7 @@ ObjectMapper mapper = ObjectMapper.builder()
 ```java
 public class LowerCaseEnumWriter implements ObjectWriter<Enum<?>> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         Enum<?> enumValue = (Enum<?>) object;
         gen.writeString(enumValue.name().toLowerCase());
     }
@@ -302,7 +309,7 @@ ObjectMapper mapper = ObjectMapper.builder()
 // ❌ 不好：使用反射
 public class ReflectiveWriter implements ObjectWriter<Object> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         for (Field field : object.getClass().getDeclaredFields()) {
             // 反射获取值...
         }
@@ -312,9 +319,10 @@ public class ReflectiveWriter implements ObjectWriter<Object> {
 // ✅ 好：直接访问
 public class UserWriter implements ObjectWriter<User> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         User user = (User) object;
-        gen.writeStringField("name", user.name);  // 直接字段访问
+        gen.writeName("name");
+        gen.writeString(user.name);  // 直接字段访问
     }
 }
 ```
@@ -335,10 +343,11 @@ public class CachedWriter implements ObjectWriter<User> {
     }
 
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         try {
             User user = (User) object;
-            gen.writeStringField("name", (String) NAME_FIELD.get(user));
+            gen.writeName("name");
+            gen.writeString((String) NAME_FIELD.get(user));
         } catch (IllegalAccessException e) {
             throw new JSONException(e);
         }
@@ -355,7 +364,7 @@ public class CachedWriter implements ObjectWriter<User> {
 ```java
 public class DebugWriter implements ObjectWriter<Object> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         System.out.println("Serializing: " + object.getClass().getName());
         System.out.println("Value: " + object);
         // 正常序列化...
@@ -368,7 +377,7 @@ public class DebugWriter implements ObjectWriter<Object> {
 ```java
 public class ValidatingWriter implements ObjectWriter<User> {
     @Override
-    public void write(JSONGenerator gen, Object object, long features) {
+    public void write(JSONGenerator gen, Object object, Object fieldName, Type fieldType, long features) {
         User user = (User) object;
 
         // 验证

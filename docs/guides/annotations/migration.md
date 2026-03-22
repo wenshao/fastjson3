@@ -36,7 +36,7 @@ public class User {
 | `@JsonIgnore` | `@JSONField(serialize=false)` | ✅ |
 | `@JsonFormat` | `@JSONField(format)` | ✅ |
 | `@JsonInclude` | `@JSONField(inclusion)` | ✅ |
-| `@JsonUnwrapped` | `@JSONField(unwrapped=true)` | ✅ |
+| `@JsonUnwrapped` | - | ❌ 不支持，需自定义序列化 |
 | `@JsonNaming` | `@JSONType(naming)` | ✅ |
 | `@JsonCreator` | `@JSONCreator` | ✅ |
 | `@JsonDeserialize` | `@JSONField(deserializeUsing)` | ✅ |

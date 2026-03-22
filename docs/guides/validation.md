@@ -47,7 +47,7 @@ String schemaJson = """
     """;
 
 // 验证
-JSONSchema schema = JSONSchema.of(schemaJson);
+JSONSchema schema = JSONSchema.parseSchema(schemaJson);
 ValidateResult result = schema.validate(dataJson);
 
 if (result.isSuccess()) {

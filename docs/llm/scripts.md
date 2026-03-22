@@ -63,7 +63,7 @@ find src -name "*.java" -type f -exec sed -i 's/com\.alibaba\.fastjson\.serializ
 echo "替换 Feature 枚举..."
 find src -name "*.java" -type f -exec sed -i 's/SerializerFeature/WriteFeature/g' {} +
 find src -name "*.java" -type f -exec sed -i 's/Feature\.ErrorOnUnknownProperties/ReadFeature.ErrorOnUnknownProperties/g' {} +
-find src -name "*.java" -type f -exec sed -i 's/Feature\.AllowComment/ReadFeature.AllowComment/g' {} +
+find src -name "*.java" -type f -exec sed -i 's/Feature\.AllowComments/ReadFeature.AllowComments/g' {} +
 
 # 4. 替换方法名
 find src -name "*.java" -type f -exec sed -i 's/\.getInteger(/\.getIntValue(/g' {} +
@@ -275,10 +275,10 @@ public class Fastjson3Config {
     @Bean
     @Primary
     public ObjectMapper objectMapper() {
+        // 日期格式请使用 @JSONField(format = "yyyy-MM-dd HH:mm:ss") 注解
         return ObjectMapper.builder()
             .enableRead(ReadFeature.SupportSmartMatch)
             .enableWrite(WriteFeature.PrettyFormat)
-            .dateFormat("yyyy-MM-dd HH:mm:ss")
             .build();
     }
 }

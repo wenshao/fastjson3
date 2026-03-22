@@ -40,7 +40,7 @@ public abstract class ThirdPartyUserMixin {
 
 ```java
 ObjectMapper mapper = ObjectMapper.builder()
-    .addMixin(ThirdPartyUser.class, ThirdPartyUserMixin.class)
+    .addMixIn(ThirdPartyUser.class, ThirdPartyUserMixin.class)
     .build();
 ```
 
@@ -171,8 +171,8 @@ public abstract class UserFormatMixin {
 
 // 应用（后面的会覆盖前面的）
 ObjectMapper mapper = ObjectMapper.builder()
-    .addMixin(User.class, UserRenameMixin.class)
-    .addMixin(User.class, UserFormatMixin.class)
+    .addMixIn(User.class, UserRenameMixin.class)
+    .addMixIn(User.class, UserFormatMixin.class)
     .build();
 ```
 
@@ -187,9 +187,9 @@ public abstract class TimestampMixin {
 
 // 应用到多个类
 ObjectMapper mapper = ObjectMapper.builder()
-    .addMixin(Order.class, TimestampMixin.class)
-    .addMixin(User.class, TimestampMixin.class)
-    .addMixin(Event.class, TimestampMixin.class)
+    .addMixIn(Order.class, TimestampMixin.class)
+    .addMixIn(User.class, TimestampMixin.class)
+    .addMixIn(Event.class, TimestampMixin.class)
     .build();
 ```
 
@@ -217,7 +217,7 @@ public abstract class UserMixin {
 
 // 应用
 ObjectMapper mapper = ObjectMapper.builder()
-    .addMixin(User.class, UserMixin.class)  // 注意：这里是接口
+    .addMixIn(User.class, UserMixin.class)  // 注意：这里是接口
     .build();
 ```
 
@@ -311,7 +311,7 @@ public class ObjectMapperConfig {
     public ObjectMapper objectMapper() {
         return ObjectMapper.builder()
             // 应用第三方类的 Mixin
-            .addMixin(com.example.external.ExternalData.class,
+            .addMixIn(com.example.external.ExternalData.class,
                      com.example.config.ExternalDataMixin.class)
 
             // 其他配置...

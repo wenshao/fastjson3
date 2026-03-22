@@ -113,8 +113,8 @@ String name = obj.optString("name", "未知");
 int age = obj.optInt("age", 0);
 
 // ===== fastjson3 =====
-String name = obj.getString("name", "未知");
-int age = obj.getIntValue("age", 0);
+String name = obj.getString("name");   // null if missing
+int age = obj.getIntValue("age");      // 0 if missing (基本类型方法有默认值)
 ```
 
 ### JSONPointer 迁移

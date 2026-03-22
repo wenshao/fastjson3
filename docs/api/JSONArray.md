@@ -15,7 +15,7 @@ JSONArray arr = JSON.parseArray(jsonString);
 JSONArray arr = new JSONArray(list);
 
 // 使用元素创建
-JSONArray arr = new JSONArray("a", "b", "c");
+JSONArray arr = JSON.array("a", "b", "c");
 ```
 
 ## 添加元素
@@ -60,12 +60,12 @@ JSONObject obj = arr.getJSONObject(0);
 JSONArray nested = arr.getJSONArray(1);
 ```
 
-## 安全获取（带默认值）
+## 安全获取
 
 ```java
-// 如果索引越界，返回默认值
-String item = arr.getString(0, "default");
-int num = arr.getIntValue(0, 0);
+// 如果索引越界或值为 null，返回 null / 0
+String item = arr.getString(0);
+int num = arr.getIntValue(0);
 ```
 
 ## 修改元素
@@ -132,13 +132,12 @@ JSONArray arr = JSON.parseArray("[1,2,3]");
 
 // 转为 JSON 字符串
 String json = arr.toString();
-String pretty = arr.toJSONString(JSONWriter.Feature.PrettyFormat);
+String pretty = arr.toJSONString(WriteFeature.PrettyFormat);
 
 // 转为 byte[]
-byte[] bytes = arr.toJSONBytes();
+byte[] bytes = JSON.toJSONBytes(arr);
 
-// 转为 List
-List<Object> list = arr.toList();
+// JSONArray extends ArrayList，可直接当 List 使用
 
 // 转为类型化列表
 List<String> strings = arr.toJavaList(String.class);
@@ -205,12 +204,6 @@ arr.clear();
 ```java
 JSONArray arr = JSON.parseArray("[1,2,3,4,5]");
 
-// 转为 int[]
-int[] ints = arr.toArray(int[].class);
-
-// 转为 Integer[]
-Integer[] integers = arr.toArray(Integer[].class);
-
 // 转为 List<Integer>
 List<Integer> list = arr.toJavaList(Integer.class);
 ```
@@ -223,7 +216,6 @@ List<Integer> list = arr.toJavaList(Integer.class);
 | `add(int, Object)` | 在指定位置添加 | `arr.add(0, "first")` |
 | `get(int)` | 获取元素 | `arr.get(0)` |
 | `getString(int)` | 获取字符串 | `arr.getString(0)` |
-| `getString(int, String)` | 获取字符串（带默认） | `arr.getString(0, "")` |
 | `getInteger(int)` | 获取 Integer | `arr.getInteger(0)` |
 | `getIntValue(int)` | 获取 int | `arr.getIntValue(0)` |
 | `getLong(int)` | 获取 Long | `arr.getLong(0)` |

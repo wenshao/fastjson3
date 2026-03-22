@@ -46,9 +46,6 @@ public <T> T readValue(InputStream src, Class<T> type)
 // 从 Reader 读取
 public <T> T readValue(Reader src, Class<T> type)
 
-// 从 File 读取
-public <T> T readValue(File src, Class<T> type)
-
 // 读取泛型类型
 public <T> T readValue(String content, TypeReference<T> typeRef)
 public <T> T readValue(InputStream src, TypeReference<T> typeRef)
@@ -61,11 +58,7 @@ public <T> T readValue(InputStream src, TypeReference<T> typeRef)
 User user = mapper.readValue(jsonStr, User.class);
 
 // 读取列表
-TypeToken<List<User>> type = new TypeToken<List<User>>() {};
-List<User> users = mapper.readValue(jsonStr, type);
-
-// 从文件读取
-User user = mapper.readValue(new File("user.json"), User.class);
+List<User> users = mapper.readValue(jsonStr, new TypeReference<List<User>>() {});
 ```
 
 ### readValue 多态
@@ -76,9 +69,6 @@ public JSONObject readObject(String content)
 
 // 读取为 JSONArray
 public JSONArray readArray(String content)
-
-// 读取为任意类型
-public Object readAny(String content)
 ```
 
 ## 写入方法
@@ -94,12 +84,6 @@ public byte[] writeValueAsBytes(Object obj)
 
 // 写入到 OutputStream
 public void writeValue(OutputStream out, Object obj)
-
-// 写入到 Writer
-public void writeValue(Writer out, Object obj)
-
-// 写入到 File
-public void writeValue(File resultFile, Object obj)
 ```
 
 **示例：**
@@ -110,9 +94,6 @@ String json = mapper.writeValueAsString(user);
 
 // 写入为字节
 byte[] bytes = mapper.writeValueAsBytes(user);
-
-// 写入到文件
-mapper.writeValue(new File("output.json"), user);
 
 // 写入到输出流
 mapper.writeValue(response.getOutputStream(), data);
@@ -138,23 +119,21 @@ public Builder rebuild() {
 // 读取特性
 public Builder enableRead(ReadFeature... features)
 public Builder disableRead(ReadFeature... features)
-public Builder readFeatures(ReadFeature[] features)
 
 // 写入特性
 public Builder enableWrite(WriteFeature... features)
 public Builder disableWrite(WriteFeature... features)
-public Builder writeFeatures(WriteFeature[] features)
 
 // 自定义 Creator
 public Builder readerCreator(Function<Class<?>, ObjectReader<?>> creator)
 public Builder writerCreator(Function<Class<?>, ObjectWriter<?>> creator)
 
 // Mixin
-public Builder addMixin(Class<?> target, Class<?> mixin)
+public Builder addMixIn(Class<?> target, Class<?> mixIn)
 
 // 模块
-public Builder registerModule(ObjectReaderModule module)
-public Builder registerModule(ObjectWriterModule module)
+public Builder addReaderModule(ObjectReaderModule module)
+public Builder addWriterModule(ObjectWriterModule module)
 ```
 
 ## 自定义扩展
@@ -163,38 +142,15 @@ public Builder registerModule(ObjectWriterModule module)
 
 ```java
 // 注册 ObjectReader
-public ObjectMapper registerReader(Class<?> type, ObjectReader<?> reader)
+public <T> void registerReader(Type type, ObjectReader<T> reader)
 
 // 注册 ObjectWriter
-public ObjectMapper registerWriter(Class<?> type, ObjectWriter<?> writer)
-
-// Lambda 式注册
-public ObjectMapper registerReader(Class<?> type,
-    Function<JSONParser, Object> reader)
-
-public ObjectMapper registerWriter(Class<?> type,
-    BiConsumer<JSONGenerator, Object> writer)
+public <T> void registerWriter(Type type, ObjectWriter<T> writer)
 ```
 
-**示例：**
+### Mixin 配置（仅 Builder）
 
-```java
-// 注册 Money 类型
-mapper.registerReader(Money.class, (parser, type, features) -> {
-    return Money.parse(parser.readString());
-});
-
-mapper.registerWriter(Money.class, (gen, obj, features) -> {
-    gen.writeString(obj.toString());
-});
-```
-
-### Mixin 配置
-
-```java
-// 添加 Mixin
-public ObjectMapper addMixin(Class<?> target, Class<?> mixin)
-```
+Mixin 只能通过 Builder 配置，ObjectMapper 实例上没有 `addMixIn` 方法。
 
 **示例：**
 
@@ -208,7 +164,9 @@ public abstract class ThirdPartyMixin {
     abstract String getInternalState();
 }
 
-mapper.addMixin(ThirdPartyClass.class, ThirdPartyMixin.class);
+ObjectMapper mapper = ObjectMapper.builder()
+    .addMixIn(ThirdPartyClass.class, ThirdPartyMixin.class)
+    .build();
 ```
 
 ## 特性配置

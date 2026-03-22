@@ -436,5 +436,5 @@ core3/src/main/java/com/alibaba/fastjson3/
 ## 相关文档
 
 - [⚡ 性能优化技术 →](optimization.md)
-- [📖 序列化优化设计 →](../../core3/docs/serialization_optimization.md)
+- [📖 性能优化技术 →](optimization/)
 - [📖 设计历史 →](../design/api-design-evolution.md)
