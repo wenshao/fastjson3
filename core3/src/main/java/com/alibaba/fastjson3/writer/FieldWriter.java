@@ -279,12 +279,22 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         return result;
     }
 
+    /** Check if putLong is faster than arraycopy (x86 only). Android-safe. */
+    private static boolean isPutLongFast() {
+        try {
+            return JDKUtils.PUTLONG_FAST;
+        } catch (NoSuchFieldError e) {
+            // Android JDKUtils doesn't have PUTLONG_FAST
+            return false;
+        }
+    }
+
     /**
      * Encode byte[] as long[] for bulk Unsafe.putLong writes.
      * Pads to 8-byte boundary so the last long can safely overwrite trailing bytes.
      */
     public static long[] encodeByteLongs(byte[] bytes) {
-        if (!JDKUtils.UNSAFE_AVAILABLE || !JDKUtils.PUTLONG_FAST) {
+        if (!JDKUtils.UNSAFE_AVAILABLE || !isPutLongFast()) {
             return null;
         }
         int len = bytes.length;
