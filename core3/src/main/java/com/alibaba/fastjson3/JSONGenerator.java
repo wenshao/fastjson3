@@ -3152,7 +3152,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         }
 
         /**
-         * Create String directly from internal byte[] buffer as Latin-1.
+         * Create a Latin-1 String from the internal byte[] buffer (copies buffer,
+         * since it is pooled and will be reused after close).
          * Only works if output is all ASCII (common case for JSON).
          * Returns null if non-ASCII bytes were written (caller should fall back).
          */
