@@ -27,6 +27,14 @@ public final class JDKUtils {
     public static final boolean NATIVE_IMAGE;
     public static final int JDK_VERSION;
 
+    /** True on x86/x86_64 where Unsafe.putLong is faster than System.arraycopy for short copies.
+     *  On ARM/RISC-V, System.arraycopy is faster due to NEON/Vector intrinsics. */
+    public static final boolean PUTLONG_FAST = isPutLongFast();
+    private static boolean isPutLongFast() {
+        String arch = System.getProperty("os.arch", "");
+        return "amd64".equals(arch) || "x86_64".equals(arch) || "x86".equals(arch);
+    }
+
     private static final sun.misc.Unsafe UNSAFE;
     private static final long BYTE_ARRAY_OFFSET;
     private static final long CHAR_ARRAY_OFFSET;
@@ -123,7 +131,46 @@ public final class JDKUtils {
         }
         VECTOR_SUPPORT = vs;
         VECTOR_BYTE_SIZE = vbs;
+
+        // STRING_CREATOR: zero-copy String creation from byte[] + coder via LambdaMetafactory.
+        // Wraps String(byte[], byte) constructor — no array copy, no charset conversion.
+        java.util.function.BiFunction<byte[], Byte, String> creator = null;
+        if (UNSAFE_AVAILABLE && COMPACT_STRINGS) {
+            try {
+                Class<?> lookupClass = java.lang.invoke.MethodHandles.Lookup.class;
+                java.lang.reflect.Field implLookup = lookupClass.getDeclaredField("IMPL_LOOKUP");
+                long lookupOffset = UNSAFE.staticFieldOffset(implLookup);
+                java.lang.invoke.MethodHandles.Lookup trusted =
+                        (java.lang.invoke.MethodHandles.Lookup) UNSAFE.getObject(lookupClass, lookupOffset);
+
+                java.lang.invoke.MethodHandle handle = trusted.findConstructor(
+                        String.class,
+                        java.lang.invoke.MethodType.methodType(void.class, byte[].class, byte.class));
+
+                java.lang.invoke.CallSite callSite = java.lang.invoke.LambdaMetafactory.metafactory(
+                        trusted,
+                        "apply",
+                        java.lang.invoke.MethodType.methodType(java.util.function.BiFunction.class),
+                        java.lang.invoke.MethodType.methodType(Object.class, Object.class, Object.class),
+                        handle,
+                        java.lang.invoke.MethodType.methodType(String.class, byte[].class, Byte.class));
+
+                @SuppressWarnings("unchecked")
+                java.util.function.BiFunction<byte[], Byte, String> c =
+                        (java.util.function.BiFunction<byte[], Byte, String>) callSite.getTarget().invokeExact();
+                creator = c;
+            } catch (Throwable ignored) {
+            }
+        }
+        STRING_CREATOR = creator;
     }
+
+    /**
+     * Zero-copy String creator from byte[] + coder byte.
+     * Call: STRING_CREATOR.apply(bytes, (byte) 0) for Latin-1.
+     * null if not available.
+     */
+    public static final java.util.function.BiFunction<byte[], Byte, String> STRING_CREATOR;
 
     private JDKUtils() {
     }
@@ -239,6 +286,14 @@ public final class JDKUtils {
     public static String createLatin1String(byte[] src, int off, int len) {
         // Arrays.copyOfRange is a JIT intrinsic — single allocation + bulk copy
         byte[] value = java.util.Arrays.copyOfRange(src, off, off + len);
+        return createLatin1StringNoCopy(value);
+    }
+
+    /**
+     * Create a Latin1 String directly from byte[] WITHOUT copying.
+     * Caller must ensure the byte[] is not shared/modified after this call.
+     */
+    public static String createLatin1StringNoCopy(byte[] value) {
         String s = new String();
         UNSAFE.putObject(s, STRING_VALUE_OFFSET, value);
         UNSAFE.putByte(s, STRING_CODER_OFFSET, (byte) 0); // LATIN1 = 0

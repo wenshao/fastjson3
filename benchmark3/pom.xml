@@ -8,7 +8,7 @@
     <artifactId>benchmark3</artifactId>
     <version>1.0-SNAPSHOT</version>
     <name>benchmark3</name>
-    <description>JMH Benchmark: fastjson2 vs fastjson3 vs wast</description>
+    <description>JMH Benchmark: fastjson2 vs fastjson3 vs wast vs jackson vs gson</description>
     <packaging>jar</packaging>
 
     <properties>
@@ -38,6 +38,20 @@
             <groupId>io.github.wycst</groupId>
             <artifactId>wast</artifactId>
             <version>0.0.29.1</version>
+        </dependency>
+
+        <!-- jackson -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.18.3</version>
+        </dependency>
+
+        <!-- gson -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.12.1</version>
         </dependency>
 
         <!-- JMH -->

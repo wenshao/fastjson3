@@ -1,5 +1,7 @@
 package com.alibaba.fastjson3.benchmark.jjb;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.infra.Blackhole;
@@ -12,14 +14,17 @@ import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 
 public class UsersParseUTF8Bytes {
+    static final ObjectMapper jackson = new ObjectMapper();
+    static final Gson gson = new Gson();
     static byte[] utf8Bytes;
     static com.alibaba.fastjson3.ObjectReader<Users> reflectReader;
     static com.alibaba.fastjson3.ObjectReader<Users> asmReader;
 
     static {
         try {
-            InputStream is = UsersParseUTF8Bytes.class.getClassLoader().getResourceAsStream("data/jjb/user.json");
-            utf8Bytes = is.readAllBytes();
+            try (InputStream is = UsersParseUTF8Bytes.class.getClassLoader().getResourceAsStream("data/jjb/user.json")) {
+                utf8Bytes = is.readAllBytes();
+            }
             reflectReader = com.alibaba.fastjson3.reader.ObjectReaderCreator.createObjectReader(Users.class);
             asmReader = com.alibaba.fastjson3.reader.ObjectReaderCreatorASM.createObjectReader(Users.class);
         } catch (Throwable ex) {
@@ -54,6 +59,16 @@ public class UsersParseUTF8Bytes {
     @Benchmark
     public void wast(Blackhole bh) {
         bh.consume(io.github.wycst.wast.json.JSON.parseObject(utf8Bytes, Users.class));
+    }
+
+    @Benchmark
+    public void jackson(Blackhole bh) throws Exception {
+        bh.consume(jackson.readValue(utf8Bytes, Users.class));
+    }
+
+    @Benchmark
+    public void gson(Blackhole bh) {
+        bh.consume(gson.fromJson(new String(utf8Bytes, java.nio.charset.StandardCharsets.UTF_8), Users.class));
     }
 
     public static void main(String[] args) throws RunnerException {

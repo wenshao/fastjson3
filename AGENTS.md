@@ -83,3 +83,31 @@ Key rules for documentation:
 - No `.dateFormat()` or `.namingStrategy()` on ObjectMapper.builder() — use annotations instead
 - `@JSONField` has NO `unwrapped`, `raw`, `using`, or `writeEnumUsingName` parameters
 - `@JSONType` has NO `serializer`, `deserializer`, `format`, or `ignore` (boolean) parameters
+
+## Performance Coding Conventions
+
+When writing performance-sensitive code in JSONGenerator or similar hot paths:
+
+1. **Use local `pos` variable instead of `count++`**:
+   ```java
+   // Bad: multiple field read/writes
+   buf[count++] = '"';
+   buf[count++] = ',';
+
+   // Good: one read, one write
+   int pos = count;
+   buf[pos] = '"';
+   buf[pos + 1] = ',';
+   count = pos + 2;
+   ```
+
+2. **Fuse name+value writes**: Combine field name copy + value write into a single
+   `ensureCapacity` call. See `writeNameString`, `writeNameInt32` etc. in both
+   `JSONGenerator.Char` and `JSONGenerator.UTF8`.
+
+3. **Bulk copy then scan**: For string writing, use `getChars()` to bulk copy first,
+   then scan for escape characters. Most strings (>99%) need no escaping, so the fast
+   path avoids per-character method calls.
+
+4. **Keep hot methods small**: Methods under ~15 bytecode instructions inline better
+   under C2 JIT. Split slow paths (escape handling) into separate methods.

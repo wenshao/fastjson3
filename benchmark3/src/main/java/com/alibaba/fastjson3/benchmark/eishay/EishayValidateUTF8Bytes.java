@@ -1,4 +1,4 @@
-package com.alibaba.fastjson3.benchmark.jjb;
+package com.alibaba.fastjson3.benchmark.eishay;
 
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Mode;
@@ -12,37 +12,49 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
-public class ClientsParseCNBytes {
+/**
+ * Validate JSON without building object tree — pure syntax check.
+ * Tests the fast-path validation code (no object allocation).
+ */
+public class EishayValidateUTF8Bytes {
     static byte[] utf8Bytes;
+    static String str;
 
     static {
         try {
-            try (InputStream is = ClientsParseCNBytes.class.getClassLoader().getResourceAsStream("data/jjb/client_cn.json")) {
+            try (InputStream is = EishayValidateUTF8Bytes.class.getClassLoader()
+                    .getResourceAsStream("data/eishay/eishay_compact.json")) {
                 utf8Bytes = is.readAllBytes();
             }
+            str = new String(utf8Bytes, StandardCharsets.UTF_8);
         } catch (Throwable ex) {
             ex.printStackTrace();
         }
     }
 
     @Benchmark
-    public void fastjson2(Blackhole bh) {
-        bh.consume(com.alibaba.fastjson2.JSON.parseObject(utf8Bytes, Clients.class));
+    public void fastjson2_bytes(Blackhole bh) {
+        bh.consume(com.alibaba.fastjson2.JSON.isValid(utf8Bytes));
     }
 
     @Benchmark
-    public void fastjson3(Blackhole bh) {
-        bh.consume(com.alibaba.fastjson3.JSON.parseObject(utf8Bytes, Clients.class));
+    public void fastjson3_bytes(Blackhole bh) {
+        bh.consume(com.alibaba.fastjson3.JSON.isValid(utf8Bytes));
     }
 
     @Benchmark
-    public void wast(Blackhole bh) {
-        bh.consume(io.github.wycst.wast.json.JSON.parseObject(utf8Bytes, Clients.class));
+    public void fastjson2_string(Blackhole bh) {
+        bh.consume(com.alibaba.fastjson2.JSON.isValid(str));
+    }
+
+    @Benchmark
+    public void fastjson3_string(Blackhole bh) {
+        bh.consume(com.alibaba.fastjson3.JSON.isValid(str));
     }
 
     public static void main(String[] args) throws RunnerException {
         Options options = new OptionsBuilder()
-                .include(ClientsParseCNBytes.class.getName())
+                .include(EishayValidateUTF8Bytes.class.getName())
                 .mode(Mode.Throughput)
                 .timeUnit(TimeUnit.MILLISECONDS)
                 .warmupIterations(2)

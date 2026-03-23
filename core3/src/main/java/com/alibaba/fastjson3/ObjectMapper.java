@@ -1173,9 +1173,27 @@ public final class ObjectMapper {
     /**
      * Serialize object to JSON string with custom features.
      */
+    @SuppressWarnings("unchecked")
     public String writeValueAsString(Object obj, long features) {
         if (obj == null) {
             return "null";
+        }
+        // Fast path: UTF8 serialize → Latin-1 String (bypasses char[] entirely).
+        // Inlined to minimize call chain depth for JIT inlining.
+        if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION
+                && propertyFilters == null && valueFilters == null && nameFilters == null
+                && features == 0) {
+            ObjectWriter<Object> writer = (ObjectWriter<Object>) getObjectWriter(obj.getClass());
+            if (writer != null) {
+                try (JSONGenerator.UTF8 gen = (JSONGenerator.UTF8) JSONGenerator.ofUTF8()) {
+                    writer.write(gen, obj, null, null, 0);
+                    String result = gen.toStringLatin1();
+                    if (result != null) {
+                        return result;
+                    }
+                    return gen.toString();
+                }
+            }
         }
         try (JSONGenerator generator = createCharGenerator(features)) {
             applyFilters(generator);

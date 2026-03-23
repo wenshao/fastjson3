@@ -7,3 +7,6 @@ dependency-reduced-pom.xml
 *.iml
 .DS_Store
 .qwen/
+
+# Benchmark results (machine-specific, not committed)
+benchmark3/results/*/

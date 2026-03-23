@@ -150,6 +150,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     protected int count;
     protected int writeDepth;
     protected final boolean pretty;
+    public boolean isPretty() { return pretty; }
     protected final boolean bigDecimalPlain;
     protected final boolean longAsString;
     protected final boolean nonStringAsString;
@@ -895,7 +896,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     private static int writeOneFieldStatic(UTF8 gen, byte[] buf, int pos,
                                             com.alibaba.fastjson3.writer.FieldWriter fw,
                                             Object bean, long features) {
-        if (fw.customWriter != null || fw.format != null || fw.label != null || gen.bypassStaticPath) {
+        if (fw.customWriter != null || fw.format != null || fw.label != null || gen.bypassStaticPath
+                || fw.inclusion != com.alibaba.fastjson3.annotation.Inclusion.DEFAULT
+                || fw.fieldFeatures != 0) {
             gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
         }
         switch (fw.typeTag) {
@@ -958,6 +961,30 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 }
                 break;
             }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_ENUM: {
+                if (fw.fieldOffset >= 0) {
+                    Object enumVal = com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (enumVal == null) return pos;
+                    String name = ((Enum<?>) enumVal).name();
+                    byte[] nameBytes = name.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    // Check if enum name contains non-ASCII chars
+                    for (byte b : nameBytes) {
+                        if (b < 0) { gen.hasNonAscii = true; break; }
+                    }
+                    int needed = fw.nameBytesLen + nameBytes.length + 3;
+                    if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
+                        gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count;
+                    }
+                    pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    buf[pos++] = '"';
+                    System.arraycopy(nameBytes, 0, buf, pos, nameBytes.length);
+                    pos += nameBytes.length;
+                    buf[pos++] = '"';
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
             default:
                 // Complex types: LIST_OBJECT, LIST_STRING, arrays, generic → separate method
                 return writeOneFieldStaticComplex(gen, buf, pos, fw, bean, features);
@@ -975,7 +1002,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 if (fw.fieldOffset >= 0 && fw.elementClass != null) {
                     @SuppressWarnings("unchecked")
                     java.util.List<?> list = (java.util.List<?>) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
-                    if (list == null || list.isEmpty()) return pos;
+                    if (list == null) return pos;
+                    if (list.isEmpty()) {
+                        pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                        buf[pos++] = '['; buf[pos++] = ']'; buf[pos++] = ',';
+                        return pos;
+                    }
                     com.alibaba.fastjson3.writer.FieldWriter[] elemFws = getElementWriters(fw.elementClass);
                     if (elemFws != null) {
                         pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
@@ -1004,8 +1036,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 if (fw.fieldOffset >= 0) {
                     @SuppressWarnings("unchecked")
                     java.util.List<String> list = (java.util.List<String>) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
-                    if (list == null || list.isEmpty()) return pos;
+                    if (list == null) return pos;
                     pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    if (list.isEmpty()) { buf[pos++] = '['; buf[pos++] = ']'; buf[pos++] = ','; return pos; }
                     buf[pos++] = '[';
                     for (int j = 0, size = list.size(); j < size; j++) {
                         String s = list.get(j);
@@ -1105,6 +1138,168 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         });
     }
 
+    // ---- Static field-writing paths (no braces, called between startObject/endObject) ----
+
+    /**
+     * Write all fields using static dispatch for UTF8 generator.
+     * Called from ObjectWriterCreator.writeFields — no {/} framing.
+     */
+    public static void writeFieldsStaticUTF8NoFrame(UTF8 gen, com.alibaba.fastjson3.writer.FieldWriter[] writers,
+                                                     Object bean, long features) {
+        gen.ensureCapacity(writers.length * 48);
+        byte[] buf = gen.buf;
+        int pos = gen.count;
+        for (com.alibaba.fastjson3.writer.FieldWriter fw : writers) {
+            pos = writeOneFieldStatic(gen, buf, pos, fw, bean, features);
+            buf = gen.buf;
+        }
+        gen.count = pos;
+    }
+
+    /**
+     * Write all fields using static dispatch for Char generator.
+     * Uses char[] nameChars directly — no virtual dispatch per field.
+     */
+    public static void writeFieldsStaticChar(Char gen, com.alibaba.fastjson3.writer.FieldWriter[] writers,
+                                              Object bean, long features) {
+        gen.ensureCapacity(gen.count + writers.length * 48);
+        char[] buf = gen.buf;
+        int pos = gen.count;
+        for (com.alibaba.fastjson3.writer.FieldWriter fw : writers) {
+            pos = writeOneFieldStaticChar(gen, buf, pos, fw, bean, features);
+            buf = gen.buf;
+        }
+        gen.count = pos;
+    }
+
+    /**
+     * Write a single field for Char generator. Returns new pos.
+     */
+    private static int writeOneFieldStaticChar(Char gen, char[] buf, int pos,
+                                                com.alibaba.fastjson3.writer.FieldWriter fw,
+                                                Object bean, long features) {
+        if (fw.customWriter != null || fw.format != null || fw.label != null || gen.bypassStaticPath
+                || fw.inclusion != com.alibaba.fastjson3.annotation.Inclusion.DEFAULT
+                || fw.fieldFeatures != 0) {
+            gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
+        }
+        char[] nameChars = fw.nameChars;
+        int nameLen = nameChars.length;
+        switch (fw.typeTag) {
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_INT: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == int.class) {
+                    int needed = nameLen + 12;
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
+                    System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                    pos += nameLen;
+                    pos += Char.writeIntToChars(com.alibaba.fastjson3.util.JDKUtils.getInt(bean, fw.fieldOffset), buf, pos);
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_LONG: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == long.class) {
+                    int needed = nameLen + 21;
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
+                    System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                    pos += nameLen;
+                    pos += Char.writeLongToChars(com.alibaba.fastjson3.util.JDKUtils.getLongField(bean, fw.fieldOffset), buf, pos);
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_DOUBLE: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == double.class) {
+                    double val = com.alibaba.fastjson3.util.JDKUtils.getDouble(bean, fw.fieldOffset);
+                    if (!Double.isNaN(val) && !Double.isInfinite(val)) {
+                        String s = Double.toString(val);
+                        int sLen = s.length();
+                        int needed = nameLen + sLen + 1;
+                        if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
+                        System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                        pos += nameLen;
+                        s.getChars(0, sLen, buf, pos);
+                        pos += sLen;
+                        buf[pos++] = ',';
+                        return pos;
+                    }
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_BOOL: {
+                if (fw.fieldOffset >= 0 && fw.fieldClass == boolean.class) {
+                    int needed = nameLen + 6;
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
+                    System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                    pos += nameLen;
+                    if (com.alibaba.fastjson3.util.JDKUtils.getBoolean(bean, fw.fieldOffset)) {
+                        buf[pos] = 't'; buf[pos+1] = 'r'; buf[pos+2] = 'u'; buf[pos+3] = 'e';
+                        pos += 4;
+                    } else {
+                        buf[pos] = 'f'; buf[pos+1] = 'a'; buf[pos+2] = 'l'; buf[pos+3] = 's'; buf[pos+4] = 'e';
+                        pos += 5;
+                    }
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_STRING: {
+                if (fw.fieldOffset >= 0) {
+                    String s = (String) com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (s == null) return pos;
+                    int sLen = s.length();
+                    int needed = nameLen + sLen + 4;
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
+                    System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                    pos += nameLen;
+                    buf[pos++] = '"';
+                    s.getChars(0, sLen, buf, pos);
+                    // Check for escape chars
+                    boolean needsEscape = false;
+                    for (int i = 0; i < sLen; i++) {
+                        char ch = buf[pos + i];
+                        if (ch < 0x20 || ch == '"' || ch == '\\') { needsEscape = true; break; }
+                    }
+                    if (!needsEscape) {
+                        pos += sLen;
+                        buf[pos] = '"'; buf[pos+1] = ',';
+                        pos += 2;
+                        return pos;
+                    }
+                    // Fall back to gen.writeString for escape handling
+                    pos -= (nameLen + 1); // undo name + opening quote
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_ENUM: {
+                if (fw.fieldOffset >= 0) {
+                    Object enumVal = com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (enumVal == null) return pos;
+                    String name = ((Enum<?>) enumVal).name();
+                    int sLen = name.length();
+                    int needed = nameLen + sLen + 4;
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
+                    System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                    pos += nameLen;
+                    buf[pos++] = '"';
+                    name.getChars(0, sLen, buf, pos);
+                    pos += sLen;
+                    buf[pos++] = '"';
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        // Fallback: use virtual dispatch
+        gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
+    }
+
     // ---- Output ----
 
     /**
@@ -1153,6 +1348,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             }
         }
 
+        @Override
+        public void ensureCapacityPublic(int needed) {
+            ensureCapacity(count + needed);
+        }
+
         private void writeNewlineIndent() {
             int level = indentLevel;
             char[][] table = indentStep == 4 ? INDENT_CHARS_4 : INDENT_CHARS_2;
@@ -1192,10 +1392,9 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (pretty) {
                 indentLevel--;
                 if (count > 0 && buf[count - 1] == '{') {
-                    // empty object: {}
                     ensureCapacity(count + 2);
-                    buf[count++] = '}';
-                    buf[count++] = ',';
+                    buf[count] = '}'; buf[count + 1] = ',';
+                    count += 2;
                     return;
                 }
                 if (count > 0 && buf[count - 1] == ',') {
@@ -1203,16 +1402,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 }
                 writeNewlineIndent();
                 ensureCapacity(count + 2);
-                buf[count++] = '}';
-                buf[count++] = ',';
+                buf[count] = '}'; buf[count + 1] = ',';
+                count += 2;
             } else {
-                // remove trailing comma if present
                 if (count > 0 && buf[count - 1] == ',') {
                     count--;
                 }
                 ensureCapacity(count + 2);
-                buf[count++] = '}';
-                buf[count++] = ',';
+                buf[count] = '}'; buf[count + 1] = ',';
+                count += 2;
             }
         }
 
@@ -1305,35 +1503,258 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             }
         }
 
+        // ---- Fused name+value writers for Char (single ensureCapacity) ----
+
+        @Override
+        public void writeNameString(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
+            if (pretty || extendedEscape || escapeNoneAscii) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeString(value);
+                return;
+            }
+            int nameLen = nameChars.length;
+            if (value == null) {
+                ensureCapacity(count + nameLen + 5);
+                System.arraycopy(nameChars, 0, buf, count, nameLen);
+                count += nameLen;
+                buf[count++] = 'n'; buf[count++] = 'u'; buf[count++] = 'l'; buf[count++] = 'l'; buf[count++] = ',';
+                return;
+            }
+            int valLen = value.length();
+            ensureCapacity(count + nameLen + valLen + 4);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            buf[pos++] = '"';
+            // Fast path: check-and-copy without escape for common ASCII strings
+            value.getChars(0, valLen, buf, pos);
+            // Scan for chars needing escape
+            boolean needsEscape = false;
+            for (int i = 0; i < valLen; i++) {
+                char ch = buf[pos + i];
+                if (ch < 0x20 || ch == '"' || ch == '\\') {
+                    needsEscape = true;
+                    break;
+                }
+            }
+            if (!needsEscape) {
+                pos += valLen;
+                buf[pos++] = '"';
+                buf[pos++] = ',';
+                count = pos;
+            } else {
+                // Fallback: reset and use writeString which handles escaping
+                count = pos - 1; // undo the '"'
+                count -= nameLen; // undo name copy
+                writePreEncodedName(nameChars, nameBytes);
+                writeString(value);
+            }
+        }
+
+        @Override
+        public void writeNameInt32(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
+            if (pretty || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeInt32(value);
+                return;
+            }
+            int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 12);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            pos += writeIntToChars(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameInt64(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+            if (pretty || longAsString || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeInt64(value);
+                return;
+            }
+            int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 21);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            pos += writeLongToChars(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameBool(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
+            if (pretty || boolAsNumber || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeBool(value);
+                return;
+            }
+            int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 6);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            if (value) {
+                buf[pos++] = 't'; buf[pos++] = 'r'; buf[pos++] = 'u'; buf[pos++] = 'e';
+            } else {
+                buf[pos++] = 'f'; buf[pos++] = 'a'; buf[pos++] = 'l'; buf[pos++] = 's'; buf[pos++] = 'e';
+            }
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameDouble(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
+            if (pretty || nonStringAsString) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeDouble(value);
+                return;
+            }
+            if (Double.isNaN(value) || Double.isInfinite(value)) {
+                writePreEncodedName(nameChars, nameBytes);
+                writeNull();
+                return;
+            }
+            String s = Double.toString(value);
+            int nameLen = nameChars.length;
+            int valLen = s.length();
+            ensureCapacity(count + nameLen + valLen + 1);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            s.getChars(0, valLen, buf, pos);
+            pos += valLen;
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        // ---- Compact variants for ASM-generated writers ----
+        // Guard: if pretty or bypass features active, delegate to non-compact methods.
+
+        @Override
+        public void writeNameInt32Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, int value) {
+            if (pretty || bypassStaticPath) { writeNameInt32(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
+            int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 12);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            pos += writeIntToChars(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameInt64Compact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, long value) {
+            if (pretty || bypassStaticPath) { writeNameInt64(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
+            int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 21);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            pos += writeLongToChars(value, buf, pos);
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameStringCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, String value) {
+            if (pretty || bypassStaticPath) { writeNameString(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
+            int nameLen = nameChars.length;
+            int valLen = (value != null) ? value.length() : 4; // "null".length()
+            ensureCapacity(count + nameLen + valLen + 4); // quotes, comma, margin
+            if (value == null) {
+                int pos = count;
+                System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                pos += nameLen;
+                buf[pos] = 'n'; buf[pos+1] = 'u'; buf[pos+2] = 'l'; buf[pos+3] = 'l'; buf[pos+4] = ',';
+                count = pos + 5;
+                return;
+            }
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            buf[pos++] = '"';
+            value.getChars(0, valLen, buf, pos);
+            boolean needsEscape = false;
+            for (int i = 0; i < valLen; i++) {
+                char ch = buf[pos + i];
+                if (ch < 0x20 || ch == '"' || ch == '\\') { needsEscape = true; break; }
+            }
+            if (!needsEscape) {
+                pos += valLen;
+                buf[pos] = '"'; buf[pos + 1] = ',';
+                count = pos + 2;
+            } else {
+                // Fallback for escaped strings
+                count = pos - 1 - nameLen;
+                writeNameString(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
+            }
+        }
+
+        @Override
+        public void writeNameBoolCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, boolean value) {
+            if (pretty || bypassStaticPath) { writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars, value); return; }
+            int nameLen = nameChars.length;
+            ensureCapacity(count + nameLen + 6);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            if (value) {
+                buf[pos] = 't'; buf[pos+1] = 'r'; buf[pos+2] = 'u'; buf[pos+3] = 'e';
+                pos += 4;
+            } else {
+                buf[pos] = 'f'; buf[pos+1] = 'a'; buf[pos+2] = 'l'; buf[pos+3] = 's'; buf[pos+4] = 'e';
+                pos += 5;
+            }
+            buf[pos++] = ',';
+            count = pos;
+        }
+
+        @Override
+        public void writeNameDoubleCompact(long[] nameByteLongs, int nameBytesLen, byte[] nameBytes, char[] nameChars, double value) {
+            if (pretty || bypassStaticPath || Double.isNaN(value) || Double.isInfinite(value)) {
+                writeNameDouble(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
+                return;
+            }
+            String s = Double.toString(value);
+            int nameLen = nameChars.length;
+            int sLen = s.length();
+            ensureCapacity(count + nameLen + sLen + 1);
+            int pos = count;
+            System.arraycopy(nameChars, 0, buf, pos, nameLen);
+            pos += nameLen;
+            s.getChars(0, sLen, buf, pos);
+            pos += sLen;
+            buf[pos++] = ',';
+            count = pos;
+        }
+
         @Override
         public void writeNull() {
             ensureCapacity(count + 5);
-            buf[count++] = 'n';
-            buf[count++] = 'u';
-            buf[count++] = 'l';
-            buf[count++] = 'l';
-            buf[count++] = ',';
+            int pos = count;
+            buf[pos] = 'n'; buf[pos + 1] = 'u'; buf[pos + 2] = 'l'; buf[pos + 3] = 'l'; buf[pos + 4] = ',';
+            count = pos + 5;
         }
 
         @Override
         public void writeTrue() {
             ensureCapacity(count + 5);
-            buf[count++] = 't';
-            buf[count++] = 'r';
-            buf[count++] = 'u';
-            buf[count++] = 'e';
-            buf[count++] = ',';
+            int pos = count;
+            buf[pos] = 't'; buf[pos + 1] = 'r'; buf[pos + 2] = 'u'; buf[pos + 3] = 'e'; buf[pos + 4] = ',';
+            count = pos + 5;
         }
 
         @Override
         public void writeFalse() {
             ensureCapacity(count + 6);
-            buf[count++] = 'f';
-            buf[count++] = 'a';
-            buf[count++] = 'l';
-            buf[count++] = 's';
-            buf[count++] = 'e';
-            buf[count++] = ',';
+            int pos = count;
+            buf[pos] = 'f'; buf[pos + 1] = 'a'; buf[pos + 2] = 'l'; buf[pos + 3] = 's'; buf[pos + 4] = 'e'; buf[pos + 5] = ',';
+            count = pos + 6;
         }
 
         @Override
@@ -1460,17 +1881,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                                 // UseSingleQuotes: don't escape double quotes
                                 buf[count++] = ch;
                             } else {
-                                buf[count++] = '\\';
-                                buf[count++] = escaped;
+                                buf[count] = '\\';
+                                buf[count + 1] = escaped;
+                                count += 2;
                             }
                         } else {
-                            // Browser/secure unicode escape
-                            buf[count++] = '\\';
-                            buf[count++] = 'u';
-                            buf[count++] = '0';
-                            buf[count++] = '0';
-                            buf[count++] = DIGITS[ch >> 4];
-                            buf[count++] = DIGITS[ch & 0xF];
+                            buf[count] = '\\'; buf[count + 1] = 'u';
+                            buf[count + 2] = '0'; buf[count + 3] = '0';
+                            buf[count + 4] = DIGITS[ch >> 4]; buf[count + 5] = DIGITS[ch & 0xF];
+                            count += 6;
                         }
                     } else if (q != '"' && ch == q) {
                         // UseSingleQuotes: escape the single quote character
@@ -1478,19 +1897,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         buf[count++] = '\\';
                         buf[count++] = q;
                     } else if (ch < 0x20) {
-                        // control character
                         ensureCapacity(count + 6 + (len - i) + 3);
-                        buf[count++] = '\\';
-                        buf[count++] = 'u';
-                        buf[count++] = '0';
-                        buf[count++] = '0';
-                        buf[count++] = DIGITS[ch >> 4];
-                        buf[count++] = DIGITS[ch & 0xF];
+                        buf[count] = '\\'; buf[count + 1] = 'u';
+                        buf[count + 2] = '0'; buf[count + 3] = '0';
+                        buf[count + 4] = DIGITS[ch >> 4]; buf[count + 5] = DIGITS[ch & 0xF];
+                        count += 6;
                     } else {
                         buf[count++] = ch;
                     }
                 } else {
-                    // Non-ASCII
                     if (escapeNoneAscii) {
                         ensureCapacity(count + 6 + (len - i) + 3);
                         buf[count++] = '\\';
@@ -2162,6 +2577,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             int ch = b & 0xFF;
             if (ch >= 128) {
                 // Latin-1 char 0x80-0xFF: encode as 2-byte UTF-8
+                hasNonAscii = true;
                 buf[pos++] = (byte) (0xC0 | (ch >> 6));
                 buf[pos++] = (byte) (0x80 | (ch & 0x3F));
                 return pos;
@@ -2198,6 +2614,8 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 return;
             }
 
+            // Non-Latin1 string — mark as having non-ASCII output
+            hasNonAscii = true;
             // General path: char-by-char with escaping and UTF-8 encoding
             int len = val.length();
             // Initial estimate: 4 bytes per char covers most CJK + surrogate pairs.
@@ -2724,6 +3142,28 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             return result;
         }
 
+        /** Tracks if any non-ASCII byte was written */
+        boolean hasNonAscii;
+
+        @Override
+        public void resetForReuse() {
+            super.resetForReuse();
+            hasNonAscii = false;
+        }
+
+        /**
+         * Create a Latin-1 String from the internal byte[] buffer (copies buffer,
+         * since it is pooled and will be reused after close).
+         * Only works if output is all ASCII (common case for JSON).
+         * Returns null if non-ASCII bytes were written (caller should fall back).
+         */
+        public String toStringLatin1() {
+            if (hasNonAscii) return null;
+            if (!JDKUtils.FAST_STRING_CREATION) return null;
+            int c = outputCount();
+            return JDKUtils.createLatin1String(buf, 0, c);
+        }
+
         @Override
         public String toString() {
             return new String(buf, 0, outputCount(), StandardCharsets.UTF_8);
@@ -2751,7 +3191,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     JDKUtils.putLongDirect(buf, pos, v);
                     pos += 8;
                 }
-                // putLong may overwrite past actual length (padded to 8)
                 return startPos + nameBytesLen;
             } else {
                 System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
@@ -2833,6 +3272,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             int ch = b & 0xFF;
             if (ch >= 128) {
                 // Latin-1 char 0x80-0xFF: encode as 2-byte UTF-8
+                // Note: hasNonAscii is set by the caller (writeLatinStringStatic) if needed
                 buf[pos++] = (byte) (0xC0 | (ch >> 6));
                 buf[pos++] = (byte) (0x80 | (ch & 0x3F));
                 return pos;

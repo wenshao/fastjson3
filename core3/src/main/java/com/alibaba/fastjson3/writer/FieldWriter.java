@@ -42,6 +42,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     public static final int TYPE_INT_ARRAY = 11;
     public static final int TYPE_STRING_ARRAY = 12;
     public static final int TYPE_DOUBLE_ARRAY = 13;
+    public static final int TYPE_ENUM = 14;
 
     final String fieldName;
     final int ordinal;
@@ -244,6 +245,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (fieldClass == double[].class) {
             return TYPE_DOUBLE_ARRAY;
         }
+        if (fieldClass.isEnum()) {
+            return TYPE_ENUM;
+        }
         if (!fieldClass.isPrimitive() && !fieldClass.isArray()
                 && fieldClass != Object.class
                 && !java.util.Collection.class.isAssignableFrom(fieldClass)
@@ -275,12 +279,24 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         return result;
     }
 
+    /** Check if putLong is faster than arraycopy (x86 only). Android-safe. */
+    private static final boolean PUTLONG_FAST = detectPutLongFast();
+    private static boolean detectPutLongFast() {
+        try {
+            java.lang.reflect.Field f = JDKUtils.class.getField("PUTLONG_FAST");
+            return (Boolean) f.get(null);
+        } catch (Throwable e) {
+            // Android JDKUtils doesn't have PUTLONG_FAST
+            return false;
+        }
+    }
+
     /**
      * Encode byte[] as long[] for bulk Unsafe.putLong writes.
      * Pads to 8-byte boundary so the last long can safely overwrite trailing bytes.
      */
     public static long[] encodeByteLongs(byte[] bytes) {
-        if (!JDKUtils.UNSAFE_AVAILABLE) {
+        if (!JDKUtils.UNSAFE_AVAILABLE || !PUTLONG_FAST) {
             return null;
         }
         int len = bytes.length;

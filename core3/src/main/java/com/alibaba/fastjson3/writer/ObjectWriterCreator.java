@@ -574,8 +574,18 @@ public final class ObjectWriterCreator {
     }
 
     static void writeFields(com.alibaba.fastjson3.JSONGenerator generator, FieldWriter[] writers, Object object, long features) {
-        // Fast path: no filters
+        // Static path: bypass virtual dispatch for UTF8 and Char generators
         if (!generator.hasFilters() && generator.labelFilter == null) {
+            if (!generator.isPretty()) {
+                if (generator instanceof com.alibaba.fastjson3.JSONGenerator.UTF8 utf8) {
+                    com.alibaba.fastjson3.JSONGenerator.writeFieldsStaticUTF8NoFrame(utf8, writers, object, features);
+                    return;
+                }
+                if (generator instanceof com.alibaba.fastjson3.JSONGenerator.Char charGen) {
+                    com.alibaba.fastjson3.JSONGenerator.writeFieldsStaticChar(charGen, writers, object, features);
+                    return;
+                }
+            }
             for (FieldWriter fw : writers) {
                 fw.writeField(generator, object, features);
             }
