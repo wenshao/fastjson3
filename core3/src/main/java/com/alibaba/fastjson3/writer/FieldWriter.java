@@ -280,7 +280,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
      * Pads to 8-byte boundary so the last long can safely overwrite trailing bytes.
      */
     public static long[] encodeByteLongs(byte[] bytes) {
-        if (!JDKUtils.UNSAFE_AVAILABLE) {
+        if (!JDKUtils.UNSAFE_AVAILABLE || !JDKUtils.PUTLONG_FAST) {
             return null;
         }
         int len = bytes.length;

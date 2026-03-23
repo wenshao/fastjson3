@@ -3151,7 +3151,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     JDKUtils.putLongDirect(buf, pos, v);
                     pos += 8;
                 }
-                // putLong may overwrite past actual length (padded to 8)
                 return startPos + nameBytesLen;
             } else {
                 System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);

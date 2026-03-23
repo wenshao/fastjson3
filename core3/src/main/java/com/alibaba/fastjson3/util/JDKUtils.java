@@ -27,6 +27,14 @@ public final class JDKUtils {
     public static final boolean NATIVE_IMAGE;
     public static final int JDK_VERSION;
 
+    /** True on x86/x86_64 where Unsafe.putLong is faster than System.arraycopy for short copies.
+     *  On ARM/RISC-V, System.arraycopy is faster due to NEON/Vector intrinsics. */
+    public static final boolean PUTLONG_FAST = isPutLongFast();
+    private static boolean isPutLongFast() {
+        String arch = System.getProperty("os.arch", "");
+        return "amd64".equals(arch) || "x86_64".equals(arch) || "x86".equals(arch);
+    }
+
     private static final sun.misc.Unsafe UNSAFE;
     private static final long BYTE_ARRAY_OFFSET;
     private static final long CHAR_ARRAY_OFFSET;
