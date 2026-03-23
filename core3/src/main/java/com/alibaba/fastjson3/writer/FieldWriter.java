@@ -42,6 +42,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     public static final int TYPE_INT_ARRAY = 11;
     public static final int TYPE_STRING_ARRAY = 12;
     public static final int TYPE_DOUBLE_ARRAY = 13;
+    public static final int TYPE_ENUM = 14;
 
     final String fieldName;
     final int ordinal;
@@ -243,6 +244,9 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         if (fieldClass == double[].class) {
             return TYPE_DOUBLE_ARRAY;
+        }
+        if (fieldClass.isEnum()) {
+            return TYPE_ENUM;
         }
         if (!fieldClass.isPrimitive() && !fieldClass.isArray()
                 && fieldClass != Object.class

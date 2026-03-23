@@ -961,6 +961,26 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 }
                 break;
             }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_ENUM: {
+                if (fw.fieldOffset >= 0) {
+                    Object enumVal = com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (enumVal == null) return pos;
+                    String name = ((Enum<?>) enumVal).name();
+                    byte[] nameBytes = name.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    int needed = fw.nameBytesLen + nameBytes.length + 3;
+                    if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
+                        gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count;
+                    }
+                    pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
+                    buf[pos++] = '"';
+                    System.arraycopy(nameBytes, 0, buf, pos, nameBytes.length);
+                    pos += nameBytes.length;
+                    buf[pos++] = '"';
+                    buf[pos++] = ',';
+                    return pos;
+                }
+                break;
+            }
             default:
                 // Complex types: LIST_OBJECT, LIST_STRING, arrays, generic → separate method
                 return writeOneFieldStaticComplex(gen, buf, pos, fw, bean, features);
@@ -1247,6 +1267,25 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     }
                     // Fall back to gen.writeString for escape handling
                     pos -= (nameLen + 1); // undo name + opening quote
+                }
+                break;
+            }
+            case com.alibaba.fastjson3.writer.FieldWriter.TYPE_ENUM: {
+                if (fw.fieldOffset >= 0) {
+                    Object enumVal = com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
+                    if (enumVal == null) return pos;
+                    String name = ((Enum<?>) enumVal).name();
+                    int sLen = name.length();
+                    int needed = nameLen + sLen + 4;
+                    if (pos + needed > buf.length) { gen.count = pos; gen.ensureCapacity(pos + needed); buf = gen.buf; pos = gen.count; }
+                    System.arraycopy(nameChars, 0, buf, pos, nameLen);
+                    pos += nameLen;
+                    buf[pos++] = '"';
+                    name.getChars(0, sLen, buf, pos);
+                    pos += sLen;
+                    buf[pos++] = '"';
+                    buf[pos++] = ',';
+                    return pos;
                 }
                 break;
             }
