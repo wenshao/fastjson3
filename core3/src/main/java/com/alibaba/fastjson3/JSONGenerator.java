@@ -967,6 +967,10 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     if (enumVal == null) return pos;
                     String name = ((Enum<?>) enumVal).name();
                     byte[] nameBytes = name.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    // Check if enum name contains non-ASCII chars
+                    for (byte b : nameBytes) {
+                        if (b < 0) { gen.hasNonAscii = true; break; }
+                    }
                     int needed = fw.nameBytesLen + nameBytes.length + 3;
                     if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
                         gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count;
