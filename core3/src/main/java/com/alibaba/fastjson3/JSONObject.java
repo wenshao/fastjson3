@@ -8,13 +8,25 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 
 /**
  * Represents a JSON object. Maintains insertion order.
+ *
+ * <p>Extends LinkedHashMap for API compatibility, but all operations delegate to
+ * an internal {@link JSONObjectMap} (flat array-backed map) for better performance.
+ * The inner map avoids per-entry Node allocation and hashCode computation overhead.</p>
+ *
+ * <p>Users can configure a custom map implementation via
+ * {@link #setMapCreator(Supplier)}. When set, JSONObject falls back to
+ * LinkedHashMap behavior with the custom map as backing storage.</p>
  *
  * <pre>
  * JSONObject obj = new JSONObject();
@@ -23,15 +35,168 @@ import java.util.Map;
  * </pre>
  */
 public class JSONObject extends LinkedHashMap<String, Object> {
+    /**
+     * Global map creator for customizing JSONObject's backing map.
+     * When null (default), uses built-in JSONObjectMap.
+     * When set, JSONObject uses LinkedHashMap (super) directly — no inner map.
+     *
+     * <pre>
+     * // Use standard LinkedHashMap
+     * JSONObject.setMapCreator(LinkedHashMap::new);
+     *
+     * // Use custom ordered map
+     * JSONObject.setMapCreator(() -> new MyOrderedMap());
+     * </pre>
+     */
+    private static volatile Supplier<Map<String, Object>> mapCreator;
+
+    /**
+     * Inner map — null when using LinkedHashMap fallback (mapCreator is set,
+     * or constructed via {@link #JSONObject(Map)}).
+     */
+    private transient JSONObjectMap innerMap;
+
+    public static void setMapCreator(Supplier<Map<String, Object>> creator) {
+        mapCreator = creator;
+    }
+
+    public static Supplier<Map<String, Object>> getMapCreator() {
+        return mapCreator;
+    }
+
     public JSONObject() {
+        if (mapCreator == null) {
+            innerMap = new JSONObjectMap();
+        }
     }
 
     public JSONObject(int initialCapacity) {
-        super(initialCapacity);
+        if (mapCreator == null) {
+            innerMap = new JSONObjectMap(initialCapacity);
+        } else {
+            // LinkedHashMap mode — super already initialized
+        }
     }
 
     public JSONObject(Map<String, Object> map) {
         super(map);
+        // No inner map — use LinkedHashMap with pre-populated data
+    }
+
+    // ==================== Map method overrides ====================
+    // All delegated to innerMap when present, super (LinkedHashMap) otherwise.
+
+    @Override
+    public int size() {
+        return innerMap != null ? innerMap.size() : super.size();
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return innerMap != null ? innerMap.isEmpty() : super.isEmpty();
+    }
+
+    @Override
+    public Object get(Object key) {
+        return innerMap != null ? innerMap.get(key) : super.get(key);
+    }
+
+    @Override
+    public boolean containsKey(Object key) {
+        return innerMap != null ? innerMap.containsKey(key) : super.containsKey(key);
+    }
+
+    @Override
+    public boolean containsValue(Object value) {
+        return innerMap != null ? innerMap.containsValue(value) : super.containsValue(value);
+    }
+
+    @Override
+    public Object put(String key, Object value) {
+        return innerMap != null ? innerMap.put(key, value) : super.put(key, value);
+    }
+
+    @Override
+    public Object remove(Object key) {
+        return innerMap != null ? innerMap.remove(key) : super.remove(key);
+    }
+
+    @Override
+    public void putAll(Map<? extends String, ?> m) {
+        if (innerMap != null) {
+            for (Map.Entry<? extends String, ?> e : m.entrySet()) {
+                innerMap.put(e.getKey(), e.getValue());
+            }
+        } else {
+            super.putAll(m);
+        }
+    }
+
+    @Override
+    public void clear() {
+        if (innerMap != null) {
+            innerMap.clear();
+        } else {
+            super.clear();
+        }
+    }
+
+    @Override
+    public Set<String> keySet() {
+        return innerMap != null ? innerMap.keySet() : super.keySet();
+    }
+
+    @Override
+    public Collection<Object> values() {
+        return innerMap != null ? innerMap.values() : super.values();
+    }
+
+    @Override
+    public Set<Map.Entry<String, Object>> entrySet() {
+        return innerMap != null ? innerMap.entrySet() : super.entrySet();
+    }
+
+    @Override
+    public void forEach(BiConsumer<? super String, ? super Object> action) {
+        if (innerMap != null) {
+            innerMap.forEach(action);
+        } else {
+            super.forEach(action);
+        }
+    }
+
+    @Override
+    public Object getOrDefault(Object key, Object defaultValue) {
+        if (innerMap != null) {
+            Object v = innerMap.get(key);
+            return v != null || innerMap.containsKey(key) ? v : defaultValue;
+        }
+        return super.getOrDefault(key, defaultValue);
+    }
+
+    @Override
+    public Object putIfAbsent(String key, Object value) {
+        if (innerMap != null) {
+            Object v = innerMap.get(key);
+            if (v == null && !innerMap.containsKey(key)) {
+                innerMap.put(key, value);
+                return null;
+            }
+            return v;
+        }
+        return super.putIfAbsent(key, value);
+    }
+
+    /**
+     * Fast put for parser use. Uses inner map's put (more efficient than LinkedHashMap).
+     * Package-private, only called from JSONParser.readObject().
+     */
+    void fastPut(String key, Object value) {
+        if (innerMap != null) {
+            innerMap.put(key, value);
+        } else {
+            super.put(key, value);
+        }
     }
 
     /**

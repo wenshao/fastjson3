@@ -306,7 +306,7 @@ public abstract sealed class JSONParser implements Closeable
         for (;;) {
             String name = readFieldName();
             Object value = readAny();
-            obj.put(name, value);
+            obj.fastPut(name, value);
 
             skipWhitespace();
             if (offset >= end()) {
