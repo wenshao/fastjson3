@@ -3222,6 +3222,93 @@ public abstract sealed class JSONParser implements Closeable
             throw new JSONException("unterminated field name");
         }
 
+        /**
+         * Direct integer parsing from byte[] — avoids scanNumber + extractString + parseInt.
+         * Uses 2-digit batch processing (inspired by wast's digits2Bytes/deserializeInteger).
+         * Falls back to super.readNumber() for floats, big integers, and edge cases.
+         */
+        @Override
+        protected Number readNumber() {
+            final byte[] b = this.bytes;
+            int off = this.offset;
+            final int e = this.end;
+
+            // Inline skipWhitespace
+            while (off < e && b[off] <= ' ') off++;
+
+            if (off >= e) {
+                this.offset = off;
+                return super.readNumber();
+            }
+
+            int start = off;
+            boolean neg = false;
+            if (b[off] == '-') {
+                neg = true;
+                off++;
+                if (off >= e) {
+                    this.offset = start;
+                    return super.readNumber();
+                }
+            }
+
+            int c = b[off] & 0xFF;
+            if (c < '0' || c > '9') {
+                this.offset = start;
+                return super.readNumber();
+            }
+
+            // First digit
+            long value = c - '0';
+            off++;
+
+            // 2-digit batch loop (inspired by wast)
+            // Process 2 digits at a time: value = value * 100 + twoDigits
+            while (off + 1 < e) {
+                int d1 = b[off] - '0';
+                int d2 = b[off + 1] - '0';
+                if ((d1 | d2) < 0 || d1 > 9 || d2 > 9) {
+                    break;
+                }
+                value = value * 100 + d1 * 10 + d2;
+                off += 2;
+            }
+
+            // Handle remaining single digit
+            if (off < e) {
+                c = b[off] & 0xFF;
+                if (c >= '0' && c <= '9') {
+                    value = (value << 3) + (value << 1) + (c - '0'); // value * 10 + digit
+                    off++;
+                }
+            }
+
+            // Overflow check
+            if (off - start - (neg ? 1 : 0) > 18) {
+                this.offset = start;
+                return super.readNumber();
+            }
+
+            // Float/exponent → fallback
+            if (off < e) {
+                int next = b[off] & 0xFF;
+                if (next == '.' || next == 'e' || next == 'E') {
+                    this.offset = start;
+                    return super.readNumber();
+                }
+            }
+
+            if (neg) {
+                value = -value;
+            }
+            this.offset = off;
+
+            if ((int) value == value) {
+                return (int) value;
+            }
+            return value;
+        }
+
         @Override
         public void close() {
             // no-op — bytes owned by the String, not by us
