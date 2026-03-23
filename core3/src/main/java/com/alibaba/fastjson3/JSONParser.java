@@ -540,15 +540,57 @@ public abstract sealed class JSONParser implements Closeable
 
     public String readFieldName() {
         skipWhitespace();
-        if (offset >= end()) {
+        int e = end();
+        if (offset >= e) {
             throw new JSONException("expected quote for field name at offset " + offset);
         }
         int quote = ch(offset);
-        if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+        if (quote == '"') {
+            offset++;
+            // Compute hash while scanning for closing quote (fast path: no escape)
+            int start = offset;
+            long hash = 0;
+            while (offset < e) {
+                int c = ch(offset);
+                if (c == '"') {
+                    int nameLen = offset - start;
+                    offset++;
+                    skipWhitespace();
+                    if (offset >= e || ch(offset) != ':') {
+                        throw new JSONException("expected ':' at offset " + offset);
+                    }
+                    offset++;
+                    // Cache lookup
+                    String cached = NameCache.get(hash);
+                    if (cached != null && cached.length() == nameLen) {
+                        return cached;
+                    }
+                    // Cache miss: create String and cache it
+                    String name = extractString(start, start + nameLen);
+                    NameCache.put(hash, name);
+                    return name;
+                }
+                if (c == '\\') {
+                    // Has escapes: fall back to full string reading (no caching)
+                    offset = start;
+                    String name = readStringContentWithQuote('"');
+                    skipWhitespace();
+                    if (offset >= e || ch(offset) != ':') {
+                        throw new JSONException("expected ':' at offset " + offset);
+                    }
+                    offset++;
+                    return name;
+                }
+                hash = hash * 31 + c;
+                offset++;
+            }
+            throw new JSONException("unterminated field name");
+        }
+        if (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes)) {
             offset++;
             String name = readStringContentWithQuote(quote);
             skipWhitespace();
-            if (offset >= end() || ch(offset) != ':') {
+            if (offset >= e || ch(offset) != ':') {
                 throw new JSONException("expected ':' at offset " + offset);
             }
             offset++;
@@ -1161,6 +1203,49 @@ public abstract sealed class JSONParser implements Closeable
         private static final long SWAR_LO = 0x0101010101010101L;
         private static final long SWAR_HI = 0x8080808080808080L;
 
+        /**
+         * SWAR string scanning: find first byte that is quote (0x22), backslash (0x5C),
+         * or has high bit set (non-ASCII, >= 0x80) using 8-byte-at-a-time processing.
+         *
+         * <p>Inspired by wast's vectorized string scanning and simdjson's SWAR approach.
+         * Used as fallback when Vector API is not available (JDK < 22 without --add-modules).</p>
+         *
+         * <p>Algorithm: For each 8-byte word, detect bytes matching special characters
+         * using the zero-byte detection trick: hasZero(v) = (v - 0x0101...) & ~v & 0x8080...</p>
+         */
+        private static int swarScanString(byte[] b, int off, int limit) {
+            if (!com.alibaba.fastjson3.util.JDKUtils.UNSAFE_AVAILABLE) {
+                return off; // No Unsafe: fall through to byte-by-byte loop
+            }
+            // Need at least 8 bytes to avoid reading past array end
+            int swarLimit = limit - 7;
+            while (off < swarLimit) {
+                // Load 8 bytes
+                long word = com.alibaba.fastjson3.util.JDKUtils.getLong(b, off);
+
+                // Check for quote (0x22): XOR with broadcast 0x22, detect zeros
+                long xq = word ^ SWAR_QUOTE;
+                long hasQuote = (xq - SWAR_LO) & ~xq & SWAR_HI;
+
+                // Check for backslash (0x5C): XOR with broadcast 0x5C, detect zeros
+                long xe = word ^ SWAR_ESCAPE;
+                long hasEscape = (xe - SWAR_LO) & ~xe & SWAR_HI;
+
+                // Check for high-bit (non-ASCII): any byte >= 0x80
+                long hasHighBit = word & SWAR_HI;
+
+                long found = hasQuote | hasEscape | hasHighBit;
+                if (found != 0) {
+                    // Found a special byte — compute position within the 8-byte word
+                    int shift = Long.numberOfTrailingZeros(found);
+                    // Each byte occupies 8 bits, position is shift/8
+                    return off + (shift >> 3);
+                }
+                off += 8;
+            }
+            return off;
+        }
+
         UTF8(byte[] bytes, int offset, int length, long features) {
             super(features);
             this.bytes = bytes;
@@ -1566,9 +1651,11 @@ public abstract sealed class JSONParser implements Closeable
             // Inline readStringContent fast path for ASCII
             int start = off;
 
-            // Vector API: scan VECTOR_SIZE bytes at a time
+            // Fast scan: find first quote, backslash, or non-ASCII byte
             if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
                 off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
+            } else {
+                off = swarScanString(b, off, e);
             }
 
             while (off < e) {
@@ -1613,11 +1700,11 @@ public abstract sealed class JSONParser implements Closeable
             off++;
             int start = off;
 
-            // Vector API: scan VECTOR_SIZE bytes at a time (for quote, backslash, or non-ASCII)
-            // Note: SWAR fallback removed - Vector API provides better performance on supported platforms (JDK16+)
-            // For platforms without Vector API, the per-byte loop below handles all cases correctly.
+            // Fast scan: find first quote, backslash, or non-ASCII byte
             if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
                 off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
+            } else {
+                off = swarScanString(b, off, e);
             }
 
             while (off < e) {
@@ -2699,8 +2786,8 @@ public abstract sealed class JSONParser implements Closeable
             int start = offset;
             final byte[] b = this.bytes;
             final int e = this.end;
-            int off = start;
-            // Fast scan for closing quote (no escape, ASCII-only)
+            int off = swarScanString(b, start, e);
+            // Handle match or continue byte-by-byte for tail
             while (off < e) {
                 byte c = b[off];
                 if (c == '"') {
@@ -2730,8 +2817,9 @@ public abstract sealed class JSONParser implements Closeable
             int start = offset;
             final byte[] b = this.bytes;
             final int e = this.end;
-            int off = start;
-            // Fast scan for closing quote (no escape, ASCII-only)
+            // SWAR scan works for any quote since it detects both '"' and '\'' (and '\\')
+            int off = (quote == '"') ? swarScanString(b, start, e) : start;
+            // Handle match or continue byte-by-byte for tail
             while (off < e) {
                 byte c = b[off];
                 if (c == quote) {
@@ -2842,6 +2930,7 @@ public abstract sealed class JSONParser implements Closeable
             }
             throw new JSONException("unterminated string");
         }
+
     }
 
     static final class CharArray extends JSONParser {
