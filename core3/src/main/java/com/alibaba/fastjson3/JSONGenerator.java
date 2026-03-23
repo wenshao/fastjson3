@@ -3117,10 +3117,6 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             if (hasNonAscii) return null;
             if (!JDKUtils.FAST_STRING_CREATION) return null;
             int c = outputCount();
-            // Double-check: scan for non-ASCII bytes (covers edge cases like non-ASCII map keys)
-            for (int i = 0; i < c; i++) {
-                if (buf[i] < 0) return null;
-            }
             return JDKUtils.createLatin1String(buf, 0, c);
         }
 
