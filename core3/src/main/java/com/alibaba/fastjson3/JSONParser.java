@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
  * </pre>
  */
 public abstract sealed class JSONParser implements Closeable
-        permits JSONParser.Str, JSONParser.UTF8, JSONParser.CharArray {
+        permits JSONParser.Str, JSONParser.UTF8, JSONParser.LATIN1, JSONParser.CharArray {
     static final boolean[] WHITESPACE = new boolean[256];
     static {
         WHITESPACE[' '] = true;
@@ -162,6 +162,14 @@ public abstract sealed class JSONParser implements Closeable
         if (json == null || json.isEmpty()) {
             throw new JSONException("input is null or empty");
         }
+        // Latin1 fast path: zero-copy access to String's internal byte[].
+        // Avoids charAt() virtual dispatch — same approach as fastjson2's JSONReaderASCII.
+        if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json) == 0) {
+            byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
+            if (value != null) {
+                return new LATIN1(value, 0, value.length, 0);
+            }
+        }
         return new Str(json, 0);
     }
 
@@ -169,7 +177,14 @@ public abstract sealed class JSONParser implements Closeable
         if (json == null || json.isEmpty()) {
             throw new JSONException("input is null or empty");
         }
-        return new Str(json, ReadFeature.of(features));
+        long f = ReadFeature.of(features);
+        if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json) == 0) {
+            byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
+            if (value != null) {
+                return new LATIN1(value, 0, value.length, f);
+            }
+        }
+        return new Str(json, f);
     }
 
     /**
@@ -178,6 +193,12 @@ public abstract sealed class JSONParser implements Closeable
     public static JSONParser of(String json, long features) {
         if (json == null || json.isEmpty()) {
             throw new JSONException("input is null or empty");
+        }
+        if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json) == 0) {
+            byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
+            if (value != null) {
+                return new LATIN1(value, 0, value.length, features);
+            }
         }
         return new Str(json, features);
     }
@@ -547,7 +568,8 @@ public abstract sealed class JSONParser implements Closeable
         int quote = ch(offset);
         if (quote == '"') {
             offset++;
-            // Compute hash while scanning for closing quote (fast path: no escape)
+            // Compute hash while scanning for closing quote (fast path: no escape).
+            // hash * 31 + c — simple, fast, shared across all parser types.
             int start = offset;
             long hash = 0;
             while (offset < e) {
@@ -560,18 +582,15 @@ public abstract sealed class JSONParser implements Closeable
                         throw new JSONException("expected ':' at offset " + offset);
                     }
                     offset++;
-                    // Cache lookup
                     String cached = NameCache.get(hash);
                     if (cached != null && cached.length() == nameLen) {
                         return cached;
                     }
-                    // Cache miss: create String and cache it
                     String name = extractString(start, start + nameLen);
                     NameCache.put(hash, name);
                     return name;
                 }
                 if (c == '\\') {
-                    // Has escapes: fall back to full string reading (no caching)
                     offset = start;
                     String name = readStringContentWithQuote('"');
                     skipWhitespace();
@@ -598,6 +617,7 @@ public abstract sealed class JSONParser implements Closeable
         }
         throw new JSONException("expected quote for field name at offset " + offset);
     }
+
 
     /**
      * Read a field name and compute its hash using the given matcher's hash strategy.
@@ -2931,6 +2951,281 @@ public abstract sealed class JSONParser implements Closeable
             throw new JSONException("unterminated string");
         }
 
+    }
+
+    // ==================== LATIN1 parser ====================
+
+    /**
+     * Parser for JDK Latin1 compact strings. Zero-copy access to String's internal byte[].
+     *
+     * <p>Differs from UTF8 in string handling: all bytes 0x00-0xFF are single Latin1
+     * characters — no multi-byte UTF8 sequence detection. This is correct for Latin1
+     * encoded strings where bytes ≥ 0x80 represent characters like 'é' (0xE9).</p>
+     *
+     * <p>Extends UTF8 to reuse field matching, number parsing, whitespace handling.
+     * Only overrides string scanning methods to remove the multi-byte check.</p>
+     *
+     * <p>Inspired by fastjson2's JSONReaderASCII.</p>
+     */
+    public static final class LATIN1 extends JSONParser {
+        private final byte[] bytes;
+        private final int end;
+
+        LATIN1(byte[] bytes, int offset, int length, long features) {
+            super(features);
+            this.bytes = bytes;
+            this.offset = offset;
+            this.end = offset + length;
+        }
+
+        @Override
+        int ch(int i) {
+            return bytes[i] & 0xFF;
+        }
+
+        @Override
+        int end() {
+            return end;
+        }
+
+        @Override
+        public byte[] getBytes() {
+            return bytes;
+        }
+
+        @Override
+        protected void skipWhitespace() {
+            final byte[] b = this.bytes;
+            int off = this.offset;
+            final int e = this.end;
+            while (off < e) {
+                byte c = b[off];
+                if (c > ' ' || ((1L << c) & SPACE) == 0) {
+                    break;
+                }
+                off++;
+            }
+            this.offset = off;
+        }
+
+        @Override
+        String extractString(int start, int end) {
+            // Latin1 — always single-byte, no UTF8 decode needed
+            if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+                return com.alibaba.fastjson3.util.JDKUtils.createLatin1String(bytes, start, end - start);
+            }
+            return new String(bytes, start, end - start, StandardCharsets.ISO_8859_1);
+        }
+
+        // ---- String scanning: no multi-byte check (c < 0 path removed) ----
+
+        @Override
+        public String readString() {
+            final byte[] b = this.bytes;
+            int off = this.offset;
+            final int e = this.end;
+            while (off < e && b[off] <= ' ') off++;
+            if (off >= e) throw new JSONException("expected quote at offset " + off);
+            byte quote = b[off];
+            if (quote != '"' && quote != '\'') throw new JSONException("expected quote at offset " + off);
+            off++;
+            int start = off;
+
+            // SWAR scan (no high-bit check needed — Latin1 bytes are all valid)
+            off = swarScanStringLatin1(b, off, e, quote);
+
+            while (off < e) {
+                byte c = b[off];
+                if (c == quote) {
+                    int len = off - start;
+                    this.offset = off + 1;
+                    if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+                        return com.alibaba.fastjson3.util.JDKUtils.createLatin1String(b, start, len);
+                    }
+                    return new String(b, start, len, StandardCharsets.ISO_8859_1);
+                }
+                if (c == '\\') {
+                    this.offset = off;
+                    return readStringEscaped(start, quote);
+                }
+                off++;
+            }
+            throw new JSONException("unterminated string");
+        }
+
+        @Override
+        String readStringContent() {
+            int start = offset;
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = swarScanStringLatin1(b, start, e, (byte) '"');
+            while (off < e) {
+                byte c = b[off];
+                if (c == '"') {
+                    int len = off - start;
+                    offset = off + 1;
+                    if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+                        return com.alibaba.fastjson3.util.JDKUtils.createLatin1String(b, start, len);
+                    }
+                    return new String(b, start, len, StandardCharsets.ISO_8859_1);
+                }
+                if (c == '\\') {
+                    offset = off;
+                    return readStringEscaped(start, '"');
+                }
+                off++;
+            }
+            throw new JSONException("unterminated string");
+        }
+
+        @Override
+        String readStringContentWithQuote(int quote) {
+            int start = offset;
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = (quote == '"') ? swarScanStringLatin1(b, start, e, (byte) '"') : start;
+            while (off < e) {
+                byte c = b[off];
+                if (c == quote) {
+                    int len = off - start;
+                    offset = off + 1;
+                    if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+                        return com.alibaba.fastjson3.util.JDKUtils.createLatin1String(b, start, len);
+                    }
+                    return new String(b, start, len, StandardCharsets.ISO_8859_1);
+                }
+                if (c == '\\') {
+                    offset = off;
+                    return readStringEscaped(start, quote);
+                }
+                off++;
+            }
+            throw new JSONException("unterminated string");
+        }
+
+        private String readStringEscaped(int start, int quote) {
+            StringBuilder sb = new StringBuilder(offset - start + 16);
+            if (offset > start) {
+                // Latin1 bytes are all valid chars
+                for (int i = start; i < offset; i++) {
+                    sb.append((char) (bytes[i] & 0xFF));
+                }
+            }
+            while (offset < end) {
+                int b = bytes[offset++] & 0xFF;
+                if (b == quote) {
+                    return sb.toString();
+                }
+                if (b == '\\') {
+                    if (offset >= end) throw new JSONException("unterminated string escape");
+                    b = bytes[offset++] & 0xFF;
+                    if (b < CHAR1_ESCAPED.length) {
+                        int mapped = CHAR1_ESCAPED[b];
+                        if (mapped >= 0) { sb.append((char) mapped); continue; }
+                    }
+                    if (b == 'u') {
+                        if (offset + 4 > end) throw new JSONException("unterminated unicode escape");
+                        int code = (hexToInt(bytes[offset] & 0xFF) << 12)
+                                | (hexToInt(bytes[offset + 1] & 0xFF) << 8)
+                                | (hexToInt(bytes[offset + 2] & 0xFF) << 4)
+                                | hexToInt(bytes[offset + 3] & 0xFF);
+                        sb.append((char) code);
+                        offset += 4;
+                    } else {
+                        throw new JSONException("invalid escape: \\" + (char) b);
+                    }
+                } else {
+                    sb.append((char) b); // Latin1: byte IS the char
+                }
+            }
+            throw new JSONException("unterminated string");
+        }
+
+        /**
+         * SWAR scan for Latin1 strings: only checks for quote and backslash.
+         * No high-bit check needed (all Latin1 bytes are valid single characters).
+         */
+        private static int swarScanStringLatin1(byte[] b, int off, int limit, byte quote) {
+            if (!com.alibaba.fastjson3.util.JDKUtils.UNSAFE_AVAILABLE) {
+                return off;
+            }
+            long QUOTE = quote * 0x0101010101010101L; // broadcast quote byte
+            long ESCAPE = 0x5C5C5C5C5C5C5C5CL;       // broadcast '\\'
+            long LO = 0x0101010101010101L;
+            long HI = 0x8080808080808080L;
+            int swarLimit = limit - 7;
+            while (off < swarLimit) {
+                long word = com.alibaba.fastjson3.util.JDKUtils.getLong(b, off);
+                long xq = word ^ QUOTE;
+                long hasQuote = (xq - LO) & ~xq & HI;
+                long xe = word ^ ESCAPE;
+                long hasEscape = (xe - LO) & ~xe & HI;
+                long found = hasQuote | hasEscape;
+                if (found != 0) {
+                    return off + (Long.numberOfTrailingZeros(found) >> 3);
+                }
+                off += 8;
+            }
+            return off;
+        }
+
+        /**
+         * Optimized readFieldName with direct byte[] access + hash*31 NameCache.
+         * No ch() virtual dispatch. Same hash algorithm as base class for shared cache.
+         */
+        @Override
+        public String readFieldName() {
+            final byte[] b = this.bytes;
+            int off = this.offset;
+            final int e = this.end;
+            // Inline skipWhitespace
+            while (off < e && b[off] <= ' ') off++;
+            if (off >= e || b[off] != '"') {
+                this.offset = off;
+                return super.readFieldName();
+            }
+            off++;
+            int nameStart = off;
+            long hash = 0;
+
+            while (off < e) {
+                byte c = b[off];
+                if (c == '"') {
+                    int nameLen = off - nameStart;
+                    off++;
+                    while (off < e && b[off] <= ' ') off++;
+                    if (off >= e || b[off] != ':') {
+                        throw new JSONException("expected ':' at offset " + off);
+                    }
+                    this.offset = off + 1;
+
+                    String cached = NameCache.get(hash);
+                    if (cached != null && cached.length() == nameLen) {
+                        return cached;
+                    }
+                    String name;
+                    if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+                        name = com.alibaba.fastjson3.util.JDKUtils.createLatin1String(b, nameStart, nameLen);
+                    } else {
+                        name = new String(b, nameStart, nameLen, StandardCharsets.ISO_8859_1);
+                    }
+                    NameCache.put(hash, name);
+                    return name;
+                }
+                if (c == '\\') {
+                    this.offset = nameStart - 1;
+                    return super.readFieldName();
+                }
+                hash = hash * 31 + (c & 0xFF);
+                off++;
+            }
+            throw new JSONException("unterminated field name");
+        }
+
+        @Override
+        public void close() {
+            // no-op — bytes owned by the String, not by us
+        }
     }
 
     static final class CharArray extends JSONParser {
