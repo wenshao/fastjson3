@@ -3309,6 +3309,185 @@ public abstract sealed class JSONParser implements Closeable
             return value;
         }
 
+        // ==================== Inlined tree parsing ====================
+        // Override readObject/readArray to avoid base class virtual dispatch.
+        // All whitespace skipping, value dispatch, and separator handling is
+        // done inline with direct byte[] access. Inspired by wast's
+        // JSONDefaultParser tight loop design.
+
+        @Override
+        public JSONObject readObject() {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset;
+
+            while (off < e && b[off] <= ' ') off++;
+            if (off >= e || b[off] != '{') throw new JSONException("expected '{' at offset " + off);
+            if (++depth > MAX_NESTING_DEPTH) throw new JSONException("nesting depth exceeds " + MAX_NESTING_DEPTH);
+            off++;
+
+            JSONObject obj = new JSONObject();
+            while (off < e && b[off] <= ' ') off++;
+            if (off < e && b[off] == '}') { this.offset = off + 1; depth--; return obj; }
+
+            for (;;) {
+                // Field name
+                while (off < e && b[off] <= ' ') off++;
+                if (off >= e || b[off] != '"') throw new JSONException("expected '\"' at offset " + off);
+                off++;
+                this.offset = off;
+                String name = readFieldNameInline(b, off, e);
+                off = this.offset;
+
+                // Value — inline dispatch (no readAny virtual call)
+                while (off < e && b[off] <= ' ') off++;
+                this.offset = off;
+                Object value = readValueInline(b, off, e);
+                off = this.offset;
+
+                obj.fastPut(name, value);
+
+                // Separator — inline (no skipWhitespace call)
+                while (off < e && b[off] <= ' ') off++;
+                if (off >= e) throw new JSONException("unterminated object");
+                if (b[off] == ',') { off++; continue; }
+                if (b[off] == '}') { this.offset = off + 1; depth--; return obj; }
+                throw new JSONException("expected ',' or '}' at offset " + off);
+            }
+        }
+
+        @Override
+        public JSONArray readArray() {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset;
+
+            while (off < e && b[off] <= ' ') off++;
+            if (off >= e || b[off] != '[') throw new JSONException("expected '[' at offset " + off);
+            if (++depth > MAX_NESTING_DEPTH) throw new JSONException("nesting depth exceeds " + MAX_NESTING_DEPTH);
+            off++;
+
+            JSONArray arr = new JSONArray();
+            while (off < e && b[off] <= ' ') off++;
+            if (off < e && b[off] == ']') { this.offset = off + 1; depth--; return arr; }
+
+            for (;;) {
+                this.offset = off;
+                Object value = readValueInline(b, off, e);
+                off = this.offset;
+                arr.add(value);
+
+                while (off < e && b[off] <= ' ') off++;
+                if (off >= e) throw new JSONException("unterminated array");
+                if (b[off] == ',') { off++; while (off < e && b[off] <= ' ') off++; continue; }
+                if (b[off] == ']') { this.offset = off + 1; depth--; return arr; }
+                throw new JSONException("expected ',' or ']' at offset " + off);
+            }
+        }
+
+        /**
+         * Inline value dispatch — no virtual readAny() call.
+         * Handles string/number/object/array/boolean/null directly from byte[].
+         */
+        private Object readValueInline(byte[] b, int off, int e) {
+            if (off >= e) throw new JSONException("unexpected end of input");
+            int c = b[off] & 0xFF;
+            if (c == '"') {
+                // String value
+                off++;
+                int start = off;
+                off = swarScanStringLatin1(b, off, e, (byte) '"');
+                while (off < e) {
+                    byte ch = b[off];
+                    if (ch == '"') {
+                        int len = off - start;
+                        this.offset = off + 1;
+                        if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+                            return com.alibaba.fastjson3.util.JDKUtils.createLatin1String(b, start, len);
+                        }
+                        return new String(b, start, len, StandardCharsets.ISO_8859_1);
+                    }
+                    if (ch == '\\') {
+                        this.offset = off;
+                        return readStringEscaped(start, '"');
+                    }
+                    off++;
+                }
+                throw new JSONException("unterminated string");
+            }
+            if (c == '{') {
+                this.offset = off;
+                return readObject();
+            }
+            if (c == '[') {
+                this.offset = off;
+                return readArray();
+            }
+            if (c == '-' || (c >= '0' && c <= '9')) {
+                this.offset = off;
+                return readNumber();
+            }
+            if (c == 't') {
+                if (off + 4 <= e && b[off+1] == 'r' && b[off+2] == 'u' && b[off+3] == 'e') {
+                    this.offset = off + 4;
+                    return Boolean.TRUE;
+                }
+                throw new JSONException("expected 'true' at offset " + off);
+            }
+            if (c == 'f') {
+                if (off + 5 <= e && b[off+1] == 'a' && b[off+2] == 'l' && b[off+3] == 's' && b[off+4] == 'e') {
+                    this.offset = off + 5;
+                    return Boolean.FALSE;
+                }
+                throw new JSONException("expected 'false' at offset " + off);
+            }
+            if (c == 'n') {
+                if (off + 4 <= e && b[off+1] == 'u' && b[off+2] == 'l' && b[off+3] == 'l') {
+                    this.offset = off + 4;
+                    return null;
+                }
+                throw new JSONException("expected 'null' at offset " + off);
+            }
+            throw new JSONException("unexpected character '" + (char) c + "' at offset " + off);
+        }
+
+        /**
+         * Inline field name scan with hash + NameCache, no virtual calls.
+         */
+        private String readFieldNameInline(byte[] b, int off, int e) {
+            int nameStart = off;
+            long hash = 0;
+            while (off < e) {
+                byte c = b[off];
+                if (c == '"') {
+                    int nameLen = off - nameStart;
+                    off++;
+                    while (off < e && b[off] <= ' ') off++;
+                    if (off >= e || b[off] != ':') throw new JSONException("expected ':' at offset " + off);
+                    this.offset = off + 1;
+
+                    String cached = NameCache.get(hash);
+                    if (cached != null && cached.length() == nameLen) return cached;
+
+                    String name;
+                    if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+                        name = com.alibaba.fastjson3.util.JDKUtils.createLatin1String(b, nameStart, nameLen);
+                    } else {
+                        name = new String(b, nameStart, nameLen, StandardCharsets.ISO_8859_1);
+                    }
+                    NameCache.put(hash, name);
+                    return name;
+                }
+                if (c == '\\') {
+                    this.offset = nameStart - 1;
+                    return super.readFieldName();
+                }
+                hash = hash * 31 + (c & 0xFF);
+                off++;
+            }
+            throw new JSONException("unterminated field name");
+        }
+
         @Override
         public void close() {
             // no-op — bytes owned by the String, not by us
