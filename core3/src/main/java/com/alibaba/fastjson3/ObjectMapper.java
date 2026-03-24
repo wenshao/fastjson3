@@ -723,7 +723,8 @@ public final class ObjectMapper {
             return null;
         }
         // ASCII fast path: use LATIN1 parser (has optimized inline tree parsing)
-        if (readFeatures == 0 && !com.alibaba.fastjson3.util.JDKUtils.hasNegative(jsonBytes)) {
+        if (readFeatures == 0 && com.alibaba.fastjson3.util.JDKUtils.UNSAFE_AVAILABLE
+                && !com.alibaba.fastjson3.util.JDKUtils.hasNegative(jsonBytes)) {
             try (JSONParser parser = new JSONParser.LATIN1(jsonBytes, 0, jsonBytes.length, 0)) {
                 return parser.readObject();
             }
@@ -752,7 +753,8 @@ public final class ObjectMapper {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        if (readFeatures == 0 && !com.alibaba.fastjson3.util.JDKUtils.hasNegative(jsonBytes)) {
+        if (readFeatures == 0 && com.alibaba.fastjson3.util.JDKUtils.UNSAFE_AVAILABLE
+                && !com.alibaba.fastjson3.util.JDKUtils.hasNegative(jsonBytes)) {
             try (JSONParser parser = new JSONParser.LATIN1(jsonBytes, 0, jsonBytes.length, 0)) {
                 return parser.readArray();
             }

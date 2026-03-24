@@ -52,16 +52,13 @@ public final class JSON {
     }
 
     /**
-     * Zero-copy access to Latin1 String's internal byte[].
-     * Returns null if non-Latin1 or Unsafe unavailable.
-     * Safe for JSON parsing: JSON structural chars are ASCII,
-     * same approach as fastjson2's JSONReaderASCII.
+     * Zero-copy access to Latin1 String's internal byte[], only if all ASCII.
+     * Returns null if non-ASCII, non-Latin1, or Unsafe unavailable.
+     * Non-ASCII Latin1 bytes (0x80-0xFF) are not valid UTF-8 and would be
+     * misinterpreted by the UTF8 parser, so we must fall back to getBytes(UTF_8).
      */
     static byte[] getLatin1Bytes(String json) {
-        if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json) == 0) {
-            return (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
-        }
-        return null;
+        return com.alibaba.fastjson3.util.JDKUtils.getStringBytesIfASCII(json);
     }
 
     // ==================== Parse ====================
