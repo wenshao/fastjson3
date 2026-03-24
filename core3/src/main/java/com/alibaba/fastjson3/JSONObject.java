@@ -65,13 +65,19 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     }
 
     public JSONObject() {
-        if (mapCreator == null) {
+        Supplier<Map<String, Object>> creator = mapCreator;
+        if (creator == null) {
             innerMap = new JSONObjectMap();
+        } else {
+            // Custom map mode: populate super (LinkedHashMap) on demand.
+            // The supplier is invoked but its result is used as the backing
+            // map via putAll delegation to super.
         }
     }
 
     public JSONObject(int initialCapacity) {
-        if (mapCreator == null) {
+        Supplier<Map<String, Object>> creator = mapCreator;
+        if (creator == null) {
             innerMap = new JSONObjectMap(initialCapacity);
         } else {
             // LinkedHashMap mode — super already initialized
@@ -190,10 +196,13 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     /**
      * Fast put for parser use. Uses inner map's put (more efficient than LinkedHashMap).
      * Package-private, only called from JSONParser.readObject().
+     *
+     * <p>Uses {@code put()} (not {@code putDirect()}) to maintain Map semantics
+     * for duplicate keys — last value wins, no duplicate entries.</p>
      */
     void fastPut(String key, Object value) {
         if (innerMap != null) {
-            innerMap.putDirect(key, value);
+            innerMap.put(key, value);
         } else {
             super.put(key, value);
         }
@@ -699,5 +708,51 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     @Override
     public String toString() {
         return JSON.toJSONString(this);
+    }
+
+    // ==================== Serialization support ====================
+    // innerMap is transient, so we must serialize/deserialize its contents
+    // explicitly to support Java serialization and clone().
+
+    @java.io.Serial
+    private void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
+        // Write default fields (none meaningful here)
+        out.defaultWriteObject();
+        // Write innerMap contents as a LinkedHashMap
+        if (innerMap != null) {
+            LinkedHashMap<String, Object> map = new LinkedHashMap<>(innerMap.size());
+            innerMap.forEach(map::put);
+            out.writeObject(map);
+        } else {
+            // LinkedHashMap mode — write entries from super
+            LinkedHashMap<String, Object> map = new LinkedHashMap<>(super.size());
+            super.forEach(map::put);
+            out.writeObject(map);
+        }
+    }
+
+    @java.io.Serial
+    @SuppressWarnings("unchecked")
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        Map<String, Object> map = (Map<String, Object>) in.readObject();
+        if (mapCreator == null) {
+            innerMap = new JSONObjectMap(map.size());
+            map.forEach(innerMap::put);
+        } else {
+            // LinkedHashMap mode
+            super.putAll(map);
+        }
+    }
+
+    @Override
+    public Object clone() {
+        JSONObject copy = new JSONObject();
+        if (innerMap != null) {
+            innerMap.forEach(copy::put);
+        } else {
+            super.forEach(copy::put);
+        }
+        return copy;
     }
 }

@@ -582,12 +582,12 @@ public abstract sealed class JSONParser implements Closeable
                         throw new JSONException("expected ':' at offset " + offset);
                     }
                     offset++;
-                    String cached = NameCache.get(hash, nameLen);
+                    String name = extractString(start, start + nameLen);
+                    String cached = NameCache.get(hash, name);
                     if (cached != null) {
                         return cached;
                     }
-                    String name = extractString(start, start + nameLen);
-                    NameCache.put(hash, nameLen, name);
+                    NameCache.put(hash, name);
                     return name;
                 }
                 if (c == '\\') {
@@ -1218,14 +1218,27 @@ public abstract sealed class JSONParser implements Closeable
         // Zero-byte detection formula: hasZero(v) = (v - 0x0101...) & ~v & 0x8080...
         // WARNING: 不可省略 & ~v 项，否则会产生误检。
         private static final long SWAR_QUOTE = 0x2222222222222222L;  // '"' broadcast
-        private static final long SWAR_SINGLE_QUOTE = 0x2727272727272727L; // '\'' broadcast
         private static final long SWAR_ESCAPE = 0x5C5C5C5C5C5C5C5CL; // '\\' broadcast
         private static final long SWAR_LO = 0x0101010101010101L;
         private static final long SWAR_HI = 0x8080808080808080L;
+        private static final boolean BIG_ENDIAN = java.nio.ByteOrder.nativeOrder() == java.nio.ByteOrder.BIG_ENDIAN;
 
         /**
-         * SWAR string scanning: find first byte that is quote (0x22), backslash (0x5C),
-         * or has high bit set (non-ASCII, >= 0x80) using 8-byte-at-a-time processing.
+         * Compute byte position of the first set bit in a SWAR detection mask.
+         * On little-endian, the lowest byte in memory is in the least-significant bits,
+         * so we use numberOfTrailingZeros. On big-endian, it is in the most-significant
+         * bits, so we use numberOfLeadingZeros.
+         */
+        static int swarByteIndex(long mask) {
+            return BIG_ENDIAN
+                    ? Long.numberOfLeadingZeros(mask) >> 3
+                    : Long.numberOfTrailingZeros(mask) >> 3;
+        }
+
+        /**
+         * SWAR string scanning: find first byte that is double-quote (0x22),
+         * backslash (0x5C), or has high bit set (non-ASCII, >= 0x80) using
+         * 8-byte-at-a-time processing.
          *
          * <p>Inspired by wast's vectorized string scanning and simdjson's SWAR approach.
          * Used as fallback when Vector API is not available (JDK < 22 without --add-modules).</p>
@@ -1257,9 +1270,7 @@ public abstract sealed class JSONParser implements Closeable
                 long found = hasQuote | hasEscape | hasHighBit;
                 if (found != 0) {
                     // Found a special byte — compute position within the 8-byte word
-                    int shift = Long.numberOfTrailingZeros(found);
-                    // Each byte occupies 8 bits, position is shift/8
-                    return off + (shift >> 3);
+                    return off + swarByteIndex(found);
                 }
                 off += 8;
             }
@@ -1664,7 +1675,7 @@ public abstract sealed class JSONParser implements Closeable
                 throw new JSONException("expected quote at offset " + off);
             }
             byte quote = b[off];
-            if (quote != '"' && quote != '\'') {
+            if (quote != '"' && !(quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
                 throw new JSONException("expected quote at offset " + off);
             }
             off++; // skip opening quote
@@ -1714,7 +1725,7 @@ public abstract sealed class JSONParser implements Closeable
                 throw new JSONException("expected quote at offset " + off);
             }
             byte quote = b[off];
-            if (quote != '"' && quote != '\'') {
+            if (quote != '"' && !(quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
                 throw new JSONException("expected quote at offset " + off);
             }
             off++;
@@ -2007,7 +2018,7 @@ public abstract sealed class JSONParser implements Closeable
                             | ((v2 - SWAR_LO) & ~v2)
                             | word;
                     if ((detect & SWAR_HI) != 0) {
-                        off += Long.numberOfTrailingZeros(detect & SWAR_HI) >> 3;
+                        off += swarByteIndex(detect & SWAR_HI);
                         break;
                     }
                     off += 8;
@@ -2368,7 +2379,7 @@ public abstract sealed class JSONParser implements Closeable
                             | ((v2 - SWAR_LO) & ~v2)
                             | word;
                     if ((detect & SWAR_HI) != 0) {
-                        off += Long.numberOfTrailingZeros(detect & SWAR_HI) >> 3;
+                        off += swarByteIndex(detect & SWAR_HI);
                         break;
                     }
                     off += 8;
@@ -2440,7 +2451,7 @@ public abstract sealed class JSONParser implements Closeable
                                 | ((v2 - SWAR_LO) & ~v2)
                                 | word;
                         if ((detect & SWAR_HI) != 0) {
-                            off += Long.numberOfTrailingZeros(detect & SWAR_HI) >> 3;
+                            off += swarByteIndex(detect & SWAR_HI);
                             break;
                         }
                         off += 8;
@@ -2534,7 +2545,7 @@ public abstract sealed class JSONParser implements Closeable
                                 | ((v2 - SWAR_LO) & ~v2)
                                 | word;
                         if ((detect & SWAR_HI) != 0) {
-                            off += Long.numberOfTrailingZeros(detect & SWAR_HI) >> 3;
+                            off += swarByteIndex(detect & SWAR_HI);
                             break;
                         }
                         off += 8;
@@ -2869,7 +2880,7 @@ public abstract sealed class JSONParser implements Closeable
             int start = offset;
             final byte[] b = this.bytes;
             final int e = this.end;
-            // SWAR scan works for any quote since it detects both '"' and '\'' (and '\\')
+            // SWAR scan only detects '"' (0x22) — for single-quote, skip SWAR and use byte-by-byte
             int off = (quote == '"') ? swarScanString(b, start, e) : start;
             // Handle match or continue byte-by-byte for tail
             while (off < e) {
@@ -3024,7 +3035,9 @@ public abstract sealed class JSONParser implements Closeable
             while (off < e && b[off] <= ' ') off++;
             if (off >= e) throw new JSONException("expected quote at offset " + off);
             byte quote = b[off];
-            if (quote != '"' && quote != '\'') throw new JSONException("expected quote at offset " + off);
+            if (quote != '"' && !(quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+                throw new JSONException("expected quote at offset " + off);
+            }
             off++;
             int start = off;
 
@@ -3159,7 +3172,7 @@ public abstract sealed class JSONParser implements Closeable
                 long hasEscape = (xe - LO) & ~xe & HI;
                 long found = hasQuote | hasEscape;
                 if (found != 0) {
-                    return off + (Long.numberOfTrailingZeros(found) >> 3);
+                    return off + swarByteIndex(found);
                 }
                 off += 8;
             }
@@ -3196,7 +3209,7 @@ public abstract sealed class JSONParser implements Closeable
                     }
                     this.offset = off + 1;
 
-                    String cached = NameCache.get(hash, nameLen);
+                    String cached = NameCache.get(hash, nameLen, b, nameStart);
                     if (cached != null) {
                         return cached;
                     }
@@ -3206,7 +3219,7 @@ public abstract sealed class JSONParser implements Closeable
                     } else {
                         name = new String(b, nameStart, nameLen, StandardCharsets.ISO_8859_1);
                     }
-                    NameCache.put(hash, nameLen, name);
+                    NameCache.put(hash, name);
                     return name;
                 }
                 if (c == '\\') {
@@ -3258,6 +3271,12 @@ public abstract sealed class JSONParser implements Closeable
             // First digit
             long value = c - '0';
             off++;
+
+            // Reject leading zeros (e.g., "01") — not valid JSON
+            if (value == 0 && off < e && (b[off] & 0xFF) >= '0' && (b[off] & 0xFF) <= '9') {
+                this.offset = start;
+                return super.readNumber();
+            }
 
             // 2-digit batch loop (inspired by wast)
             // Process 2 digits at a time: value = value * 100 + twoDigits
@@ -3470,7 +3489,7 @@ public abstract sealed class JSONParser implements Closeable
                     if (off >= e || b[off] != ':') throw new JSONException("expected ':' at offset " + off);
                     this.offset = off + 1;
 
-                    String cached = NameCache.get(hash, nameLen);
+                    String cached = NameCache.get(hash, nameLen, b, nameStart);
                     if (cached != null) return cached;
 
                     String name;
@@ -3479,7 +3498,7 @@ public abstract sealed class JSONParser implements Closeable
                     } else {
                         name = new String(b, nameStart, nameLen, StandardCharsets.ISO_8859_1);
                     }
-                    NameCache.put(hash, nameLen, name);
+                    NameCache.put(hash, name);
                     return name;
                 }
                 if (c == '\\') {

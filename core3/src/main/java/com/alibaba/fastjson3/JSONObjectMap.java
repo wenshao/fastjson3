@@ -61,7 +61,7 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
         if (hashIndex != null) {
             return getHashed(key);
         }
-        // Reverse scan for small maps — last-wins for duplicate keys (putDirect)
+        // Reverse scan for small maps
         final String[] k = this.keys;
         for (int i = this.size - 1; i >= 0; i--) {
             if (key.equals(k[i])) {
@@ -204,12 +204,34 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
                     @Override public boolean hasNext() { return pos < size; }
                     @Override public Entry<String, Object> next() {
                         int i = pos++;
-                        return new SimpleEntry<>(keys[i], values[i]);
+                        return new BackedEntry(i);
                     }
                 };
             }
             @Override public int size() { return size; }
         };
+    }
+
+    /**
+     * Map.Entry backed by the parallel arrays, so setValue() modifies the map.
+     */
+    private final class BackedEntry implements Entry<String, Object> {
+        private final int index;
+        BackedEntry(int index) { this.index = index; }
+        @Override public String getKey() { return keys[index]; }
+        @Override public Object getValue() { return values[index]; }
+        @Override public Object setValue(Object value) {
+            Object old = values[index];
+            values[index] = value;
+            return old;
+        }
+        @Override public boolean equals(Object o) {
+            if (!(o instanceof Entry<?, ?> e)) return false;
+            return Objects.equals(getKey(), e.getKey()) && Objects.equals(getValue(), e.getValue());
+        }
+        @Override public int hashCode() {
+            return Objects.hashCode(getKey()) ^ Objects.hashCode(getValue());
+        }
     }
 
     @Override
@@ -228,7 +250,7 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
         if (hashIndex != null) {
             return indexOfKeyHashed(key);
         }
-        // Reverse scan — last-wins for duplicate keys
+        // Reverse scan for small maps
         final String[] k = this.keys;
         for (int i = this.size - 1; i >= 0; i--) {
             if (key.equals(k[i])) {

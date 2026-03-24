@@ -258,7 +258,7 @@ public final class JDKUtils {
      * <p>The returned byte[] is safe to use with a UTF-8 parser because
      * ASCII bytes are identical in Latin1 and UTF-8 encoding.</p>
      */
-    public static byte[] getStringBytesIfASCII(String s) {
+    static byte[] getStringBytesIfASCII(String s) {
         if (UNSAFE_AVAILABLE && COMPACT_STRINGS && STRING_CODER_OFFSET >= 0 && STRING_VALUE_OFFSET >= 0) {
             if (UNSAFE.getByte(s, STRING_CODER_OFFSET) == 0) { // Latin1
                 byte[] value = (byte[]) UNSAFE.getObject(s, STRING_VALUE_OFFSET);
