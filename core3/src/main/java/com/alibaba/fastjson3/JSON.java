@@ -58,7 +58,18 @@ public final class JSON {
      * misinterpreted by the UTF8 parser, so we must fall back to getBytes(UTF_8).
      */
     static byte[] getLatin1Bytes(String json) {
-        return com.alibaba.fastjson3.util.JDKUtils.getStringBytesIfASCII(json);
+        int coder = com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json);
+        if (coder == 0) {
+            byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
+            if (value != null) {
+                // Quick ASCII check: scan for any byte >= 0x80
+                for (int i = 0; i < value.length; i++) {
+                    if (value[i] < 0) return null;
+                }
+                return value;
+            }
+        }
+        return null;
     }
 
     // ==================== Parse ====================

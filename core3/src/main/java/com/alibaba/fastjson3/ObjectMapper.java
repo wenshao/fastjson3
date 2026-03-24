@@ -114,6 +114,16 @@ public final class ObjectMapper {
     private static final ValueFilter[] NO_VALUE_FILTERS = {};
     private static final NameFilter[] NO_NAME_FILTERS = {};
 
+    /**
+     * Quick ASCII check for byte[]. No JDKUtils dependency (Android-safe).
+     */
+    private static boolean isAscii(byte[] bytes) {
+        for (int i = 0; i < bytes.length; i++) {
+            if (bytes[i] < 0) return false;
+        }
+        return true;
+    }
+
     private static final ObjectMapper SHARED = new ObjectMapper(0, 0,
             Collections.<ObjectReaderModule>emptyList(),
             Collections.<ObjectWriterModule>emptyList(),
@@ -723,8 +733,7 @@ public final class ObjectMapper {
             return null;
         }
         // ASCII fast path: use LATIN1 parser (has optimized inline tree parsing)
-        if (readFeatures == 0 && com.alibaba.fastjson3.util.JDKUtils.UNSAFE_AVAILABLE
-                && !com.alibaba.fastjson3.util.JDKUtils.hasNegative(jsonBytes)) {
+        if (readFeatures == 0 && isAscii(jsonBytes)) {
             try (JSONParser parser = new JSONParser.LATIN1(jsonBytes, 0, jsonBytes.length, 0)) {
                 return parser.readObject();
             }
@@ -753,8 +762,7 @@ public final class ObjectMapper {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        if (readFeatures == 0 && com.alibaba.fastjson3.util.JDKUtils.UNSAFE_AVAILABLE
-                && !com.alibaba.fastjson3.util.JDKUtils.hasNegative(jsonBytes)) {
+        if (readFeatures == 0 && isAscii(jsonBytes)) {
             try (JSONParser parser = new JSONParser.LATIN1(jsonBytes, 0, jsonBytes.length, 0)) {
                 return parser.readArray();
             }
