@@ -12,9 +12,7 @@ import java.util.*;
  *
  * <p>Maintains insertion order (like LinkedHashMap) via array ordering.</p>
  *
- * <p>This is the default backing map for JSONObject in parse mode.
- * Users can configure a different implementation via
- * {@link JSONObject#setMapCreator(java.util.function.Supplier)}.</p>
+ * <p>This is the default backing map for JSONObject in parse mode.</p>
  */
 final class JSONObjectMap extends AbstractMap<String, Object> {
     private static final int INITIAL_CAPACITY = 12; // covers most JSON objects (eishay Media has 10 fields)
@@ -51,6 +49,9 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
 
     @Override
     public Object get(Object key) {
+        if (key == null) {
+            return null;
+        }
         if (key instanceof String s) {
             return getByString(s);
         }
@@ -73,6 +74,9 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
 
     @Override
     public boolean containsKey(Object key) {
+        if (key == null) {
+            return false;
+        }
         if (key instanceof String s) {
             return indexOfKey(s) >= 0;
         }
@@ -97,6 +101,9 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
 
     @Override
     public Object put(String key, Object value) {
+        if (key == null) {
+            throw new JSONException("null key not supported");
+        }
         int idx = indexOfKey(key);
         if (idx >= 0) {
             Object old = values[idx];
@@ -119,8 +126,9 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
     }
 
     /**
-     * Fast append for parser use — skips duplicate check.
-     * Only safe when caller guarantees unique keys (JSON parsing).
+     * Fast append without duplicate check. Only for internal use where caller
+     * manages uniqueness. Note: JSON parsing uses put() instead to handle
+     * duplicate keys correctly.
      */
     void putDirect(String key, Object value) {
         if (size >= keys.length) {

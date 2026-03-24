@@ -3513,7 +3513,7 @@ public abstract sealed class JSONParser implements Closeable
 
         @Override
         public void close() {
-            // no-op — bytes owned by the String, not by us
+            // no-op: this parser does not manage resources requiring closing
         }
     }
 

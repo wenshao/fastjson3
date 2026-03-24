@@ -24,9 +24,8 @@ import java.util.function.Supplier;
  * an internal {@link JSONObjectMap} (flat array-backed map) for better performance.
  * The inner map avoids per-entry Node allocation and hashCode computation overhead.</p>
  *
- * <p>Users can configure a custom map implementation via
- * {@link #setMapCreator(Supplier)}. When set, JSONObject falls back to
- * LinkedHashMap behavior with the custom map as backing storage.</p>
+ * <p>Users can call {@link #setMapCreator(Supplier)} to disable the default
+ * JSONObjectMap and use inherited LinkedHashMap behavior instead.</p>
  *
  * <pre>
  * JSONObject obj = new JSONObject();
@@ -69,9 +68,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
         if (creator == null) {
             innerMap = new JSONObjectMap();
         } else {
-            // Custom map mode: populate super (LinkedHashMap) on demand.
-            // The supplier is invoked but its result is used as the backing
-            // map via putAll delegation to super.
+            // Custom map mode: disable innerMap, use inherited LinkedHashMap storage.
         }
     }
 
@@ -716,18 +713,15 @@ public class JSONObject extends LinkedHashMap<String, Object> {
 
     @java.io.Serial
     private void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
-        // Write default fields (none meaningful here)
         out.defaultWriteObject();
-        // Write innerMap contents as a LinkedHashMap
         if (innerMap != null) {
+            // Write innerMap contents as a LinkedHashMap for deserialization
             LinkedHashMap<String, Object> map = new LinkedHashMap<>(innerMap.size());
             innerMap.forEach(map::put);
             out.writeObject(map);
         } else {
-            // LinkedHashMap mode — write entries from super
-            LinkedHashMap<String, Object> map = new LinkedHashMap<>(super.size());
-            super.forEach(map::put);
-            out.writeObject(map);
+            // LinkedHashMap mode — write only from super (no duplication)
+            out.writeObject(new LinkedHashMap<>(this));
         }
     }
 
