@@ -61,10 +61,9 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
         if (hashIndex != null) {
             return getHashed(key);
         }
-        // Linear scan for small maps
+        // Reverse scan for small maps — last-wins for duplicate keys (putDirect)
         final String[] k = this.keys;
-        final int n = this.size;
-        for (int i = 0; i < n; i++) {
+        for (int i = this.size - 1; i >= 0; i--) {
             if (key.equals(k[i])) {
                 return values[i];
             }
@@ -229,9 +228,9 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
         if (hashIndex != null) {
             return indexOfKeyHashed(key);
         }
+        // Reverse scan — last-wins for duplicate keys
         final String[] k = this.keys;
-        final int n = this.size;
-        for (int i = 0; i < n; i++) {
+        for (int i = this.size - 1; i >= 0; i--) {
             if (key.equals(k[i])) {
                 return i;
             }

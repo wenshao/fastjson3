@@ -193,7 +193,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
      */
     void fastPut(String key, Object value) {
         if (innerMap != null) {
-            innerMap.put(key, value);
+            innerMap.putDirect(key, value);
         } else {
             super.put(key, value);
         }
