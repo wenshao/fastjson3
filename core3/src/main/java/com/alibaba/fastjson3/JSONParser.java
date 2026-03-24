@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
  * </pre>
  */
 public abstract sealed class JSONParser implements Closeable
-        permits JSONParser.Str, JSONParser.UTF8, JSONParser.LATIN1, JSONParser.CharArray {
+        permits JSONParser.Str, JSONParser.UTF8, JSONParser.CharArray {
     static final boolean[] WHITESPACE = new boolean[256];
     static {
         WHITESPACE[' '] = true;
@@ -1210,9 +1210,9 @@ public abstract sealed class JSONParser implements Closeable
         }
     }
 
-    public static final class UTF8 extends JSONParser {
-        private final byte[] bytes;
-        private final int end;
+    public static sealed class UTF8 extends JSONParser permits JSONParser.LATIN1 {
+        final byte[] bytes;
+        final int end;
 
         // SWAR (SIMD Within A Register) constants for readStringDirect 8-byte-at-a-time scanning.
         // Zero-byte detection formula: hasZero(v) = (v - 0x0101...) & ~v & 0x8080...
@@ -2967,45 +2967,10 @@ public abstract sealed class JSONParser implements Closeable
      *
      * <p>Inspired by fastjson2's JSONReaderASCII.</p>
      */
-    public static final class LATIN1 extends JSONParser {
-        private final byte[] bytes;
-        private final int end;
+    public static final class LATIN1 extends UTF8 {
 
         LATIN1(byte[] bytes, int offset, int length, long features) {
-            super(features);
-            this.bytes = bytes;
-            this.offset = offset;
-            this.end = offset + length;
-        }
-
-        @Override
-        int ch(int i) {
-            return bytes[i] & 0xFF;
-        }
-
-        @Override
-        int end() {
-            return end;
-        }
-
-        @Override
-        public byte[] getBytes() {
-            return bytes;
-        }
-
-        @Override
-        protected void skipWhitespace() {
-            final byte[] b = this.bytes;
-            int off = this.offset;
-            final int e = this.end;
-            while (off < e) {
-                byte c = b[off];
-                if (c > ' ' || ((1L << c) & SPACE) == 0) {
-                    break;
-                }
-                off++;
-            }
-            this.offset = off;
+            super(bytes, offset, length, features);
         }
 
         @Override
