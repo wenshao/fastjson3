@@ -252,6 +252,48 @@ public final class JDKUtils {
     }
 
     /**
+     * Get the internal byte[] of a Latin1 String zero-copy, but ONLY if all bytes
+     * are ASCII (< 0x80). Returns null if non-ASCII, non-Latin1, or Unsafe unavailable.
+     *
+     * <p>The returned byte[] is safe to use with a UTF-8 parser because
+     * ASCII bytes are identical in Latin1 and UTF-8 encoding.</p>
+     */
+    public static byte[] getStringBytesIfASCII(String s) {
+        if (UNSAFE_AVAILABLE && COMPACT_STRINGS && STRING_CODER_OFFSET >= 0 && STRING_VALUE_OFFSET >= 0) {
+            if (UNSAFE.getByte(s, STRING_CODER_OFFSET) == 0) { // Latin1
+                byte[] value = (byte[]) UNSAFE.getObject(s, STRING_VALUE_OFFSET);
+                if (value != null && !hasNegative(value)) {
+                    return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * SWAR check for any byte with high bit set (>= 0x80).
+     * Returns true if any negative byte found.
+     */
+    private static boolean hasNegative(byte[] bytes) {
+        int len = bytes.length;
+        int i = 0;
+        // SWAR: check 8 bytes at a time
+        if (UNSAFE_AVAILABLE && len >= 8) {
+            for (; i + 7 < len; i += 8) {
+                long word = UNSAFE.getLong(bytes, BYTE_ARRAY_OFFSET + i);
+                if ((word & 0x8080808080808080L) != 0) {
+                    return true;
+                }
+            }
+        }
+        // Tail
+        for (; i < len; i++) {
+            if (bytes[i] < 0) return true;
+        }
+        return false;
+    }
+
+    /**
      * Create a String from a byte[] (Latin-1) without copying, if possible.
      * Falls back to normal constructor if Unsafe is unavailable.
      */
