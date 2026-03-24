@@ -272,9 +272,10 @@ public final class JDKUtils {
 
     /**
      * SWAR check for any byte with high bit set (>= 0x80).
-     * Returns true if any negative byte found.
+     * Returns true if any negative byte found. Used to determine if
+     * a byte[] is pure ASCII and can be used with LATIN1 parser.
      */
-    private static boolean hasNegative(byte[] bytes) {
+    public static boolean hasNegative(byte[] bytes) {
         int len = bytes.length;
         int i = 0;
         // SWAR: check 8 bytes at a time

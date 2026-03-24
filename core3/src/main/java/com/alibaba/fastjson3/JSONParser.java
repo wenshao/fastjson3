@@ -3317,6 +3317,9 @@ public abstract sealed class JSONParser implements Closeable
 
         @Override
         public JSONObject readObject() {
+            // Features like AllowSingleQuotes need base class handling
+            if (this.features != 0) return super.readObject();
+
             final byte[] b = this.bytes;
             final int e = this.end;
             int off = this.offset;
@@ -3333,7 +3336,9 @@ public abstract sealed class JSONParser implements Closeable
             for (;;) {
                 // Field name
                 while (off < e && b[off] <= ' ') off++;
-                if (off >= e || b[off] != '"') throw new JSONException("expected '\"' at offset " + off);
+                if (off >= e || b[off] != '"') {
+                    throw new JSONException("expected '\"' at offset " + off);
+                }
                 off++;
                 this.offset = off;
                 String name = readFieldNameInline(b, off, e);
@@ -3358,6 +3363,8 @@ public abstract sealed class JSONParser implements Closeable
 
         @Override
         public JSONArray readArray() {
+            if (this.features != 0) return super.readArray();
+
             final byte[] b = this.bytes;
             final int e = this.end;
             int off = this.offset;
