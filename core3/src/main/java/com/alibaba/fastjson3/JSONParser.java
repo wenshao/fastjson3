@@ -2100,7 +2100,15 @@ public abstract sealed class JSONParser implements Closeable
             int value = c - '0';
             int digitStart = off;
             off++;
-            while (off < end && (c = b[off] & 0xFF) >= '0' && c <= '9') {
+            // 2-digit batch loop
+            while (off + 1 < end) {
+                int d1 = b[off] - '0';
+                int d2 = b[off + 1] - '0';
+                if ((d1 | d2) < 0 || d1 > 9 || d2 > 9) break;
+                value = value * 100 + d1 * 10 + d2;
+                off += 2;
+            }
+            if (off < end && (c = b[off] & 0xFF) >= '0' && c <= '9') {
                 value = value * 10 + (c - '0');
                 off++;
             }
@@ -2208,7 +2216,15 @@ public abstract sealed class JSONParser implements Closeable
             int value = c - '0';
             int digitStart = off;
             off++;
-            while (off < end && (c = b[off] & 0xFF) >= '0' && c <= '9') {
+            // 2-digit batch loop
+            while (off + 1 < end) {
+                int d1 = b[off] - '0';
+                int d2 = b[off + 1] - '0';
+                if ((d1 | d2) < 0 || d1 > 9 || d2 > 9) break;
+                value = value * 100 + d1 * 10 + d2;
+                off += 2;
+            }
+            if (off < end && (c = b[off] & 0xFF) >= '0' && c <= '9') {
                 value = value * 10 + (c - '0');
                 off++;
             }
