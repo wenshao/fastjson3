@@ -635,6 +635,7 @@ public final class ObjectReaderCreator {
         private final boolean useUnsafeAlloc;
         private final Method anySetterMethod; // nullable
         private final JSONSchema typeSchema; // nullable, from @JSONType(schema=)
+        private final boolean hasDefaultsOrRequired; // skip applyDefaults when false
 
         // Pre-resolved ObjectReaders for POJO and List element types
         // Lazily initialized on first use
@@ -663,6 +664,15 @@ public final class ObjectReaderCreator {
             this.useUnsafeAlloc = useUnsafeAlloc;
             this.anySetterMethod = anySetterMethod;
             this.typeSchema = typeSchema;
+            // Pre-compute: skip applyDefaults if no fields have required or defaultValue
+            boolean hasDR = false;
+            for (FieldReader fr : fieldReaders) {
+                if (fr.required || (fr.defaultValue != null && !fr.defaultValue.isEmpty())) {
+                    hasDR = true;
+                    break;
+                }
+            }
+            this.hasDefaultsOrRequired = hasDR;
         }
 
         private void ensureFieldReaders() {
@@ -1587,6 +1597,9 @@ public final class ObjectReaderCreator {
         }
 
         private void applyDefaults(T instance, long fieldSetMask) {
+            if (!hasDefaultsOrRequired) {
+                return;
+            }
             for (int i = 0; i < fieldReaders.length; i++) {
                 if (i < 64 && (fieldSetMask & (1L << i)) != 0) {
                     continue; // field was set
