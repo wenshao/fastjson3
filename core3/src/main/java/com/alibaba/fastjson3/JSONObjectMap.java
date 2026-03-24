@@ -17,7 +17,7 @@ import java.util.*;
  * {@link JSONObject#setMapCreator(java.util.function.Supplier)}.</p>
  */
 final class JSONObjectMap extends AbstractMap<String, Object> {
-    private static final int INITIAL_CAPACITY = 8;
+    private static final int INITIAL_CAPACITY = 12; // covers most JSON objects (eishay Media has 10 fields)
     private static final int HASH_THRESHOLD = 16;
 
     String[] keys;

@@ -582,12 +582,12 @@ public abstract sealed class JSONParser implements Closeable
                         throw new JSONException("expected ':' at offset " + offset);
                     }
                     offset++;
-                    String cached = NameCache.get(hash);
-                    if (cached != null && cached.length() == nameLen) {
+                    String cached = NameCache.get(hash, nameLen);
+                    if (cached != null) {
                         return cached;
                     }
                     String name = extractString(start, start + nameLen);
-                    NameCache.put(hash, name);
+                    NameCache.put(hash, nameLen, name);
                     return name;
                 }
                 if (c == '\\') {
@@ -3199,8 +3199,8 @@ public abstract sealed class JSONParser implements Closeable
                     }
                     this.offset = off + 1;
 
-                    String cached = NameCache.get(hash);
-                    if (cached != null && cached.length() == nameLen) {
+                    String cached = NameCache.get(hash, nameLen);
+                    if (cached != null) {
                         return cached;
                     }
                     String name;
@@ -3209,7 +3209,7 @@ public abstract sealed class JSONParser implements Closeable
                     } else {
                         name = new String(b, nameStart, nameLen, StandardCharsets.ISO_8859_1);
                     }
-                    NameCache.put(hash, name);
+                    NameCache.put(hash, nameLen, name);
                     return name;
                 }
                 if (c == '\\') {
@@ -3466,8 +3466,8 @@ public abstract sealed class JSONParser implements Closeable
                     if (off >= e || b[off] != ':') throw new JSONException("expected ':' at offset " + off);
                     this.offset = off + 1;
 
-                    String cached = NameCache.get(hash);
-                    if (cached != null && cached.length() == nameLen) return cached;
+                    String cached = NameCache.get(hash, nameLen);
+                    if (cached != null) return cached;
 
                     String name;
                     if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
@@ -3475,7 +3475,7 @@ public abstract sealed class JSONParser implements Closeable
                     } else {
                         name = new String(b, nameStart, nameLen, StandardCharsets.ISO_8859_1);
                     }
-                    NameCache.put(hash, name);
+                    NameCache.put(hash, nameLen, name);
                     return name;
                 }
                 if (c == '\\') {
