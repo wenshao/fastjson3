@@ -193,6 +193,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
 
     @Override
     public Object compute(String key, java.util.function.BiFunction<? super String, ? super Object, ?> remappingFunction) {
+        if (remappingFunction == null) throw new NullPointerException();
         if (innerMap != null) {
             Object oldValue = innerMap.get(key);
             Object newValue = remappingFunction.apply(key, oldValue);
@@ -208,6 +209,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
 
     @Override
     public Object computeIfAbsent(String key, java.util.function.Function<? super String, ?> mappingFunction) {
+        if (mappingFunction == null) throw new NullPointerException();
         if (innerMap != null) {
             Object v = innerMap.get(key);
             if (v == null) {
@@ -224,6 +226,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
 
     @Override
     public Object computeIfPresent(String key, java.util.function.BiFunction<? super String, ? super Object, ?> remappingFunction) {
+        if (remappingFunction == null) throw new NullPointerException();
         if (innerMap != null) {
             Object oldValue = innerMap.get(key);
             if (oldValue != null) {
@@ -242,6 +245,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
 
     @Override
     public Object merge(String key, Object value, java.util.function.BiFunction<? super Object, ? super Object, ?> remappingFunction) {
+        if (value == null || remappingFunction == null) throw new NullPointerException();
         if (innerMap != null) {
             Object oldValue = innerMap.get(key);
             Object newValue = (oldValue == null) ? value : remappingFunction.apply(oldValue, value);

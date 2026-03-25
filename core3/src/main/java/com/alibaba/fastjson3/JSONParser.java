@@ -1683,10 +1683,12 @@ public abstract sealed class JSONParser implements Closeable
             int start = off;
 
             // Fast scan: find first quote, backslash, or non-ASCII byte
-            if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
-                off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
-            } else {
-                off = swarScanString(b, off, e);
+            if (quote == '"') {
+                if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
+                    off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
+                } else {
+                    off = swarScanString(b, off, e);
+                }
             }
 
             while (off < e) {
@@ -1732,10 +1734,12 @@ public abstract sealed class JSONParser implements Closeable
             int start = off;
 
             // Fast scan: find first quote, backslash, or non-ASCII byte
-            if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
-                off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
-            } else {
-                off = swarScanString(b, off, e);
+            if (quote == '"') {
+                if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
+                    off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
+                } else {
+                    off = swarScanString(b, off, e);
+                }
             }
 
             while (off < e) {

@@ -119,6 +119,9 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
         size++;
         if (hashIndex != null) {
             addToHash(key, size - 1);
+            if (size > hashIndex.length * 3 / 4) {
+                rebuildHashIndex();
+            }
         } else if (size > HASH_THRESHOLD) {
             buildHashIndex();
         }
@@ -179,7 +182,10 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
                 return new Iterator<>() {
                     int pos = 0;
                     @Override public boolean hasNext() { return pos < size; }
-                    @Override public String next() { return keys[pos++]; }
+                    @Override public String next() {
+                        if (pos >= size) throw new java.util.NoSuchElementException();
+                        return keys[pos++];
+                    }
                 };
             }
             @Override public int size() { return size; }
@@ -195,7 +201,10 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
                 return new Iterator<>() {
                     int pos = 0;
                     @Override public boolean hasNext() { return pos < size; }
-                    @Override public Object next() { return values[pos++]; }
+                    @Override public Object next() {
+                        if (pos >= size) throw new java.util.NoSuchElementException();
+                        return values[pos++];
+                    }
                 };
             }
             @Override public int size() { return size; }
@@ -211,6 +220,7 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
                     int pos = 0;
                     @Override public boolean hasNext() { return pos < size; }
                     @Override public Entry<String, Object> next() {
+                        if (pos >= size) throw new java.util.NoSuchElementException();
                         int i = pos++;
                         return new BackedEntry(i);
                     }
@@ -293,6 +303,10 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
     }
 
     private void rebuildHashIndex() {
+        int cap = Integer.highestOneBit(size * 4 - 1) << 1;
+        if (cap < hashIndex.length) cap = hashIndex.length;
+        hashMask = cap - 1;
+        hashIndex = new int[cap];
         Arrays.fill(hashIndex, -1);
         for (int i = 0; i < size; i++) {
             addToHash(keys[i], i);
