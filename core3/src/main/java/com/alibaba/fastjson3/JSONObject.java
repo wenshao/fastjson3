@@ -821,7 +821,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     @java.io.Serial
     private void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
         if (innerMap != null) {
-            // Materialize innerMap into super (LinkedHashMap) before serialization
+            // Clear stale entries from prior serializations, then materialize
+            super.clear();
             innerMap.forEach((k, v) -> super.put(k, v));
         }
         out.defaultWriteObject();
