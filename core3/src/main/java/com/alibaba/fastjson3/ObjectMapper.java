@@ -115,7 +115,7 @@ public final class ObjectMapper {
     private static final NameFilter[] NO_NAME_FILTERS = {};
 
     /**
-     * Quick ASCII check for byte[]. No JDKUtils dependency (Android-safe).
+     * Quick ASCII check for byte[]. Android-safe: no Unsafe dependency, uses simple byte loop.
      */
     private static boolean isAscii(byte[] bytes) {
         for (int i = 0; i < bytes.length; i++) {

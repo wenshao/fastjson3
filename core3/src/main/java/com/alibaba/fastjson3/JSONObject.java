@@ -73,11 +73,12 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     }
 
     public JSONObject(int initialCapacity) {
+        super(initialCapacity);
         Supplier<Map<String, Object>> creator = mapCreator;
         if (creator == null) {
             innerMap = new JSONObjectMap(initialCapacity);
         } else {
-            // LinkedHashMap mode — super already initialized
+            // LinkedHashMap mode — super already initialized with initialCapacity
         }
     }
 
@@ -188,6 +189,105 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             return v;
         }
         return super.putIfAbsent(key, value);
+    }
+
+    @Override
+    public Object compute(String key, java.util.function.BiFunction<? super String, ? super Object, ?> remappingFunction) {
+        if (innerMap != null) {
+            Object oldValue = innerMap.get(key);
+            Object newValue = remappingFunction.apply(key, oldValue);
+            if (newValue != null) {
+                innerMap.put(key, newValue);
+            } else if (oldValue != null || innerMap.containsKey(key)) {
+                innerMap.remove(key);
+            }
+            return newValue;
+        }
+        return super.compute(key, remappingFunction);
+    }
+
+    @Override
+    public Object computeIfAbsent(String key, java.util.function.Function<? super String, ?> mappingFunction) {
+        if (innerMap != null) {
+            Object v = innerMap.get(key);
+            if (v == null && !innerMap.containsKey(key)) {
+                Object newValue = mappingFunction.apply(key);
+                if (newValue != null) {
+                    innerMap.put(key, newValue);
+                }
+                return newValue;
+            }
+            return v;
+        }
+        return super.computeIfAbsent(key, mappingFunction);
+    }
+
+    @Override
+    public Object computeIfPresent(String key, java.util.function.BiFunction<? super String, ? super Object, ?> remappingFunction) {
+        if (innerMap != null) {
+            Object oldValue = innerMap.get(key);
+            if (oldValue != null) {
+                Object newValue = remappingFunction.apply(key, oldValue);
+                if (newValue != null) {
+                    innerMap.put(key, newValue);
+                } else {
+                    innerMap.remove(key);
+                }
+                return newValue;
+            }
+            return null;
+        }
+        return super.computeIfPresent(key, remappingFunction);
+    }
+
+    @Override
+    public Object merge(String key, Object value, java.util.function.BiFunction<? super Object, ? super Object, ?> remappingFunction) {
+        if (innerMap != null) {
+            Object oldValue = innerMap.get(key);
+            Object newValue = (oldValue == null) ? value : remappingFunction.apply(oldValue, value);
+            if (newValue != null) {
+                innerMap.put(key, newValue);
+            } else {
+                innerMap.remove(key);
+            }
+            return newValue;
+        }
+        return super.merge(key, value, remappingFunction);
+    }
+
+    @Override
+    public boolean replace(String key, Object oldValue, Object newValue) {
+        if (innerMap != null) {
+            Object curValue = innerMap.get(key);
+            if (java.util.Objects.equals(curValue, oldValue) && (curValue != null || innerMap.containsKey(key))) {
+                innerMap.put(key, newValue);
+                return true;
+            }
+            return false;
+        }
+        return super.replace(key, oldValue, newValue);
+    }
+
+    @Override
+    public Object replace(String key, Object value) {
+        if (innerMap != null) {
+            if (innerMap.containsKey(key)) {
+                return innerMap.put(key, value);
+            }
+            return null;
+        }
+        return super.replace(key, value);
+    }
+
+    @Override
+    public void replaceAll(java.util.function.BiFunction<? super String, ? super Object, ?> function) {
+        if (innerMap != null) {
+            for (int i = 0; i < innerMap.size; i++) {
+                innerMap.values[i] = function.apply(innerMap.keys[i], innerMap.values[i]);
+            }
+        } else {
+            super.replaceAll(function);
+        }
     }
 
     /**
