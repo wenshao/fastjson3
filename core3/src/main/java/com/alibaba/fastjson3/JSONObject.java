@@ -182,7 +182,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     public Object putIfAbsent(String key, Object value) {
         if (innerMap != null) {
             Object v = innerMap.get(key);
-            if (v == null && !innerMap.containsKey(key)) {
+            if (v == null) {
                 innerMap.put(key, value);
                 return null;
             }
@@ -210,7 +210,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     public Object computeIfAbsent(String key, java.util.function.Function<? super String, ?> mappingFunction) {
         if (innerMap != null) {
             Object v = innerMap.get(key);
-            if (v == null && !innerMap.containsKey(key)) {
+            if (v == null) {
                 Object newValue = mappingFunction.apply(key);
                 if (newValue != null) {
                     innerMap.put(key, newValue);
@@ -833,6 +833,8 @@ public class JSONObject extends LinkedHashMap<String, Object> {
         if (mapCreator == null) {
             innerMap = new JSONObjectMap(map.size());
             map.forEach(innerMap::put);
+            // Clear super's LinkedHashMap to avoid stale/duplicate data
+            super.clear();
         } else {
             // LinkedHashMap mode
             super.putAll(map);
