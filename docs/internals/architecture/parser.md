@@ -16,10 +16,10 @@ sealed JSONParser
 
 ### LATIN1 parser
 
-对 JDK 9+ 的 Latin1 compact string（绝大多数 ASCII JSON），`JSONParser.of(String)` 自动创建 LATIN1 parser：
+对 JDK 9+ 的 Latin1 compact string，当内容全为 ASCII 时，`JSONParser.of(String)` 自动创建 LATIN1 parser（非 ASCII Latin1 回退到 Str parser）：
 
 - **零拷贝**：通过 Unsafe 直接获取 String 内部 byte[]，避免 `charAt()` 虚拟调用和 `getBytes(UTF_8)` 拷贝
-- **SWAR 字符串扫描**：8 字节并行查找引号/反斜杠（无 high-bit 检查，Latin1 所有字节均为合法单字符）
+- **SWAR 字符串扫描**：8 字节并行查找引号/反斜杠（ASCII 输入无需 high-bit 检查）
 - **内联 readObject/readArray**：tree 解析完全内联，无 `readAny()` 虚方法调度
 - **readNumber 直接解析**：整数直接从 byte[] 解析，2-digit 批量处理，无 String 分配
 - **NameCache**：静态字段名缓存（hash\*31），重复字段名复用 String 实例
