@@ -163,12 +163,11 @@ public abstract sealed class JSONParser implements Closeable
             throw new JSONException("input is null or empty");
         }
         // Latin1 fast path: zero-copy access to String's internal byte[].
-        // Avoids charAt() virtual dispatch — same approach as fastjson2's JSONReaderASCII.
-        if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json) == 0) {
-            byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
-            if (value != null) {
-                return new LATIN1(value, 0, value.length, 0);
-            }
+        // Only for ASCII — non-ASCII Latin1 bytes (0x80-0xFF) would be
+        // misinterpreted by inherited UTF8 string methods (readStringUTF8).
+        byte[] latin1 = getAsciiLatin1Bytes(json);
+        if (latin1 != null) {
+            return new LATIN1(latin1, 0, latin1.length, 0);
         }
         return new Str(json, 0);
     }
@@ -178,11 +177,9 @@ public abstract sealed class JSONParser implements Closeable
             throw new JSONException("input is null or empty");
         }
         long f = ReadFeature.of(features);
-        if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json) == 0) {
-            byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
-            if (value != null) {
-                return new LATIN1(value, 0, value.length, f);
-            }
+        byte[] latin1 = getAsciiLatin1Bytes(json);
+        if (latin1 != null) {
+            return new LATIN1(latin1, 0, latin1.length, f);
         }
         return new Str(json, f);
     }
@@ -194,13 +191,28 @@ public abstract sealed class JSONParser implements Closeable
         if (json == null || json.isEmpty()) {
             throw new JSONException("input is null or empty");
         }
+        byte[] latin1 = getAsciiLatin1Bytes(json);
+        if (latin1 != null) {
+            return new LATIN1(latin1, 0, latin1.length, features);
+        }
+        return new Str(json, features);
+    }
+
+    /**
+     * Get Latin1 String's internal byte[] only if all bytes are ASCII.
+     * Non-ASCII Latin1 bytes (0x80-0xFF) are not safe for UTF8 parser methods.
+     */
+    private static byte[] getAsciiLatin1Bytes(String json) {
         if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json) == 0) {
             byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
             if (value != null) {
-                return new LATIN1(value, 0, value.length, features);
+                for (byte b : value) {
+                    if (b < 0) return null;
+                }
+                return value;
             }
         }
-        return new Str(json, features);
+        return null;
     }
 
     public static JSONParser of(byte[] jsonBytes) {
