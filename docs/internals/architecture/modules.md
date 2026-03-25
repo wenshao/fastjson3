@@ -7,12 +7,14 @@ fastjson3 的代码组织。
 ```
 core3/src/main/java/com/alibaba/fastjson3/
 ├── JSON.java                      # 静态工具类
-├── JSONParser.java                # sealed 解析器
+├── JSONParser.java                # sealed 解析器 (Str/UTF8/LATIN1/CharArray)
 ├── JSONGenerator.java             # sealed 生成器
 ├── ObjectMapper.java              # 不可变映射器
 ├── JSONPath.java                  # JSONPath 引擎
-├── JSONObject.java                # 动态对象
+├── JSONObject.java                # 动态对象 (内部用 JSONObjectMap)
+├── JSONObjectMap.java             # flat array map (替代 LinkedHashMap)
 ├── JSONArray.java                 # 动态数组
+├── NameCache.java                 # 静态字段名缓存
 ├── ReadFeature.java               # 解析特性
 ├── WriteFeature.java              # 序列化特性
 ├── annotation/
@@ -74,7 +76,9 @@ core3/src/main/java/com/alibaba/fastjson3/
 
 | 模块 | 说明 |
 |------|------|
-| JSONParser | sealed 解析器层次 |
+| JSONParser | sealed 解析器层次 (Str/UTF8/LATIN1/CharArray) |
+| NameCache | 静态字段名缓存，跨 parse 复用 String |
+| JSONObjectMap | flat array map，替代 LinkedHashMap |
 | JSONGenerator | sealed 生成器层次 |
 | reader/ | 反序列化相关 |
 | writer/ | 序列化相关 |

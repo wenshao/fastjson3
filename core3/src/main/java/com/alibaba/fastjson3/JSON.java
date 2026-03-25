@@ -51,6 +51,27 @@ public final class JSON {
     private JSON() {
     }
 
+    /**
+     * Zero-copy access to Latin1 String's internal byte[], only if all ASCII.
+     * Returns null if non-ASCII, non-Latin1, or Unsafe unavailable.
+     * Non-ASCII Latin1 bytes (0x80-0xFF) are not valid UTF-8 and would be
+     * misinterpreted by the UTF8 parser, so we must fall back to getBytes(UTF_8).
+     */
+    static byte[] getLatin1Bytes(String json) {
+        int coder = com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json);
+        if (coder == 0) {
+            byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
+            if (value != null) {
+                // Quick ASCII check: scan for any byte >= 0x80
+                for (int i = 0; i < value.length; i++) {
+                    if (value[i] < 0) return null;
+                }
+                return value;
+            }
+        }
+        return null;
+    }
+
     // ==================== Parse ====================
 
     /**
@@ -86,8 +107,11 @@ public final class JSON {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
-        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        // Zero-copy: Latin1 String byte[] used directly (same as fastjson2's JSONReaderASCII)
+        byte[] jsonBytes = getLatin1Bytes(json);
+        if (jsonBytes == null) {
+            jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
         return parseObject(jsonBytes, type);
     }
 
@@ -110,8 +134,10 @@ public final class JSON {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
-        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] jsonBytes = getLatin1Bytes(json);
+        if (jsonBytes == null) {
+            jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
         return ObjectMapper.shared().readValue(jsonBytes, type);
     }
 
@@ -122,8 +148,10 @@ public final class JSON {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
-        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] jsonBytes = getLatin1Bytes(json);
+        if (jsonBytes == null) {
+            jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
         return ObjectMapper.shared().readValue(jsonBytes, typeRef.getType());
     }
 
