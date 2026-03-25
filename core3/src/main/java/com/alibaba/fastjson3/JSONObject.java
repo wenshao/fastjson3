@@ -813,12 +813,12 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     // innerMap is transient, so we must serialize/deserialize its contents
     // explicitly to support Java serialization and clone().
 
-    @java.io.Serial
     /**
      * Custom serialization: materialize innerMap into LinkedHashMap before
      * default serialization. This preserves compatibility with the standard
      * LinkedHashMap serialized form — no extra objects in the stream.
      */
+    @java.io.Serial
     private void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
         if (innerMap != null) {
             // Materialize innerMap into super (LinkedHashMap) before serialization
