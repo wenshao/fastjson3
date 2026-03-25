@@ -16,7 +16,7 @@ package com.alibaba.fastjson3.filter;
  * </pre>
  */
 @FunctionalInterface
-public interface AutoTypeFilter {
+public interface AutoTypeFilter extends Filter {
     /**
      * Check if the given type name is accepted for AutoType deserialization.
      *

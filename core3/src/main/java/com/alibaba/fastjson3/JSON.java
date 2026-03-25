@@ -1,7 +1,10 @@
 package com.alibaba.fastjson3;
 
+import com.alibaba.fastjson3.filter.*;
+
 import java.lang.reflect.Type;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Main entry point for JSON processing. Provides simple static methods for the most common operations.
@@ -94,6 +97,52 @@ public final class JSON {
     }
 
     /**
+     * Parse JSON bytes (UTF-8) to auto-detected type.
+     */
+    public static Object parse(byte[] jsonBytes) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        try (JSONParser parser = JSONParser.of(jsonBytes)) {
+            return parser.readAny();
+        }
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to auto-detected type with features.
+     */
+    public static Object parse(byte[] jsonBytes, ReadFeature... features) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+            return parser.readAny();
+        }
+    }
+
+    /**
+     * Parse JSON from InputStream (UTF-8) to auto-detected type.
+     */
+    public static Object parse(java.io.InputStream in) {
+        try {
+            byte[] bytes = in.readAllBytes();
+            return parse(bytes);
+        } catch (java.io.IOException e) {
+            throw new JSONException("read InputStream error", e);
+        }
+    }
+
+    /**
+     * Parse JSON from char array to auto-detected type.
+     */
+    public static Object parse(char[] chars) {
+        if (chars == null || chars.length == 0) {
+            return null;
+        }
+        return parse(new String(chars));
+    }
+
+    /**
      * Parse JSON string to JSONObject.
      */
     public static JSONObject parseObject(String json) {
@@ -182,6 +231,84 @@ public final class JSON {
     }
 
     /**
+     * Parse JSON bytes (UTF-8) to generic type.
+     */
+    public static <T> T parseObject(byte[] jsonBytes, Type type) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        return ObjectMapper.shared().readValue(jsonBytes, type);
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to generic type with features.
+     */
+    public static <T> T parseObject(byte[] jsonBytes, Type type, ReadFeature... features) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        long featureMask = ReadFeature.of(features);
+        return ObjectMapper.shared().readValue(jsonBytes, type, featureMask);
+    }
+
+    /**
+     * Parse JSON string to generic type with features.
+     */
+    public static <T> T parseObject(String json, Type type, ReadFeature... features) {
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        long featureMask = ReadFeature.of(features);
+        byte[] jsonBytes = getLatin1Bytes(json);
+        if (jsonBytes == null) {
+            jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
+        return ObjectMapper.shared().readValue(jsonBytes, type, featureMask);
+    }
+
+    /**
+     * Parse JSON from char array to JSONObject.
+     */
+    public static JSONObject parseObject(char[] chars) {
+        if (chars == null || chars.length == 0) {
+            return null;
+        }
+        return parseObject(new String(chars));
+    }
+
+    /**
+     * Parse JSON from char array to typed Java object.
+     */
+    public static <T> T parseObject(char[] chars, Class<T> type) {
+        if (chars == null || chars.length == 0) {
+            return null;
+        }
+        return parseObject(new String(chars), type);
+    }
+
+    /**
+     * Parse JSON from URL to JSONObject.
+     */
+    public static JSONObject parseObject(java.net.URL url) {
+        try (java.io.InputStream in = url.openStream()) {
+            return parseObject(in);
+        } catch (java.io.IOException e) {
+            throw new JSONException("read URL error", e);
+        }
+    }
+
+    /**
+     * Parse JSON from URL to typed Java object.
+     */
+    public static <T> T parseObject(java.net.URL url, Class<T> type) {
+        try (java.io.InputStream in = url.openStream()) {
+            return parseObject(in, type);
+        } catch (java.io.IOException e) {
+            throw new JSONException("read URL error", e);
+        }
+    }
+
+    /**
      * Parse JSON string to JSONArray.
      */
     public static JSONArray parseArray(String json) {
@@ -210,6 +337,70 @@ public final class JSON {
         // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
         byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         return ObjectMapper.shared().readList(jsonBytes, type);
+    }
+
+    /**
+     * Parse JSON string to typed list with features.
+     */
+    public static <T> List<T> parseArray(String json, Class<T> type, ReadFeature... features) {
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
+        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        long featureMask = ReadFeature.of(features);
+        return ObjectMapper.shared().readList(jsonBytes, type, featureMask);
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to typed list.
+     */
+    public static <T> List<T> parseArray(byte[] jsonBytes, Class<T> type) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        return ObjectMapper.shared().readList(jsonBytes, type);
+    }
+
+    /**
+     * Parse JSON bytes (UTF-8) to typed list with features.
+     */
+    public static <T> List<T> parseArray(byte[] jsonBytes, Class<T> type, ReadFeature... features) {
+        if (jsonBytes == null || jsonBytes.length == 0) {
+            return null;
+        }
+        long featureMask = ReadFeature.of(features);
+        return ObjectMapper.shared().readList(jsonBytes, type, featureMask);
+    }
+
+    /**
+     * Parse JSON from InputStream (UTF-8) to JSONArray.
+     */
+    public static JSONArray parseArray(java.io.InputStream in) {
+        try {
+            byte[] bytes = in.readAllBytes();
+            return parseArray(bytes);
+        } catch (java.io.IOException e) {
+            throw new JSONException("read InputStream error", e);
+        }
+    }
+
+    /**
+     * Parse JSON from Reader to JSONArray.
+     */
+    public static JSONArray parseArray(java.io.Reader reader) {
+        return parseArray(readAllChars(reader));
+    }
+
+    /**
+     * Parse JSON from InputStream (UTF-8) to typed list.
+     */
+    public static <T> List<T> parseArray(java.io.InputStream in, Class<T> type) {
+        try {
+            byte[] bytes = in.readAllBytes();
+            return parseArray(bytes, type);
+        } catch (java.io.IOException e) {
+            throw new JSONException("read InputStream error", e);
+        }
     }
 
     // ==================== Parse: InputStream ====================
@@ -255,9 +446,9 @@ public final class JSON {
     // ==================== Parse: Reader ====================
 
     /**
-     * Parse JSON from Reader to typed Java object.
+     * Read all characters from a Reader into a String.
      */
-    public static <T> T parseObject(java.io.Reader reader, Class<T> type) {
+    private static String readAllChars(java.io.Reader reader) {
         try {
             StringBuilder sb = new StringBuilder();
             char[] cbuf = new char[8192];
@@ -265,10 +456,24 @@ public final class JSON {
             while ((n = reader.read(cbuf)) != -1) {
                 sb.append(cbuf, 0, n);
             }
-            return parseObject(sb.toString(), type);
+            return sb.toString();
         } catch (java.io.IOException e) {
             throw new JSONException("read Reader error", e);
         }
+    }
+
+    /**
+     * Parse JSON from Reader to JSONObject.
+     */
+    public static JSONObject parseObject(java.io.Reader reader) {
+        return parseObject(readAllChars(reader));
+    }
+
+    /**
+     * Parse JSON from Reader to typed Java object.
+     */
+    public static <T> T parseObject(java.io.Reader reader, Class<T> type) {
+        return parseObject(readAllChars(reader), type);
     }
 
     // ==================== Serialize ====================
@@ -342,6 +547,152 @@ public final class JSON {
             generator.writeAny(obj);
             return generator.toByteArray();
         }
+    }
+
+    // ==================== Serialize: with Filters ====================
+
+    /**
+     * Serialize object to JSON string with a single filter and features.
+     */
+    public static String toJSONString(Object obj, Filter filter, WriteFeature... features) {
+        return toJSONString(obj, filter != null ? new Filter[]{filter} : null, features);
+    }
+
+    /**
+     * Serialize object to JSON string with filters and features.
+     */
+    public static String toJSONString(Object obj, Filter[] filters, WriteFeature... features) {
+        if (obj == null) {
+            return "null";
+        }
+        try (JSONGenerator generator = JSONGenerator.of(features)) {
+            configFilters(generator, filters);
+            generator.writeAny(obj);
+            return generator.toString();
+        }
+    }
+
+    /**
+     * Serialize object to UTF-8 byte array with filters and features.
+     */
+    public static byte[] toJSONBytes(Object obj, Filter[] filters, WriteFeature... features) {
+        if (obj == null) {
+            return NULL_BYTES;
+        }
+        try (JSONGenerator generator = JSONGenerator.ofUTF8(features)) {
+            configFilters(generator, filters);
+            generator.writeAny(obj);
+            return generator.toByteArray();
+        }
+    }
+
+    // ==================== Serialize: OutputStream ====================
+
+    /**
+     * Serialize object to OutputStream as UTF-8 JSON.
+     *
+     * @return the number of bytes written
+     */
+    public static int writeTo(java.io.OutputStream out, Object object) {
+        return writeTo(out, object, NO_WRITE_FEATURES);
+    }
+
+    /**
+     * Serialize object to OutputStream as UTF-8 JSON with features.
+     *
+     * @return the number of bytes written
+     */
+    public static int writeTo(java.io.OutputStream out, Object object, WriteFeature... features) {
+        byte[] bytes;
+        if (object == null) {
+            bytes = NULL_BYTES;
+        } else {
+            try (JSONGenerator generator = JSONGenerator.ofUTF8(features)) {
+                generator.writeAny(object);
+                bytes = generator.toByteArray();
+            }
+        }
+        try {
+            out.write(bytes);
+            return bytes.length;
+        } catch (java.io.IOException e) {
+            throw new JSONException("write to OutputStream error", e);
+        }
+    }
+
+    /**
+     * Serialize object to OutputStream as UTF-8 JSON with filters and features.
+     *
+     * @return the number of bytes written
+     */
+    public static int writeTo(java.io.OutputStream out, Object object, Filter[] filters, WriteFeature... features) {
+        byte[] bytes;
+        if (object == null) {
+            bytes = NULL_BYTES;
+        } else {
+            try (JSONGenerator generator = JSONGenerator.ofUTF8(features)) {
+                configFilters(generator, filters);
+                generator.writeAny(object);
+                bytes = generator.toByteArray();
+            }
+        }
+        try {
+            out.write(bytes);
+            return bytes.length;
+        } catch (java.io.IOException e) {
+            throw new JSONException("write to OutputStream error", e);
+        }
+    }
+
+    /**
+     * Configure filters on a JSONGenerator by dispatching each filter to
+     * the appropriate typed field.
+     */
+    private static void configFilters(JSONGenerator generator, Filter[] filters) {
+        if (filters == null || filters.length == 0) {
+            return;
+        }
+        java.util.List<PropertyFilter> pf = null;
+        java.util.List<ValueFilter> vf = null;
+        java.util.List<NameFilter> nf = null;
+        java.util.List<BeforeFilter> bf = null;
+        java.util.List<AfterFilter> af = null;
+        java.util.List<PropertyPreFilter> ppf = null;
+        for (Filter filter : filters) {
+            if (filter instanceof PropertyFilter f) {
+                if (pf == null) pf = new java.util.ArrayList<>();
+                pf.add(f);
+            }
+            if (filter instanceof ValueFilter f) {
+                if (vf == null) vf = new java.util.ArrayList<>();
+                vf.add(f);
+            }
+            if (filter instanceof NameFilter f) {
+                if (nf == null) nf = new java.util.ArrayList<>();
+                nf.add(f);
+            }
+            if (filter instanceof BeforeFilter f) {
+                if (bf == null) bf = new java.util.ArrayList<>();
+                bf.add(f);
+            }
+            if (filter instanceof AfterFilter f) {
+                if (af == null) af = new java.util.ArrayList<>();
+                af.add(f);
+            }
+            if (filter instanceof PropertyPreFilter f) {
+                if (ppf == null) ppf = new java.util.ArrayList<>();
+                ppf.add(f);
+            }
+            if (filter instanceof LabelFilter f) {
+                generator.labelFilter = f;
+            }
+        }
+        if (pf != null) generator.propertyFilters = pf.toArray(new PropertyFilter[0]);
+        if (vf != null) generator.valueFilters = vf.toArray(new ValueFilter[0]);
+        if (nf != null) generator.nameFilters = nf.toArray(new NameFilter[0]);
+        if (bf != null) generator.beforeFilters = bf.toArray(new BeforeFilter[0]);
+        if (af != null) generator.afterFilters = af.toArray(new AfterFilter[0]);
+        if (ppf != null) generator.propertyPreFilters = ppf.toArray(new PropertyPreFilter[0]);
     }
 
     // ==================== JSON Merge Patch (RFC 7396) ====================
@@ -458,6 +809,36 @@ public final class JSON {
         return isValid(jsonBytes, '[');
     }
 
+    /**
+     * Check if a char array is valid JSON.
+     */
+    public static boolean isValid(char[] chars) {
+        if (chars == null || chars.length == 0) {
+            return false;
+        }
+        return isValid(new String(chars));
+    }
+
+    /**
+     * Check if a char array is a valid JSON object.
+     */
+    public static boolean isValidObject(char[] chars) {
+        if (chars == null || chars.length == 0) {
+            return false;
+        }
+        return isValidObject(new String(chars));
+    }
+
+    /**
+     * Check if a char array is a valid JSON array.
+     */
+    public static boolean isValidArray(char[] chars) {
+        if (chars == null || chars.length == 0) {
+            return false;
+        }
+        return isValidArray(new String(chars));
+    }
+
     private static boolean isValid(String json, Character expectedFirstChar) {
         if (json == null || json.isEmpty()) {
             return false;
@@ -507,6 +888,82 @@ public final class JSON {
         return -1;
     }
 
+    // ==================== Conversion ====================
+
+    /**
+     * Convert a Java object to its JSON tree representation (JSONObject/JSONArray).
+     * <p>Primitive types, Strings, and null are returned as-is.
+     * Collections are converted to JSONArray, Maps and POJOs to JSONObject.</p>
+     *
+     * <pre>
+     * User user = new User("Alice", 30);
+     * JSONObject obj = (JSONObject) JSON.toJSON(user);
+     * </pre>
+     */
+    public static Object toJSON(Object object) {
+        if (object == null
+                || object instanceof JSONObject
+                || object instanceof JSONArray
+                || object instanceof String
+                || object instanceof Number
+                || object instanceof Boolean) {
+            return object;
+        }
+        String json = toJSONString(object);
+        return parse(json);
+    }
+
+    /**
+     * Convert a JSON tree object (JSONObject/JSONArray/Map) to a typed Java object.
+     *
+     * <pre>
+     * JSONObject obj = JSON.parseObject(jsonStr);
+     * User user = JSON.toJavaObject(obj, User.class);
+     * </pre>
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T toJavaObject(Object object, Class<T> clazz) {
+        if (object == null) {
+            return null;
+        }
+        if (clazz.isInstance(object)) {
+            return (T) object;
+        }
+        String json = toJSONString(object);
+        return parseObject(json, clazz);
+    }
+
+    /**
+     * Deep copy an object via JSON serialization and deserialization.
+     *
+     * <pre>
+     * User copy = JSON.copy(original);
+     * </pre>
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T copy(T object) {
+        if (object == null) {
+            return null;
+        }
+        byte[] bytes = toJSONBytes(object);
+        return (T) parseObject(bytes, object.getClass());
+    }
+
+    /**
+     * Copy an object to a different target type via JSON serialization.
+     *
+     * <pre>
+     * UserDTO dto = JSON.copyTo(userEntity, UserDTO.class);
+     * </pre>
+     */
+    public static <T> T copyTo(Object object, Class<T> targetClass) {
+        if (object == null) {
+            return null;
+        }
+        byte[] bytes = toJSONBytes(object);
+        return parseObject(bytes, targetClass);
+    }
+
     // ==================== Convenience ====================
 
     /**
@@ -544,6 +1001,7 @@ public final class JSON {
     }
 
     private static final byte[] NULL_BYTES = {'n', 'u', 'l', 'l'};
+    private static final WriteFeature[] NO_WRITE_FEATURES = {};
 
     // ==================== JSONPath ====================
 
@@ -1244,5 +1702,107 @@ public final class JSON {
      */
     public static String writeCompact(Object obj) {
         return write(obj, WriteConfig.DEFAULT);
+    }
+
+    // ==================== Global Registration ====================
+
+    /**
+     * Register a custom ObjectReader for a specific type on the shared ObjectMapper.
+     */
+    public static void register(Type type, ObjectReader<?> objectReader) {
+        ObjectMapper.shared().registerReader(type, objectReader);
+    }
+
+    /**
+     * Register a custom ObjectWriter for a specific type on the shared ObjectMapper.
+     */
+    public static void register(Type type, ObjectWriter<?> objectWriter) {
+        ObjectMapper.shared().registerWriter(type, objectWriter);
+    }
+
+    /**
+     * Register a MixIn class for annotation-based customization on the shared ObjectMapper.
+     * <p>Annotations from {@code mixinSource} will be applied to {@code target} type
+     * during serialization and deserialization.</p>
+     *
+     * <pre>
+     * JSON.mixIn(ThirdPartyClass.class, ThirdPartyMixin.class);
+     * </pre>
+     */
+    public static void mixIn(Class<?> target, Class<?> mixinSource) {
+        ObjectMapper.shared().addMixIn(target, mixinSource);
+    }
+
+    // ==================== Global Configuration ====================
+
+    // Global feature masks — applied on top of ObjectMapper.shared() defaults.
+    // AtomicLong for thread-safe compound read-modify-write operations.
+    private static final AtomicLong globalReadFeatures = new AtomicLong();
+    private static final AtomicLong globalWriteFeatures = new AtomicLong();
+
+    /**
+     * Enable read features globally.
+     * <p>Note: These features are queryable via {@link #isEnabled(ReadFeature)} but are not
+     * automatically applied to parsing operations. For parse-time feature control, use
+     * {@link #parseObject(String, Class, ReadFeature...)} or configure an {@link ObjectMapper}.</p>
+     */
+    public static void config(ReadFeature... features) {
+        long mask = 0;
+        for (ReadFeature f : features) {
+            mask |= f.mask;
+        }
+        final long toSet = mask;
+        globalReadFeatures.updateAndGet(v -> v | toSet);
+    }
+
+    /**
+     * Enable or disable a read feature globally.
+     */
+    public static void config(ReadFeature feature, boolean state) {
+        if (state) {
+            globalReadFeatures.updateAndGet(v -> v | feature.mask);
+        } else {
+            globalReadFeatures.updateAndGet(v -> v & ~feature.mask);
+        }
+    }
+
+    /**
+     * Enable write features globally.
+     * <p>Note: These features are queryable via {@link #isEnabled(WriteFeature)} but are not
+     * automatically applied to serialization operations. For write-time feature control, use
+     * {@link #toJSONString(Object, WriteFeature...)} or configure an {@link ObjectMapper}.</p>
+     */
+    public static void config(WriteFeature... features) {
+        long mask = 0;
+        for (WriteFeature f : features) {
+            mask |= f.mask;
+        }
+        final long toSet = mask;
+        globalWriteFeatures.updateAndGet(v -> v | toSet);
+    }
+
+    /**
+     * Enable or disable a write feature globally.
+     */
+    public static void config(WriteFeature feature, boolean state) {
+        if (state) {
+            globalWriteFeatures.updateAndGet(v -> v | feature.mask);
+        } else {
+            globalWriteFeatures.updateAndGet(v -> v & ~feature.mask);
+        }
+    }
+
+    /**
+     * Check if a read feature is enabled globally.
+     */
+    public static boolean isEnabled(ReadFeature feature) {
+        return (globalReadFeatures.get() & feature.mask) != 0;
+    }
+
+    /**
+     * Check if a write feature is enabled globally.
+     */
+    public static boolean isEnabled(WriteFeature feature) {
+        return (globalWriteFeatures.get() & feature.mask) != 0;
     }
 }

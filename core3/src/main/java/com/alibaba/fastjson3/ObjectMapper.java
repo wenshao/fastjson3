@@ -170,7 +170,8 @@ public final class ObjectMapper {
     private final com.alibaba.fastjson3.filter.LabelFilter labelFilter;
 
     // Mixin mappings: target class → mixin source class
-    private final Map<Class<?>, Class<?>> mixInCache;
+    // ConcurrentHashMap to support runtime addMixIn() registration
+    private final java.util.concurrent.ConcurrentHashMap<Class<?>, Class<?>> mixInCache;
 
     // Optional Jackson annotation support (off by default)
     private final boolean useJacksonAnnotation;
@@ -310,7 +311,7 @@ public final class ObjectMapper {
         this.valueFilters = valueFilters;
         this.nameFilters = nameFilters;
         this.labelFilter = labelFilter;
-        this.mixInCache = mixInCache;
+        this.mixInCache = new java.util.concurrent.ConcurrentHashMap<>(mixInCache);
         this.useJacksonAnnotation = useJacksonAnnotation;
         this.classLoader = classLoader != null ? classLoader
             : com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance();
@@ -1675,6 +1676,17 @@ public final class ObjectMapper {
     }
 
     /**
+     * Register a mixin class at runtime. Annotations from {@code mixinSource}
+     * will be applied to {@code target} during serialization and deserialization.
+     * <p>Note: Cached ObjectReaders/ObjectWriters for the target type are not
+     * automatically invalidated. Call this before any parsing/serialization of
+     * the target type, or call {@link #cleanup()} to clear caches.</p>
+     */
+    public void addMixIn(Class<?> target, Class<?> mixinSource) {
+        mixInCache.put(target, mixinSource);
+    }
+
+    /**
      * Get the ObjectReaderProvider used by this mapper.
      */
     public ObjectReaderProvider getReaderProvider() {
@@ -2387,7 +2399,7 @@ public final class ObjectMapper {
                     valueFilters.toArray(NO_VALUE_FILTERS),
                     nameFilters.toArray(NO_NAME_FILTERS),
                     labelFilter,
-                    Collections.unmodifiableMap(new LinkedHashMap<Class<?>, Class<?>>(mixIns)),
+                    new LinkedHashMap<Class<?>, Class<?>>(mixIns),
                     useJacksonAnnotation,
                     provider,
                     writerProvider,

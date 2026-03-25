@@ -15,7 +15,7 @@ import java.lang.reflect.Type;
  * </pre>
  */
 @FunctionalInterface
-public interface ContextValueFilter {
+public interface ContextValueFilter extends Filter {
     /**
      * Transform a property value with access to field context.
      *

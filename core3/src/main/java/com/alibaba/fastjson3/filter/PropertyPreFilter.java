@@ -12,7 +12,7 @@ package com.alibaba.fastjson3.filter;
  * </pre>
  */
 @FunctionalInterface
-public interface PropertyPreFilter {
+public interface PropertyPreFilter extends Filter {
     /**
      * @param source the object being serialized
      * @param name   the property name

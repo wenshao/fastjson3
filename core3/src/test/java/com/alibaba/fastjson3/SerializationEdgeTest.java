@@ -173,7 +173,7 @@ class SerializationEdgeTest {
 
     @Test
     void parseNullAndEmpty() {
-        assertNull(JSON.parse(null));
+        assertNull(JSON.parse((String) null));
         assertNull(JSON.parse(""));
         assertNull(JSON.parseObject((String) null, SerializationEdgeTest.class));
         assertNull(JSON.parseObject("", SerializationEdgeTest.class));
