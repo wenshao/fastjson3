@@ -305,8 +305,14 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
     }
 
     private void rebuildHashIndex() {
+        if (size == 0) {
+            hashIndex = null;
+            hashMask = 0;
+            return;
+        }
         int cap = Integer.highestOneBit(size * 4 - 1) << 1;
-        if (cap < hashIndex.length) cap = hashIndex.length;
+        if (cap < 16) cap = 16;
+        if (hashIndex != null && cap < hashIndex.length) cap = hashIndex.length;
         hashMask = cap - 1;
         hashIndex = new int[cap];
         Arrays.fill(hashIndex, -1);
