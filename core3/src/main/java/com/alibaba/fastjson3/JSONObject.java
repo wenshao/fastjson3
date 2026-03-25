@@ -844,11 +844,17 @@ public class JSONObject extends LinkedHashMap<String, Object> {
 
     @Override
     public Object clone() {
-        JSONObject copy = new JSONObject();
+        JSONObject copy;
         if (innerMap != null) {
-            innerMap.forEach(copy::put);
+            // Preserve innerMap mode regardless of current mapCreator state
+            copy = new JSONObject();
+            if (copy.innerMap == null) {
+                copy.innerMap = new JSONObjectMap();
+            }
+            innerMap.forEach(copy.innerMap::put);
         } else {
-            super.forEach(copy::put);
+            // LinkedHashMap mode
+            copy = new JSONObject(this);
         }
         return copy;
     }
