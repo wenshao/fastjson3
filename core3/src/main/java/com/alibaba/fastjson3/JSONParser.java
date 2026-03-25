@@ -3015,14 +3015,17 @@ public abstract sealed class JSONParser implements Closeable
     // ==================== LATIN1 parser ====================
 
     /**
-     * Parser for JDK Latin1 compact strings. Zero-copy access to String's internal byte[].
+     * Parser for ASCII JSON input from JDK Latin1 compact strings.
+     * Zero-copy access to String's internal byte[] via Unsafe.
      *
-     * <p>Differs from UTF8 in string handling: all bytes 0x00-0xFF are single Latin1
-     * characters — no multi-byte UTF8 sequence detection. This is correct for Latin1
-     * encoded strings where bytes ≥ 0x80 represent characters like 'é' (0xE9).</p>
+     * <p>Only created for ASCII-only input (all bytes 0x00-0x7F). Factory methods
+     * ({@code JSONParser.of(String)}) verify ASCII before creating this parser.
+     * Non-ASCII Latin1 strings (containing bytes 0x80-0xFF) fall back to
+     * {@link Str} parser to avoid misinterpretation by inherited UTF8 methods.</p>
      *
      * <p>Extends UTF8 to reuse field matching, number parsing, whitespace handling.
-     * Only overrides string scanning methods to remove the multi-byte check.</p>
+     * Overrides string scanning methods to skip multi-byte UTF8 detection
+     * (unnecessary for ASCII) and use Latin1-optimized SWAR scan.</p>
      *
      * <p>Inspired by fastjson2's JSONReaderASCII.</p>
      */

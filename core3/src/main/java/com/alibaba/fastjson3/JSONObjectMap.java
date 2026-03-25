@@ -140,7 +140,9 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
         keys[size] = key;
         values[size] = value;
         size++;
-        // No hash index maintenance for parse mode — maps are small
+        if (hashIndex != null) {
+            addToHash(key, size - 1);
+        }
     }
 
     @Override
