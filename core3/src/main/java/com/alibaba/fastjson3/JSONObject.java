@@ -282,9 +282,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     @Override
     public void replaceAll(java.util.function.BiFunction<? super String, ? super Object, ?> function) {
         if (innerMap != null) {
-            for (int i = 0; i < innerMap.size; i++) {
-                innerMap.values[i] = function.apply(innerMap.keys[i], innerMap.values[i]);
-            }
+            innerMap.replaceAllValues(function);
         } else {
             super.replaceAll(function);
         }

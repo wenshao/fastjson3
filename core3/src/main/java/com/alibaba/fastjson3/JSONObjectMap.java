@@ -242,6 +242,12 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
         }
     }
 
+    void replaceAllValues(java.util.function.BiFunction<? super String, ? super Object, ?> function) {
+        for (int i = 0; i < size; i++) {
+            values[i] = function.apply(keys[i], values[i]);
+        }
+    }
+
     @Override
     public void forEach(java.util.function.BiConsumer<? super String, ? super Object> action) {
         final String[] k = this.keys;
