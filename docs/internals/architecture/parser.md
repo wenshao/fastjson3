@@ -8,10 +8,43 @@ fastjson3 的 JSON 解析和生成组件。
 
 ```
 sealed JSONParser
-├── JSONParser.Str         (String 输入)
-├── JSONParser.UTF8        (byte[] 输入，主热路径)
+├── JSONParser.Str         (String 输入，非 Latin1 fallback)
+├── JSONParser.UTF8        (byte[] 输入，bean 解析主热路径)
+│   └── JSONParser.LATIN1  (Latin1 零拷贝，tree 解析 + String 输入主热路径)
 └── JSONParser.CharArray   (char[] 输入)
 ```
+
+### LATIN1 parser
+
+对 JDK 9+ 的 Latin1 compact string（绝大多数 ASCII JSON），`JSONParser.of(String)` 自动创建 LATIN1 parser：
+
+- **零拷贝**：通过 Unsafe 直接获取 String 内部 byte[]，避免 `charAt()` 虚拟调用和 `getBytes(UTF_8)` 拷贝
+- **SWAR 字符串扫描**：8 字节并行查找引号/反斜杠（无 high-bit 检查，Latin1 所有字节均为合法单字符）
+- **内联 readObject/readArray**：tree 解析完全内联，无 `readAny()` 虚方法调度
+- **readNumber 直接解析**：整数直接从 byte[] 解析，2-digit 批量处理，无 String 分配
+- **NameCache**：静态字段名缓存（hash\*31），重复字段名复用 String 实例
+
+LATIN1 extends UTF8，继承所有 bean 解析方法（readFieldNameMatch、readIntOff 等），只 override 字符串相关方法。参考 fastjson2 的 `JSONReaderASCII`。
+
+```java
+// String 输入 — 自动选择 LATIN1（零拷贝）
+JSONObject obj = JSON.parseObject(jsonString);
+
+// byte[] tree 解析 — ASCII 时通过 ObjectMapper 路由到 LATIN1
+JSONObject obj = JSON.parseObject(utf8Bytes);
+
+// byte[] bean 解析 — 仍用 UTF8（ASM ObjectReader 特化）
+MediaContent mc = JSON.parseObject(bytes, MediaContent.class);
+```
+
+### JSONObjectMap
+
+`JSONObject` 默认使用 `JSONObjectMap`（flat parallel arrays）替代 `LinkedHashMap` 作为内部存储：
+
+- **无 Entry 节点分配**：String[] keys + Object[] values 平行数组
+- **线性扫描**：小 map（≤16 条目）直接扫描，大 map 按需构建 hash index
+- **保持插入顺序**：数组天然有序
+- **可配置**：`JSONObject.setMapCreator(Supplier)` 切回 LinkedHashMap 模式
 
 ### 为什么使用 sealed？
 
