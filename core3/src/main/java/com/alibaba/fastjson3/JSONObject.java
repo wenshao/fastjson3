@@ -814,32 +814,30 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     // explicitly to support Java serialization and clone().
 
     @java.io.Serial
+    /**
+     * Custom serialization: materialize innerMap into LinkedHashMap before
+     * default serialization. This preserves compatibility with the standard
+     * LinkedHashMap serialized form — no extra objects in the stream.
+     */
     private void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
-        out.defaultWriteObject();
         if (innerMap != null) {
-            // Write innerMap contents as a LinkedHashMap for deserialization
-            LinkedHashMap<String, Object> map = new LinkedHashMap<>(innerMap.size());
-            innerMap.forEach(map::put);
-            out.writeObject(map);
-        } else {
-            // LinkedHashMap mode — write only from super (no duplication)
-            out.writeObject(new LinkedHashMap<>(this));
+            // Materialize innerMap into super (LinkedHashMap) before serialization
+            innerMap.forEach((k, v) -> super.put(k, v));
         }
+        out.defaultWriteObject();
     }
 
     @java.io.Serial
-    @SuppressWarnings("unchecked")
     private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
         in.defaultReadObject();
-        Map<String, Object> map = (Map<String, Object>) in.readObject();
-        if (mapCreator == null) {
-            innerMap = new JSONObjectMap(map.size());
-            map.forEach(innerMap::put);
-            // Clear super's LinkedHashMap to avoid stale/duplicate data
+        // After deserialization, LinkedHashMap has the data in super.
+        // Move it into innerMap if in default mode.
+        if (mapCreator == null && !super.isEmpty()) {
+            innerMap = new JSONObjectMap(super.size());
+            super.forEach((k, v) -> innerMap.put(k, v));
             super.clear();
-        } else {
-            // LinkedHashMap mode
-            super.putAll(map);
+        } else if (mapCreator == null) {
+            innerMap = new JSONObjectMap();
         }
     }
 
