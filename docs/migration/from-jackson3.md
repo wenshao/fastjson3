@@ -90,9 +90,17 @@ ObjectMapper mapper = ObjectMapper.shared();  // 从一开始就支持
 | `@JsonIgnore` | `@JSONField(serialize=false)` | ✅ |
 | `@JsonFormat` | `@JSONField(format)` | ✅ |
 | `@JsonInclude` | `@JSONField(inclusion)` | ✅ |
-| `@JsonUnwrapped` | - | ❌ 不支持，需自定义序列化 |
+| `@JsonUnwrapped` | `@JSONField(unwrapped)` | ✅ |
 | `@JsonCreator` | `@JSONCreator` | ✅ |
 | `@JsonNaming` | `@JSONType(naming)` | ✅ |
+| `@JsonTypeInfo` | `@JSONType(typeKey)` | ✅ 支持 use=NAME |
+| `@JsonSubTypes` | `@JSONType(seeAlso)` | ✅ |
+| `@JsonSerialize` | `@JSONField(serializeUsing)` | ⚠️ 替换为 `@JSONField`（using 类型不兼容） |
+| `@JsonDeserialize` | `@JSONField(deserializeUsing)` | ⚠️ 替换为 `@JSONField`（using 类型不兼容） |
+| `@JsonBackReference` | - | ✅ 等效 serialize=false |
+| `@JsonValue` | `@JSONField(value=true)` | ✅ |
+| `@JsonAnySetter` | `@JSONField(anySetter)` | ✅ |
+| `@JsonAnyGetter` | `@JSONField(anyGetter)` | ✅ |
 
 ### Jackson 3.x 新注解
 
@@ -103,6 +111,8 @@ Jackson 3.x 引入了一些新注解，fastjson3 提供等价功能：
 | `@JsonPropertyDescription` | 使用 Javadoc 或自定义注解 |
 | `@JsonTypeIdResolver` | 自定义 `ObjectReader` |
 | `@JsonTypeName` | `@JSONType(typeName)` |
+
+> **注意**：Jackson 3.x 的核心注解仍使用 `com.fasterxml.jackson.annotation.*` 包（与 Jackson 2.x 相同）。fastjson3 通过反射检测这些注解，无需额外配置。
 
 ---
 

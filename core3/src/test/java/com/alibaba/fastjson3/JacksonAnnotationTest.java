@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3;
 
+import com.alibaba.fastjson3.annotation.JSONType;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import org.junit.jupiter.api.Test;
@@ -540,5 +541,105 @@ public class JacksonAnnotationTest {
         RequiredBean bean = MAPPER.readValue("{\"id\":42,\"name\":\"test\"}", RequiredBean.class);
         assertEquals(42, bean.id);
         assertEquals("test", bean.name);
+    }
+
+    // ==================== @JsonTypeInfo + @JsonSubTypes ====================
+
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+    @JsonSubTypes({
+            @JsonSubTypes.Type(value = CatBean.class, name = "cat"),
+            @JsonSubTypes.Type(value = DogBean.class, name = "dog")
+    })
+    public static abstract class AnimalBean {
+        public String name;
+    }
+
+    public static class CatBean extends AnimalBean {
+        public int lives;
+
+        public CatBean() {}
+    }
+
+    public static class DogBean extends AnimalBean {
+        public String breed;
+
+        public DogBean() {}
+    }
+
+    @Test
+    public void testJsonTypeInfoDeserialize() {
+        String json = "{\"type\":\"cat\",\"name\":\"Whiskers\",\"lives\":9}";
+        AnimalBean animal = MAPPER.readValue(json, AnimalBean.class);
+        assertInstanceOf(CatBean.class, animal);
+        assertEquals("Whiskers", animal.name);
+        assertEquals(9, ((CatBean) animal).lives);
+    }
+
+    @Test
+    public void testJsonTypeInfoDeserializeDog() {
+        String json = "{\"type\":\"dog\",\"name\":\"Rex\",\"breed\":\"Labrador\"}";
+        AnimalBean animal = MAPPER.readValue(json, AnimalBean.class);
+        assertInstanceOf(DogBean.class, animal);
+        assertEquals("Rex", animal.name);
+        assertEquals("Labrador", ((DogBean) animal).breed);
+    }
+
+    @Test
+    public void testJsonTypeInfoSerialize() {
+        CatBean cat = new CatBean();
+        cat.name = "Whiskers";
+        cat.lives = 9;
+        String json = MAPPER.writeValueAsString(cat);
+        assertTrue(json.contains("\"type\""));
+        assertTrue(json.contains("Whiskers"));
+    }
+
+    @Test
+    public void testJsonTypeInfoUnknownType() {
+        String json = "{\"type\":\"fish\",\"name\":\"Nemo\"}";
+        assertThrows(JSONException.class, () -> MAPPER.readValue(json, AnimalBean.class));
+    }
+
+    @Test
+    public void testJsonTypeInfoNull() {
+        AnimalBean animal = MAPPER.readValue("null", AnimalBean.class);
+        assertNull(animal);
+    }
+
+    // ==================== @JsonTypeInfo on interface ====================
+
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "kind")
+    @JsonSubTypes({
+            @JsonSubTypes.Type(value = CircleBean.class, name = "circle"),
+            @JsonSubTypes.Type(value = SquareBean.class, name = "square")
+    })
+    public interface ShapeBean {
+        double area();
+    }
+
+    public static class CircleBean implements ShapeBean {
+        public double radius;
+
+        public CircleBean() {}
+
+        @Override
+        public double area() { return Math.PI * radius * radius; }
+    }
+
+    public static class SquareBean implements ShapeBean {
+        public double side;
+
+        public SquareBean() {}
+
+        @Override
+        public double area() { return side * side; }
+    }
+
+    @Test
+    public void testJsonTypeInfoOnInterface() {
+        String json = "{\"kind\":\"circle\",\"radius\":5.0}";
+        ShapeBean shape = MAPPER.readValue(json, ShapeBean.class);
+        assertInstanceOf(CircleBean.class, shape);
+        assertEquals(5.0, ((CircleBean) shape).radius);
     }
 }

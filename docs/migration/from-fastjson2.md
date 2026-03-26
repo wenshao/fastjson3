@@ -319,6 +319,28 @@ BeforeFilter filter = (generator, object) -> {
 | `JSON.isValid(String)` | `JSON.isValid(String)` | 相同 |
 | `JSON.isValidObject(String)` | `JSON.isValidObject(String)` | 相同 |
 | `JSON.isValidArray(String)` | `JSON.isValidArray(String)` | 相同 |
+| `JSON.parse(byte[])` | `JSON.parse(byte[])` | 相同 |
+| `JSON.parse(InputStream)` | `JSON.parse(InputStream)` | 相同 |
+| `JSON.parseObject(byte[], Type)` | `JSON.parseObject(byte[], Type)` | 相同 |
+| `JSON.parseObject(String, Type, Feature...)` | `JSON.parseObject(String, Type, ReadFeature...)` | Feature 类型改名 |
+| `JSON.parseObject(char[])` | `JSON.parseObject(char[])` | 相同 |
+| `JSON.parseObject(URL)` | `JSON.parseObject(URL)` | 相同 |
+| `JSON.parseObject(Reader)` | `JSON.parseObject(Reader)` | 相同 |
+| `JSON.parseArray(byte[], Class)` | `JSON.parseArray(byte[], Class)` | 相同 |
+| `JSON.parseArray(InputStream)` | `JSON.parseArray(InputStream)` | 相同 |
+| `JSON.parseArray(String, Class, Feature...)` | `JSON.parseArray(String, Class, ReadFeature...)` | Feature 类型改名 |
+| `JSON.toJSONString(Object, Filter, Feature...)` | `JSON.toJSONString(Object, Filter, WriteFeature...)` | Feature 类型改名 |
+| `JSON.toJSONBytes(Object, Filter[], Feature...)` | `JSON.toJSONBytes(Object, Filter[], WriteFeature...)` | Feature 类型改名 |
+| `JSON.writeTo(OutputStream, Object)` | `JSON.writeTo(OutputStream, Object)` | 相同 |
+| `JSON.toJSON(Object)` | `JSON.toJSON(Object)` | 相同 |
+| `JSON.toJavaObject(Object, Class)` | `JSON.toJavaObject(Object, Class)` | 相同 |
+| `JSON.copy(Object)` | `JSON.copy(Object)` | 相同 |
+| `JSON.copyTo(Object, Class)` | `JSON.copyTo(Object, Class)` | 相同 |
+| `JSON.register(Type, ObjectReader)` | `JSON.register(Type, ObjectReader)` | 相同 |
+| `JSON.register(Type, ObjectWriter)` | `JSON.register(Type, ObjectWriter)` | 相同 |
+| `JSON.mixIn(Class, Class)` | `JSON.mixIn(Class, Class)` | 相同 |
+| `JSON.config(Feature...)` | `JSON.config(ReadFeature/WriteFeature...)` | 类型改名 |
+| `JSON.isEnabled(Feature)` | `JSON.isEnabled(ReadFeature/WriteFeature)` | 类型改名 |
 
 ### JSONObject 方法
 

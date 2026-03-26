@@ -98,16 +98,18 @@ public class User {
 | `@JsonIgnore` | `@JSONField(serialize=false)` | ✅ | 保留或替换 |
 | `@JsonFormat` | `@JSONField(format)` | ✅ | 保留或替换 |
 | `@JsonInclude` | `@JSONField(inclusion)` | ✅ | 保留或替换 |
-| `@JsonUnwrapped` | - | ❌ | 需自定义 ObjectWriter 实现 |
+| `@JsonUnwrapped` | `@JSONField(unwrapped)` | ✅ | 保留或替换 |
 | `@JsonNaming` | `@JSONType(naming)` | ✅ | 保留或替换 |
 | `@JsonCreator` | `@JSONCreator` | ✅ | 保留或替换 |
-| `@JsonDeserialize` | `@JSONField(deserializeUsing)` | ✅ | 保留或替换 |
-| `@JsonSerialize` | `@JSONField(serializeUsing)` | ✅ | 保留或替换 |
+| `@JsonDeserialize` | `@JSONField(deserializeUsing)` | ⚠️ | 替换为 `@JSONField`（using 类型不兼容） |
+| `@JsonSerialize` | `@JSONField(serializeUsing)` | ⚠️ | 替换为 `@JSONField`（using 类型不兼容） |
+| `@JsonTypeInfo` | `@JSONType(typeKey)` | ✅ | 保留（支持 use=NAME） |
+| `@JsonSubTypes` | `@JSONType(seeAlso)` | ✅ | 保留（配合 @JsonTypeInfo 使用） |
 | `@JsonRawValue` | - | ❌ | 需自定义 ObjectWriter |
 | `@JsonValue` | `@JSONField(value=true)` | ✅ | 保留或替换 |
 | `@JsonView` | - | ❌ | 需要改用 Filter |
 | `@JsonIdentityInfo` | - | ❌ | 需要自定义序列化 |
-| `@JsonBackReference` | - | ❌ | 需要改用 `@JSONField(serialize=false)` |
+| `@JsonBackReference` | - | ✅ | 保留（等效 serialize=false） |
 | `@JsonManagedReference` | - | ❌ | 需要改用 `@JSONField(serialize=false)` |
 | `@JsonAutoDetect` | - | ✅ | 默认行为已支持 |
 | `@JsonPropertyOrder` | `@JSONType(orders)` | ✅ | 保留或替换 |
@@ -439,14 +441,27 @@ public class ApiResponse<T> {
 })
 public abstract class Animal { }
 
-// ===== fastjson3 =====
-public abstract class Animal {
-    @JSONField(name = "type")
-    private String type;
+// ===== fastjson3：保留 Jackson 注解（推荐） =====
+// Jackson 的 @JsonTypeInfo + @JsonSubTypes 直接生效，无需修改！
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = Dog.class, name = "dog"),
+    @JsonSubTypes.Type(value = Cat.class, name = "cat")
+})
+public abstract class Animal { }
 
-    // 使用自定义反序列化器或 Module
-}
+// ===== fastjson3：替换为原生注解（可选） =====
+@JSONType(typeKey = "type", seeAlso = {Dog.class, Cat.class})
+public abstract class Animal { }
+
+@JSONType(typeName = "dog")
+public class Dog extends Animal { }
+
+@JSONType(typeName = "cat")
+public class Cat extends Animal { }
 ```
+
+> **注意**：Jackson 的 `@JsonTypeInfo` 仅支持 `use = Id.NAME`。`Id.CLASS`、`Id.DEDUCTION` 等模式需替换为 `@JSONType`。
 
 ### 场景 3：视图控制
 
