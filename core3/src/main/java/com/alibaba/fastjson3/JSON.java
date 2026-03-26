@@ -61,6 +61,9 @@ public final class JSON {
      * misinterpreted by the UTF8 parser, so we must fall back to getBytes(UTF_8).
      */
     static byte[] getLatin1Bytes(String json) {
+        if (com.alibaba.fastjson3.util.JDKUtils.ANDROID) {
+            return null; // Android String internals differ; always use getBytes(UTF_8)
+        }
         int coder = com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json);
         if (coder == 0) {
             byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
@@ -562,7 +565,8 @@ public final class JSON {
         if (wf != 0) {
             return ObjectMapper.shared().writeValueAsString(obj, wf);
         }
-        if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+        if (!com.alibaba.fastjson3.util.JDKUtils.ANDROID
+                && com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
             ObjectWriter<Object> writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(obj.getClass());
             if (writer != null) {
                 try (JSONGenerator.UTF8 gen = (JSONGenerator.UTF8) JSONGenerator.ofUTF8()) {
@@ -602,18 +606,21 @@ public final class JSON {
         if (wf != 0) {
             return ObjectMapper.shared().writeValueAsBytes(obj, wf);
         }
-        ObjectMapper mapper = ObjectMapper.shared();
-        try (JSONGenerator generator = JSONGenerator.ofUTF8()) {
-            @SuppressWarnings("unchecked")
-            ObjectWriter<Object> writer =
-                    (ObjectWriter<Object>) mapper.getObjectWriter(obj.getClass());
-            if (writer != null) {
-                writer.write(generator, obj, null, null, 0);
-            } else {
-                generator.writeAny(obj);
+        if (!com.alibaba.fastjson3.util.JDKUtils.ANDROID) {
+            ObjectMapper mapper = ObjectMapper.shared();
+            try (JSONGenerator generator = JSONGenerator.ofUTF8()) {
+                @SuppressWarnings("unchecked")
+                ObjectWriter<Object> writer =
+                        (ObjectWriter<Object>) mapper.getObjectWriter(obj.getClass());
+                if (writer != null) {
+                    writer.write(generator, obj, null, null, 0);
+                } else {
+                    generator.writeAny(obj);
+                }
+                return generator.toByteArray();
             }
-            return generator.toByteArray();
         }
+        return ObjectMapper.shared().writeValueAsBytes(obj);
     }
 
     /**

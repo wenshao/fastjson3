@@ -23,6 +23,7 @@ import java.lang.reflect.RecordComponent;
  */
 @AndroidNative("Android version in core3-android module")
 public final class JDKUtils {
+    public static final boolean ANDROID = false;
     public static final boolean UNSAFE_AVAILABLE;
     public static final boolean NATIVE_IMAGE;
     public static final int JDK_VERSION;
