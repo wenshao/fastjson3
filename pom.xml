@@ -36,6 +36,7 @@
     <modules>
         <module>core3</module>
         <module>core3-android-test</module>
+        <module>core3-kotlin</module>
     </modules>
 
     <build>
