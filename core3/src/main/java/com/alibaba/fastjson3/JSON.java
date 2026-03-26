@@ -81,6 +81,15 @@ public final class JSON {
      * Parse JSON string to auto-detected type.
      */
     public static Object parse(String json) {
+        long rf = globalReadFeatures.get();
+        if (rf != 0) {
+            if (json == null || json.isEmpty()) {
+                return null;
+            }
+            try (JSONParser parser = JSONParser.of(json, rf)) {
+                return parser.readAny();
+            }
+        }
         return ObjectMapper.shared().readValue(json);
     }
 
@@ -103,7 +112,8 @@ public final class JSON {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        try (JSONParser parser = JSONParser.of(jsonBytes)) {
+        long rf = globalReadFeatures.get();
+        try (JSONParser parser = rf != 0 ? JSONParser.of(jsonBytes, rf) : JSONParser.of(jsonBytes)) {
             return parser.readAny();
         }
     }
@@ -146,6 +156,12 @@ public final class JSON {
      * Parse JSON string to JSONObject.
      */
     public static JSONObject parseObject(String json) {
+        long rf = globalReadFeatures.get();
+        if (rf != 0 && json != null && !json.isEmpty()) {
+            try (JSONParser parser = JSONParser.of(json, rf)) {
+                return parser.readObject();
+            }
+        }
         return ObjectMapper.shared().readObject(json);
     }
 
@@ -161,7 +177,10 @@ public final class JSON {
         if (jsonBytes == null) {
             jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
-        return parseObject(jsonBytes, type);
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readValue(jsonBytes, type, rf)
+                : parseObject(jsonBytes, type);
     }
 
     /**
@@ -187,7 +206,10 @@ public final class JSON {
         if (jsonBytes == null) {
             jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
-        return ObjectMapper.shared().readValue(jsonBytes, type);
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readValue(jsonBytes, type, rf)
+                : ObjectMapper.shared().readValue(jsonBytes, type);
     }
 
     /**
@@ -201,13 +223,22 @@ public final class JSON {
         if (jsonBytes == null) {
             jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
-        return ObjectMapper.shared().readValue(jsonBytes, typeRef.getType());
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readValue(jsonBytes, typeRef.getType(), rf)
+                : ObjectMapper.shared().readValue(jsonBytes, typeRef.getType());
     }
 
     /**
      * Parse JSON bytes (UTF-8) to JSONObject.
      */
     public static JSONObject parseObject(byte[] jsonBytes) {
+        long rf = globalReadFeatures.get();
+        if (rf != 0 && jsonBytes != null && jsonBytes.length > 0) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, rf)) {
+                return parser.readObject();
+            }
+        }
         return ObjectMapper.shared().readObject(jsonBytes);
     }
 
@@ -215,6 +246,10 @@ public final class JSON {
      * Parse JSON bytes (UTF-8) to typed Java object.
      */
     public static <T> T parseObject(byte[] jsonBytes, Class<T> type) {
+        long rf = globalReadFeatures.get();
+        if (rf != 0 && jsonBytes != null && jsonBytes.length > 0) {
+            return ObjectMapper.shared().readValue(jsonBytes, type, rf);
+        }
         return ObjectMapper.shared().readValue(jsonBytes, type);
     }
 
@@ -237,7 +272,10 @@ public final class JSON {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        return ObjectMapper.shared().readValue(jsonBytes, type);
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readValue(jsonBytes, type, rf)
+                : ObjectMapper.shared().readValue(jsonBytes, type);
     }
 
     /**
@@ -315,8 +353,10 @@ public final class JSON {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
-        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] jsonBytes = getLatin1Bytes(json);
+        if (jsonBytes == null) {
+            jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
         return parseArray(jsonBytes);
     }
 
@@ -324,6 +364,12 @@ public final class JSON {
      * Parse JSON bytes (UTF-8) to JSONArray.
      */
     public static JSONArray parseArray(byte[] jsonBytes) {
+        long rf = globalReadFeatures.get();
+        if (rf != 0 && jsonBytes != null && jsonBytes.length > 0) {
+            try (JSONParser parser = JSONParser.of(jsonBytes, rf)) {
+                return parser.readArray();
+            }
+        }
         return ObjectMapper.shared().readArray(jsonBytes);
     }
 
@@ -334,9 +380,14 @@ public final class JSON {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        // Convert String to UTF-8 bytes to use optimized UTF-8 parser with ASM ObjectReader
-        byte[] jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        return ObjectMapper.shared().readList(jsonBytes, type);
+        byte[] jsonBytes = getLatin1Bytes(json);
+        if (jsonBytes == null) {
+            jsonBytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readList(jsonBytes, type, rf)
+                : ObjectMapper.shared().readList(jsonBytes, type);
     }
 
     /**
@@ -358,7 +409,10 @@ public final class JSON {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        return ObjectMapper.shared().readList(jsonBytes, type);
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readList(jsonBytes, type, rf)
+                : ObjectMapper.shared().readList(jsonBytes, type);
     }
 
     /**
@@ -409,6 +463,15 @@ public final class JSON {
      * Parse JSON from InputStream (UTF-8) to typed Java object.
      */
     public static <T> T parseObject(java.io.InputStream in, Class<T> type) {
+        long rf = globalReadFeatures.get();
+        if (rf != 0) {
+            try {
+                byte[] bytes = in.readAllBytes();
+                return ObjectMapper.shared().readValue(bytes, type, rf);
+            } catch (java.io.IOException e) {
+                throw new JSONException("read InputStream error", e);
+            }
+        }
         return ObjectMapper.shared().readValue(in, type);
     }
 
@@ -428,6 +491,15 @@ public final class JSON {
      * Parse JSON from InputStream (UTF-8) to generic type.
      */
     public static <T> T parseObject(java.io.InputStream in, Type type) {
+        long rf = globalReadFeatures.get();
+        if (rf != 0) {
+            try {
+                byte[] bytes = in.readAllBytes();
+                return ObjectMapper.shared().readValue(bytes, type, rf);
+            } catch (java.io.IOException e) {
+                throw new JSONException("read InputStream error", e);
+            }
+        }
         return ObjectMapper.shared().readValue(in, type);
     }
 
@@ -486,6 +558,10 @@ public final class JSON {
         if (obj == null) {
             return "null";
         }
+        long wf = globalWriteFeatures.get();
+        if (wf != 0) {
+            return ObjectMapper.shared().writeValueAsString(obj, wf);
+        }
         if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
             ObjectWriter<Object> writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(obj.getClass());
             if (writer != null) {
@@ -521,6 +597,10 @@ public final class JSON {
     public static byte[] toJSONBytes(Object obj) {
         if (obj == null) {
             return NULL_BYTES;
+        }
+        long wf = globalWriteFeatures.get();
+        if (wf != 0) {
+            return ObjectMapper.shared().writeValueAsBytes(obj, wf);
         }
         ObjectMapper mapper = ObjectMapper.shared();
         try (JSONGenerator generator = JSONGenerator.ofUTF8()) {
@@ -594,7 +674,13 @@ public final class JSON {
      * @return the number of bytes written
      */
     public static int writeTo(java.io.OutputStream out, Object object) {
-        return writeTo(out, object, NO_WRITE_FEATURES);
+        byte[] bytes = toJSONBytes(object); // respects globalWriteFeatures
+        try {
+            out.write(bytes);
+            return bytes.length;
+        } catch (java.io.IOException e) {
+            throw new JSONException("write to OutputStream error", e);
+        }
     }
 
     /**
@@ -909,8 +995,9 @@ public final class JSON {
                 || object instanceof Boolean) {
             return object;
         }
-        String json = toJSONString(object);
-        return parse(json);
+        // Stay in byte[] domain — avoids intermediate String allocation
+        byte[] bytes = toJSONBytes(object);
+        return parse(bytes);
     }
 
     /**
@@ -1001,7 +1088,6 @@ public final class JSON {
     }
 
     private static final byte[] NULL_BYTES = {'n', 'u', 'l', 'l'};
-    private static final WriteFeature[] NO_WRITE_FEATURES = {};
 
     // ==================== JSONPath ====================
 
@@ -1228,7 +1314,10 @@ public final class JSON {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        return ObjectMapper.shared().readList(json, elementType);
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readList(json, elementType, rf)
+                : ObjectMapper.shared().readList(json, elementType);
     }
 
     /**
@@ -1266,7 +1355,10 @@ public final class JSON {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        return ObjectMapper.shared().readList(jsonBytes, elementType);
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readList(jsonBytes, elementType, rf)
+                : ObjectMapper.shared().readList(jsonBytes, elementType);
     }
 
     /**
@@ -1303,7 +1395,10 @@ public final class JSON {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        return ObjectMapper.shared().readSet(json, elementType);
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readSet(json, elementType, rf)
+                : ObjectMapper.shared().readSet(json, elementType);
     }
 
     /**
@@ -1340,7 +1435,10 @@ public final class JSON {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        return ObjectMapper.shared().readSet(jsonBytes, elementType);
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readSet(jsonBytes, elementType, rf)
+                : ObjectMapper.shared().readSet(jsonBytes, elementType);
     }
 
     /**
@@ -1379,7 +1477,10 @@ public final class JSON {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        return ObjectMapper.shared().readMap(json, valueType);
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readMap(json, valueType, rf)
+                : ObjectMapper.shared().readMap(json, valueType);
     }
 
     /**
@@ -1416,7 +1517,10 @@ public final class JSON {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        return ObjectMapper.shared().readMap(jsonBytes, valueType);
+        long rf = globalReadFeatures.get();
+        return rf != 0
+                ? ObjectMapper.shared().readMap(jsonBytes, valueType, rf)
+                : ObjectMapper.shared().readMap(jsonBytes, valueType);
     }
 
     /**
@@ -1454,7 +1558,10 @@ public final class JSON {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        List<E> list = ObjectMapper.shared().readList(json, elementType);
+        long rf = globalReadFeatures.get();
+        List<E> list = rf != 0
+                ? ObjectMapper.shared().readList(json, elementType, rf)
+                : ObjectMapper.shared().readList(json, elementType);
         if (list == null) {
             return null;
         }
@@ -1501,7 +1608,10 @@ public final class JSON {
         if (jsonBytes == null || jsonBytes.length == 0) {
             return null;
         }
-        List<E> list = ObjectMapper.shared().readList(jsonBytes, elementType);
+        long rf = globalReadFeatures.get();
+        List<E> list = rf != 0
+                ? ObjectMapper.shared().readList(jsonBytes, elementType, rf)
+                : ObjectMapper.shared().readList(jsonBytes, elementType);
         if (list == null) {
             return null;
         }
@@ -1710,14 +1820,31 @@ public final class JSON {
      * Register a custom ObjectReader for a specific type on the shared ObjectMapper.
      */
     public static void register(Type type, ObjectReader<?> objectReader) {
-        ObjectMapper.shared().registerReader(type, objectReader);
+        if (objectReader == null) {
+            ObjectMapper.shared().unregisterReader(type);
+        } else {
+            ObjectMapper.shared().registerReader(type, objectReader);
+        }
     }
 
     /**
      * Register a custom ObjectWriter for a specific type on the shared ObjectMapper.
+     * Passing null removes any previously registered writer.
      */
     public static void register(Type type, ObjectWriter<?> objectWriter) {
-        ObjectMapper.shared().registerWriter(type, objectWriter);
+        if (objectWriter == null) {
+            ObjectMapper.shared().unregisterWriter(type);
+        } else {
+            ObjectMapper.shared().registerWriter(type, objectWriter);
+        }
+    }
+
+    /**
+     * Unregister custom ObjectReader and ObjectWriter for a specific type.
+     */
+    public static void unregister(Type type) {
+        ObjectMapper.shared().unregisterReader(type);
+        ObjectMapper.shared().unregisterWriter(type);
     }
 
     /**
@@ -1741,10 +1868,8 @@ public final class JSON {
     private static final AtomicLong globalWriteFeatures = new AtomicLong();
 
     /**
-     * Enable read features globally.
-     * <p>Note: These features are queryable via {@link #isEnabled(ReadFeature)} but are not
-     * automatically applied to parsing operations. For parse-time feature control, use
-     * {@link #parseObject(String, Class, ReadFeature...)} or configure an {@link ObjectMapper}.</p>
+     * Enable read features globally for all subsequent parsing operations
+     * using the static {@code JSON.parse*} methods.
      */
     public static void config(ReadFeature... features) {
         long mask = 0;
@@ -1767,10 +1892,8 @@ public final class JSON {
     }
 
     /**
-     * Enable write features globally.
-     * <p>Note: These features are queryable via {@link #isEnabled(WriteFeature)} but are not
-     * automatically applied to serialization operations. For write-time feature control, use
-     * {@link #toJSONString(Object, WriteFeature...)} or configure an {@link ObjectMapper}.</p>
+     * Enable write features globally for all subsequent serialization operations
+     * using the static {@code JSON.toJSONString}/{@code toJSONBytes} methods.
      */
     public static void config(WriteFeature... features) {
         long mask = 0;

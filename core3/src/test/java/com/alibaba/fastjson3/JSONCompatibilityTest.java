@@ -402,4 +402,320 @@ public class JSONCompatibilityTest {
         assertTrue(JSON.isValidArray("[1,2,3]".toCharArray()));
         assertFalse(JSON.isValidArray(USER_JSON.toCharArray()));
     }
+
+    // ==================== config() effectiveness ====================
+
+    @Test
+    public void test_config_affects_parsing() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            // Single-quoted JSON should work when AllowSingleQuotes is globally enabled
+            JSONObject obj = JSON.parseObject("{'a':1}");
+            assertEquals(1, obj.getIntValue("a"));
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseObject_typed() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            User user = JSON.parseObject("{'name':'Alice','age':30}", User.class);
+            assertEquals("Alice", user.name);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_serialization() {
+        JSON.config(WriteFeature.PrettyFormat, false);
+        try {
+            JSON.config(WriteFeature.PrettyFormat);
+            String json = JSON.toJSONString(JSON.object("a", 1));
+            assertTrue(json.contains("\n"));
+        } finally {
+            JSON.config(WriteFeature.PrettyFormat, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_toJSONBytes() {
+        JSON.config(WriteFeature.PrettyFormat, false);
+        try {
+            JSON.config(WriteFeature.PrettyFormat);
+            byte[] bytes = JSON.toJSONBytes(JSON.object("a", 1));
+            String json = new String(bytes, StandardCharsets.UTF_8);
+            assertTrue(json.contains("\n"));
+        } finally {
+            JSON.config(WriteFeature.PrettyFormat, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parse_string() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            Object result = JSON.parse("{'a':1}");
+            assertInstanceOf(JSONObject.class, result);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parse_bytes() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            Object result = JSON.parse("{'a':1}".getBytes(StandardCharsets.UTF_8));
+            assertInstanceOf(JSONObject.class, result);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseObject_bytes() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            JSONObject obj = JSON.parseObject("{'a':1}".getBytes(StandardCharsets.UTF_8));
+            assertEquals(1, obj.getIntValue("a"));
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseObject_bytes_class() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            User user = JSON.parseObject("{'name':'Alice','age':30}".getBytes(StandardCharsets.UTF_8), User.class);
+            assertEquals("Alice", user.name);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseObject_string_type() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            User user = JSON.parseObject("{'name':'Alice','age':30}", (java.lang.reflect.Type) User.class);
+            assertEquals("Alice", user.name);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseObject_bytes_type() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            User user = JSON.parseObject("{'name':'Alice','age':30}".getBytes(StandardCharsets.UTF_8),
+                    (java.lang.reflect.Type) User.class);
+            assertEquals("Alice", user.name);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseObject_typeref() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            User user = JSON.parseObject("{'name':'Alice','age':30}",
+                    new TypeReference<User>() {});
+            assertEquals("Alice", user.name);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseArray_string() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            JSONArray arr = JSON.parseArray("[{'a':1}]");
+            assertEquals(1, arr.size());
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseArray_bytes() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            JSONArray arr = JSON.parseArray("[{'a':1}]".getBytes(StandardCharsets.UTF_8));
+            assertEquals(1, arr.size());
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseArray_string_class() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            List<User> users = JSON.parseArray("[{'name':'Alice','age':30}]", User.class);
+            assertEquals(1, users.size());
+            assertEquals("Alice", users.get(0).name);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseArray_bytes_class() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            List<User> users = JSON.parseArray("[{'name':'Alice','age':30}]".getBytes(StandardCharsets.UTF_8), User.class);
+            assertEquals(1, users.size());
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseList() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            List<User> users = JSON.parseList("[{'name':'Alice','age':30}]", User.class);
+            assertEquals(1, users.size());
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseList_bytes() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            List<User> users = JSON.parseList("[{'name':'Alice','age':30}]".getBytes(StandardCharsets.UTF_8), User.class);
+            assertEquals(1, users.size());
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseSet() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            java.util.Set<User> users = JSON.parseSet("[{'name':'Alice','age':30}]", User.class);
+            assertEquals(1, users.size());
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseMap() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            java.util.Map<String, Object> map = JSON.parseMap("{'name':'Alice'}", Object.class);
+            assertEquals("Alice", map.get("name"));
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseTypedArray() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            User[] users = JSON.parseTypedArray("[{'name':'Alice','age':30}]", User.class);
+            assertEquals(1, users.length);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseObject_inputStream() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            InputStream in = new ByteArrayInputStream("{'name':'Alice','age':30}".getBytes(StandardCharsets.UTF_8));
+            User user = JSON.parseObject(in, User.class);
+            assertEquals("Alice", user.name);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseObject_inputStream_type() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            InputStream in = new ByteArrayInputStream("{'name':'Alice','age':30}".getBytes(StandardCharsets.UTF_8));
+            User user = JSON.parseObject(in, (java.lang.reflect.Type) User.class);
+            assertEquals("Alice", user.name);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_writeTo() {
+        JSON.config(WriteFeature.PrettyFormat, false);
+        try {
+            JSON.config(WriteFeature.PrettyFormat);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            JSON.writeTo(out, JSON.object("a", 1));
+            assertTrue(out.toString(StandardCharsets.UTF_8).contains("\n"));
+        } finally {
+            JSON.config(WriteFeature.PrettyFormat, false);
+        }
+    }
+
+    // ==================== unregister ====================
+
+    @Test
+    public void test_unregister() {
+        // Register a custom reader
+        JSON.register(SpecialUser.class, new ObjectReader<SpecialUser>() {
+            @Override
+            public SpecialUser readObject(JSONParser parser, java.lang.reflect.Type fieldType,
+                                          Object fieldName, long features) {
+                parser.readAny();
+                return new SpecialUser("Custom");
+            }
+        });
+        assertEquals("Custom", JSON.parseObject("{\"tag\":\"x\"}", SpecialUser.class).tag);
+
+        // Unregister
+        JSON.unregister(SpecialUser.class);
+        // Should now use default deserialization
+        SpecialUser user = JSON.parseObject("{\"tag\":\"original\"}", SpecialUser.class);
+        assertEquals("original", user.tag);
+    }
+
+    @Test
+    public void test_register_null_unregisters() {
+        JSON.register(SpecialUser.class, (ObjectReader<?>) null);
+        // Should use default deserialization (no NPE)
+        SpecialUser user = JSON.parseObject("{\"tag\":\"test\"}", SpecialUser.class);
+        assertEquals("test", user.tag);
+    }
 }

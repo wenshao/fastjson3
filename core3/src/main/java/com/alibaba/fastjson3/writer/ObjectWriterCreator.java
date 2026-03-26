@@ -204,7 +204,7 @@ public final class ObjectWriterCreator {
             if (jacksonBean != null) {
                 typeKey = jacksonBean.typeKey();
                 if (typeName == null) {
-                    typeName = type.getSimpleName();
+                    typeName = resolveJacksonTypeName(type, jacksonBean);
                 }
             }
         }
@@ -555,7 +555,7 @@ public final class ObjectWriterCreator {
             if (jacksonBean != null) {
                 typeKey = jacksonBean.typeKey();
                 if (typeName == null) {
-                    typeName = type.getSimpleName();
+                    typeName = resolveJacksonTypeName(type, jacksonBean);
                 }
             }
         }
@@ -954,6 +954,21 @@ public final class ObjectWriterCreator {
             }
         }
         return null;
+    }
+
+    /**
+     * Resolve the Jackson subtype name for a concrete class by looking up
+     * the parent's {@code @JsonSubTypes} mapping.
+     */
+    private static String resolveJacksonTypeName(Class<?> type, JacksonAnnotationSupport.BeanInfo parentBean) {
+        if (parentBean.subTypes() != null) {
+            for (var entry : parentBean.subTypes().entrySet()) {
+                if (entry.getValue() == type) {
+                    return entry.getKey();
+                }
+            }
+        }
+        return type.getSimpleName();
     }
 
     /**
