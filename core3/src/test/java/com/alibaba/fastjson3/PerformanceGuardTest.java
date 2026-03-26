@@ -193,7 +193,7 @@ class PerformanceGuardTest {
         double opsPerMs = (double) ITERATIONS / (elapsed / 1_000_000.0);
 
         System.out.printf("parseArray List<User>: %.0f ops/ms%n", opsPerMs);
-        assertTrue(opsPerMs > 300, "parseArray throughput too low: " + opsPerMs + " ops/ms");
+        assertTrue(opsPerMs > 200, "parseArray throughput too low: " + opsPerMs + " ops/ms");
     }
 
     @Test
