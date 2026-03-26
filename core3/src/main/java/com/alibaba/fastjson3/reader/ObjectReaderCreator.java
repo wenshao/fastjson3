@@ -623,7 +623,11 @@ public final class ObjectReaderCreator {
                                 + ", known types=" + readerMap.keySet());
             }
 
-            // Direct conversion: JSONObject → byte[] → subtype (single parse, no double serialization)
+            // Fast path: read directly from JSONObject (no byte[] round-trip)
+            if (subReader instanceof ReflectionObjectReader<?> reflectReader) {
+                return (T) reflectReader.readFromJSONObject(jsonObj, features);
+            }
+            // Fallback for ASM-generated readers
             byte[] bytes = com.alibaba.fastjson3.JSON.toJSONBytes(jsonObj);
             try (JSONParser sub = JSONParser.of(bytes)) {
                 return (T) subReader.readObject(sub, sealedType, null, features);
@@ -661,6 +665,11 @@ public final class ObjectReaderCreator {
                                 + ", typeKey='" + typeKey + "', value='" + typeName + "'"
                                 + ", known types=" + readerMap.keySet());
             }
+            // Fast path: read directly from JSONObject (no byte[] round-trip)
+            if (subReader instanceof ReflectionObjectReader<?> reflectReader) {
+                return (T) reflectReader.readFromJSONObject(jsonObj, features);
+            }
+            // Fallback for ASM-generated readers
             byte[] bytes = com.alibaba.fastjson3.JSON.toJSONBytes(jsonObj);
             try (JSONParser sub = JSONParser.of(bytes)) {
                 return (T) subReader.readObject(sub, baseType, null, features);
@@ -1645,6 +1654,57 @@ public final class ObjectReaderCreator {
             if (typeSchema != null && instance != null) {
                 typeSchema.assertValidate(instance);
             }
+        }
+
+        /**
+         * Read directly from a JSONObject without byte[] round-trip.
+         * Used by polymorphic readers (sealed class, Jackson @JsonTypeInfo) to
+         * avoid the serialize→parse cycle after type discriminator inspection.
+         */
+        T readFromJSONObject(com.alibaba.fastjson3.JSONObject jsonObj, long features) {
+            ensureFieldReaders();
+            T instance = createInstance(features);
+            long fieldSetMask = 0;
+
+            for (int i = 0; i < fieldReaders.length; i++) {
+                FieldReader fr = fieldReaders[i];
+                Object value = jsonObj.get(fr.fieldName);
+
+                // Check alternate names if primary not found
+                if (value == null && !jsonObj.containsKey(fr.fieldName)) {
+                    for (String alt : fr.alternateNames) {
+                        value = jsonObj.get(alt);
+                        if (value != null || jsonObj.containsKey(alt)) {
+                            break;
+                        }
+                    }
+                }
+
+                if (value != null) {
+                    Object converted = fr.convertValue(value);
+                    fr.setFieldValue(instance, converted);
+                    if (i < 64) {
+                        fieldSetMask |= (1L << i);
+                    }
+                }
+            }
+
+            // Handle @JSONField(anySetter=true) for unmapped fields
+            if (anySetterMethod != null) {
+                java.util.Set<String> knownNames = fieldReaderMap.keySet();
+                for (var entry : jsonObj.entrySet()) {
+                    if (!knownNames.contains(entry.getKey())) {
+                        try {
+                            anySetterMethod.invoke(instance, entry.getKey(), entry.getValue());
+                        } catch (Exception e) {
+                            throw new JSONException("anySetter error: " + e.getMessage(), e);
+                        }
+                    }
+                }
+            }
+
+            applyDefaults(instance, fieldSetMask);
+            return instance;
         }
 
         private void applyDefaults(T instance, long fieldSetMask) {

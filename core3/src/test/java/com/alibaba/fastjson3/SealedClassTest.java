@@ -119,4 +119,45 @@ class SealedClassTest {
     public static final class SingleChild implements SingleParent {
         public String message;
     }
+
+    // ==================== readFromJSONObject edge cases ====================
+
+    @Test
+    void sealedWithAlternateNames() {
+        // "n" is an alternate name for "name" in AltAnimal subtypes
+        String json = "{\"@type\":\"AltCat\",\"n\":\"Whiskers\",\"lives\":9}";
+        AltAnimal animal = mapper.readValue(json, AltAnimal.class);
+        assertInstanceOf(AltCat.class, animal);
+        assertEquals("Whiskers", ((AltCat) animal).name);
+        assertEquals(9, ((AltCat) animal).lives);
+    }
+
+    @Test
+    void sealedWithNullField() {
+        String json = "{\"@type\":\"Cat\",\"name\":null,\"indoor\":false}";
+        Animal animal = mapper.readValue(json, Animal.class);
+        assertInstanceOf(Cat.class, animal);
+        assertNull(((Cat) animal).name);
+    }
+
+    @Test
+    void sealedWithMultipleFields() {
+        // Test that all fields are correctly read from JSONObject
+        String json = "{\"@type\":\"Dog\",\"name\":\"Rex\",\"breed\":\"Golden Retriever\"}";
+        Animal animal = mapper.readValue(json, Animal.class);
+        assertInstanceOf(Dog.class, animal);
+        Dog dog = (Dog) animal;
+        assertEquals("Rex", dog.name);
+        assertEquals("Golden Retriever", dog.breed);
+    }
+
+    @JSONType(typeKey = "@type")
+    public sealed interface AltAnimal permits AltCat {
+    }
+
+    public static final class AltCat implements AltAnimal {
+        @com.alibaba.fastjson3.annotation.JSONField(alternateNames = {"n"})
+        public String name;
+        public int lives;
+    }
 }
