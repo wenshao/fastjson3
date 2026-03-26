@@ -606,6 +606,32 @@ public class JacksonAnnotationTest {
         assertNull(animal);
     }
 
+    @Test
+    public void testJsonTypeInfoRoundTrip() {
+        CatBean cat = new CatBean();
+        cat.name = "Whiskers";
+        cat.lives = 9;
+        // Serialize with type discriminator
+        String json = MAPPER.writeValueAsString(cat);
+        // Deserialize back using base type
+        AnimalBean deserialized = MAPPER.readValue(json, AnimalBean.class);
+        assertInstanceOf(CatBean.class, deserialized);
+        assertEquals("Whiskers", deserialized.name);
+        assertEquals(9, ((CatBean) deserialized).lives);
+    }
+
+    @Test
+    public void testJsonTypeInfoRoundTripDog() {
+        DogBean dog = new DogBean();
+        dog.name = "Rex";
+        dog.breed = "Labrador";
+        String json = MAPPER.writeValueAsString(dog);
+        AnimalBean deserialized = MAPPER.readValue(json, AnimalBean.class);
+        assertInstanceOf(DogBean.class, deserialized);
+        assertEquals("Rex", deserialized.name);
+        assertEquals("Labrador", ((DogBean) deserialized).breed);
+    }
+
     // ==================== @JsonTypeInfo on interface ====================
 
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "kind")

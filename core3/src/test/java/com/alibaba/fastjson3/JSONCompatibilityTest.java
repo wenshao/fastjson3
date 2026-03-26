@@ -402,4 +402,86 @@ public class JSONCompatibilityTest {
         assertTrue(JSON.isValidArray("[1,2,3]".toCharArray()));
         assertFalse(JSON.isValidArray(USER_JSON.toCharArray()));
     }
+
+    // ==================== config() effectiveness ====================
+
+    @Test
+    public void test_config_affects_parsing() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            // Single-quoted JSON should work when AllowSingleQuotes is globally enabled
+            JSONObject obj = JSON.parseObject("{'a':1}");
+            assertEquals(1, obj.getIntValue("a"));
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_parseObject_typed() {
+        JSON.config(ReadFeature.AllowSingleQuotes, false);
+        try {
+            JSON.config(ReadFeature.AllowSingleQuotes);
+            User user = JSON.parseObject("{'name':'Alice','age':30}", User.class);
+            assertEquals("Alice", user.name);
+        } finally {
+            JSON.config(ReadFeature.AllowSingleQuotes, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_serialization() {
+        JSON.config(WriteFeature.PrettyFormat, false);
+        try {
+            JSON.config(WriteFeature.PrettyFormat);
+            String json = JSON.toJSONString(JSON.object("a", 1));
+            assertTrue(json.contains("\n"));
+        } finally {
+            JSON.config(WriteFeature.PrettyFormat, false);
+        }
+    }
+
+    @Test
+    public void test_config_affects_toJSONBytes() {
+        JSON.config(WriteFeature.PrettyFormat, false);
+        try {
+            JSON.config(WriteFeature.PrettyFormat);
+            byte[] bytes = JSON.toJSONBytes(JSON.object("a", 1));
+            String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(json.contains("\n"));
+        } finally {
+            JSON.config(WriteFeature.PrettyFormat, false);
+        }
+    }
+
+    // ==================== unregister ====================
+
+    @Test
+    public void test_unregister() {
+        // Register a custom reader
+        JSON.register(SpecialUser.class, new ObjectReader<SpecialUser>() {
+            @Override
+            public SpecialUser readObject(JSONParser parser, java.lang.reflect.Type fieldType,
+                                          Object fieldName, long features) {
+                parser.readAny();
+                return new SpecialUser("Custom");
+            }
+        });
+        assertEquals("Custom", JSON.parseObject("{\"tag\":\"x\"}", SpecialUser.class).tag);
+
+        // Unregister
+        JSON.unregister(SpecialUser.class);
+        // Should now use default deserialization
+        SpecialUser user = JSON.parseObject("{\"tag\":\"original\"}", SpecialUser.class);
+        assertEquals("original", user.tag);
+    }
+
+    @Test
+    public void test_register_null_unregisters() {
+        JSON.register(SpecialUser.class, (ObjectReader<?>) null);
+        // Should use default deserialization (no NPE)
+        SpecialUser user = JSON.parseObject("{\"tag\":\"test\"}", SpecialUser.class);
+        assertEquals("test", user.tag);
+    }
 }

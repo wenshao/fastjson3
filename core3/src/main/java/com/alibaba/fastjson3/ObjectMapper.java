@@ -1609,6 +1609,20 @@ public final class ObjectMapper {
     }
 
     /**
+     * Remove a previously registered ObjectReader for a specific type.
+     */
+    public void unregisterReader(Type type) {
+        readerCache.remove(type);
+    }
+
+    /**
+     * Remove a previously registered ObjectWriter for a specific type.
+     */
+    public void unregisterWriter(Type type) {
+        writerCache.remove(type);
+    }
+
+    /**
      * Clean up resources to support ClassLoader unloading.
      *
      * <p>Clears all cached ObjectReader and ObjectWriter instances, and signals
