@@ -14,7 +14,7 @@ import com.alibaba.fastjson3.JSONGenerator;
  * </pre>
  */
 @FunctionalInterface
-public interface BeforeFilter {
+public interface BeforeFilter extends Filter {
     /**
      * Called after startObject() but before any field is written.
      *

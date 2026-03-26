@@ -12,7 +12,7 @@ package com.alibaba.fastjson3.filter;
  * </pre>
  */
 @FunctionalInterface
-public interface LabelFilter {
+public interface LabelFilter extends Filter {
     /**
      * @param label the label string from @JSONField(label=)
      * @return true to include the field, false to exclude

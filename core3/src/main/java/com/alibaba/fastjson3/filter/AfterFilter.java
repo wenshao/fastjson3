@@ -14,7 +14,7 @@ import com.alibaba.fastjson3.JSONGenerator;
  * </pre>
  */
 @FunctionalInterface
-public interface AfterFilter {
+public interface AfterFilter extends Filter {
     /**
      * Called after all fields are written but before endObject().
      *
