@@ -295,6 +295,223 @@ String result = JSON.mergePatch(target, patch);
 // result: {"a":1,"c":3}
 ```
 
+## 更多解析重载
+
+### 从 byte[] / InputStream / Reader / char[] / URL 解析
+
+```java
+// byte[] → 自动检测类型
+public static Object parse(byte[] jsonBytes)
+public static Object parse(byte[] jsonBytes, ReadFeature... features)
+
+// InputStream → 自动检测
+public static Object parse(InputStream in)
+
+// char[] → 自动检测
+public static Object parse(char[] chars)
+
+// byte[] → 泛型类型
+public static <T> T parseObject(byte[] jsonBytes, Type type)
+public static <T> T parseObject(byte[] jsonBytes, Type type, ReadFeature... features)
+
+// String → 泛型类型 + 特性
+public static <T> T parseObject(String json, Type type, ReadFeature... features)
+
+// char[] → JSONObject / 类型
+public static JSONObject parseObject(char[] chars)
+public static <T> T parseObject(char[] chars, Class<T> type)
+
+// URL → JSONObject / 类型
+public static JSONObject parseObject(URL url)
+public static <T> T parseObject(URL url, Class<T> type)
+
+// Reader → JSONObject / 类型
+public static JSONObject parseObject(Reader reader)
+public static <T> T parseObject(Reader reader, Class<T> type)
+
+// InputStream → 泛型
+public static <T> T parseObject(InputStream in, Type type)
+public static <T> T parseObject(InputStream in, Class<T> type, ReadFeature... features)
+
+// parseArray 额外重载
+public static <T> List<T> parseArray(String json, Class<T> type, ReadFeature... features)
+public static <T> List<T> parseArray(byte[] jsonBytes, Class<T> type)
+public static <T> List<T> parseArray(byte[] jsonBytes, Class<T> type, ReadFeature... features)
+public static JSONArray parseArray(InputStream in)
+public static JSONArray parseArray(Reader reader)
+public static <T> List<T> parseArray(InputStream in, Class<T> type)
+
+// parseAny — 自动检测类型
+public static Object parseAny(String json)
+public static Object parseAny(String json, ParseConfig config)
+
+// 集合解析 byte[] 版本
+public static <E> List<E> parseList(byte[] jsonBytes, Class<E> elementType)
+public static <E> List<E> parseList(byte[] jsonBytes, Class<E> elementType, ParseConfig config)
+public static <E> Set<E> parseSet(byte[] jsonBytes, Class<E> elementType)
+public static <E> Set<E> parseSet(byte[] jsonBytes, Class<E> elementType, ParseConfig config)
+public static <V> Map<String, V> parseMap(byte[] jsonBytes, Class<V> valueType)
+public static <V> Map<String, V> parseMap(byte[] jsonBytes, Class<V> valueType, ParseConfig config)
+public static <E> E[] parseTypedArray(byte[] jsonBytes, Class<E> elementType)
+public static <E> E[] parseTypedArray(byte[] jsonBytes, Class<E> elementType, ParseConfig config)
+```
+
+## 带 Filter 的序列化
+
+```java
+// 单 Filter
+public static String toJSONString(Object obj, Filter filter, WriteFeature... features)
+
+// 多 Filter
+public static String toJSONString(Object obj, Filter[] filters, WriteFeature... features)
+
+// byte[] + Filter
+public static byte[] toJSONBytes(Object obj, Filter[] filters, WriteFeature... features)
+```
+
+**示例：**
+
+```java
+// 排除密码字段
+PropertyFilter filter = (source, name, value) -> !"password".equals(name);
+String json = JSON.toJSONString(user, filter);
+
+// 转换字段名为大写
+NameFilter nameFilter = (source, name, value) -> name.toUpperCase();
+String json = JSON.toJSONString(user, nameFilter);
+```
+
+## OutputStream 写入
+
+```java
+// 写入 OutputStream（返回写入字节数）
+public static int writeTo(OutputStream out, Object object)
+public static int writeTo(OutputStream out, Object object, WriteFeature... features)
+public static int writeTo(OutputStream out, Object object, Filter[] filters, WriteFeature... features)
+```
+
+**示例：**
+
+```java
+try (OutputStream out = new FileOutputStream("user.json")) {
+    JSON.writeTo(out, user);
+}
+```
+
+## 转换方法
+
+```java
+// Java 对象 → JSONObject/JSONArray（JSON 树）
+public static Object toJSON(Object object)
+
+// JSON 树 → Java 对象
+public static <T> T toJavaObject(Object object, Class<T> clazz)
+
+// 深拷贝（通过 JSON 序列化/反序列化）
+public static <T> T copy(T object)
+
+// 跨类型拷贝
+public static <T> T copyTo(Object object, Class<T> targetClass)
+```
+
+**示例：**
+
+```java
+// POJO → JSONObject
+JSONObject obj = (JSONObject) JSON.toJSON(user);
+
+// JSONObject → POJO
+User user = JSON.toJavaObject(obj, User.class);
+
+// 深拷贝
+User copy = JSON.copy(original);
+
+// 跨类型拷贝
+UserDTO dto = JSON.copyTo(userEntity, UserDTO.class);
+```
+
+## 全局注册
+
+```java
+// 注册自定义 ObjectReader（传 null 取消注册）
+public static void register(Type type, ObjectReader<?> objectReader)
+
+// 注册自定义 ObjectWriter（传 null 取消注册）
+public static void register(Type type, ObjectWriter<?> objectWriter)
+
+// 取消注册（同时移除 reader 和 writer）
+public static void unregister(Type type)
+
+// 注册 MixIn 注解
+public static void mixIn(Class<?> target, Class<?> mixinSource)
+```
+
+**示例：**
+
+```java
+// 自定义序列化器
+JSON.register(Money.class, new MoneyWriter());
+
+// 取消注册
+JSON.unregister(Money.class);
+
+// MixIn 对第三方类注入注解
+JSON.mixIn(ThirdPartyClass.class, ThirdPartyMixin.class);
+```
+
+## 全局配置
+
+```java
+// 启用全局解析特性
+public static void config(ReadFeature... features)
+public static void config(ReadFeature feature, boolean state)
+
+// 启用全局序列化特性
+public static void config(WriteFeature... features)
+public static void config(WriteFeature feature, boolean state)
+
+// 查询全局特性状态
+public static boolean isEnabled(ReadFeature feature)
+public static boolean isEnabled(WriteFeature feature)
+```
+
+**示例：**
+
+```java
+// 全局允许单引号 JSON
+JSON.config(ReadFeature.AllowSingleQuotes);
+
+// 全局美化输出
+JSON.config(WriteFeature.PrettyFormat);
+
+// 查询
+if (JSON.isEnabled(ReadFeature.AllowSingleQuotes)) { ... }
+
+// 禁用
+JSON.config(WriteFeature.PrettyFormat, false);
+```
+
+> **注意**：`config()` 设置的全局特性影响所有 `JSON.parse*` / `JSON.toJSONString` / `JSON.toJSONBytes` 方法。
+> 带显式 `ReadFeature...` 或 `ParseConfig` 参数的方法不受全局配置影响。
+
+## char[] 验证
+
+```java
+public static boolean isValid(char[] chars)
+public static boolean isValidObject(char[] chars)
+public static boolean isValidArray(char[] chars)
+```
+
+## 便捷方法
+
+```java
+// 美化输出
+public static String writePretty(Object obj)
+
+// 紧凑输出
+public static String writeCompact(Object obj)
+```
+
 ## 使用建议
 
 1. **简单场景** - 使用 `JSON` 静态方法足够

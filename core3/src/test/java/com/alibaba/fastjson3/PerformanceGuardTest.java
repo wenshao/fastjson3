@@ -176,4 +176,46 @@ class PerformanceGuardTest {
         System.out.printf("Round-trip (read+write): %.0f ops/ms%n", opsPerMs);
         assertTrue(opsPerMs > 200, "Round-trip throughput too low: " + opsPerMs + " ops/ms");
     }
+
+    @Test
+    void parseArrayThroughput() {
+        String json = "[" + USER_JSON + "," + USER_JSON + "," + USER_JSON + "]";
+
+        for (int i = 0; i < WARMUP; i++) {
+            JSON.parseArray(json, User.class);
+        }
+
+        long start = System.nanoTime();
+        for (int i = 0; i < ITERATIONS; i++) {
+            JSON.parseArray(json, User.class);
+        }
+        long elapsed = System.nanoTime() - start;
+        double opsPerMs = (double) ITERATIONS / (elapsed / 1_000_000.0);
+
+        System.out.printf("parseArray List<User>: %.0f ops/ms%n", opsPerMs);
+        assertTrue(opsPerMs > 300, "parseArray throughput too low: " + opsPerMs + " ops/ms");
+    }
+
+    @Test
+    void toJSONConversionThroughput() {
+        User user = new User();
+        user.name = "bench";
+        user.age = 25;
+        user.active = true;
+        user.score = 95.5;
+
+        for (int i = 0; i < WARMUP; i++) {
+            JSON.toJSON(user);
+        }
+
+        long start = System.nanoTime();
+        for (int i = 0; i < ITERATIONS; i++) {
+            JSON.toJSON(user);
+        }
+        long elapsed = System.nanoTime() - start;
+        double opsPerMs = (double) ITERATIONS / (elapsed / 1_000_000.0);
+
+        System.out.printf("toJSON conversion: %.0f ops/ms%n", opsPerMs);
+        assertTrue(opsPerMs > 200, "toJSON throughput too low: " + opsPerMs + " ops/ms");
+    }
 }
