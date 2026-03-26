@@ -3,6 +3,8 @@ package com.alibaba.fastjson3.annotation;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Optional Jackson annotation support via pure reflection.
@@ -49,7 +51,9 @@ public final class JacksonAnnotationSupport {
             boolean noDeserialize,
             Inclusion inclusion,
             String format,
-            boolean isValue
+            boolean isValue,
+            Class<?> serializeUsing,
+            Class<?> deserializeUsing
     ) {
     }
 
@@ -71,6 +75,8 @@ public final class JacksonAnnotationSupport {
         Inclusion inclusion = null;
         String format = null;
         boolean isValue = false;
+        Class<?> serializeUsing = null;
+        Class<?> deserializeUsing = null;
         boolean found = false;
 
         for (Annotation ann : annotations) {
@@ -148,6 +154,22 @@ public final class JacksonAnnotationSupport {
                         }
                     }
                 }
+                case "com.fasterxml.jackson.databind.annotation.JsonSerialize" -> {
+                    Object v = invoke(ann, "using");
+                    if (v instanceof Class<?> c && c != void.class
+                            && !c.getName().endsWith("$None")) {
+                        found = true;
+                        serializeUsing = c;
+                    }
+                }
+                case "com.fasterxml.jackson.databind.annotation.JsonDeserialize" -> {
+                    Object v = invoke(ann, "using");
+                    if (v instanceof Class<?> c && c != void.class
+                            && !c.getName().endsWith("$None")) {
+                        found = true;
+                        deserializeUsing = c;
+                    }
+                }
                 default -> {
                     // skip unknown annotations
                 }
@@ -155,7 +177,8 @@ public final class JacksonAnnotationSupport {
         }
 
         return found ? new FieldInfo(name, alternateNames, ordinal, required,
-                noSerialize, noDeserialize, inclusion, format, isValue) : null;
+                noSerialize, noDeserialize, inclusion, format, isValue,
+                serializeUsing, deserializeUsing) : null;
     }
 
     // ==================== Class-level info ====================
@@ -169,7 +192,9 @@ public final class JacksonAnnotationSupport {
             String[] propertyOrder,
             Boolean alphabetic,
             NamingStrategy naming,
-            Inclusion inclusion
+            Inclusion inclusion,
+            String typeKey,
+            Map<String, Class<?>> subTypes
     ) {
     }
 
@@ -192,6 +217,8 @@ public final class JacksonAnnotationSupport {
         Boolean alphabetic = null;
         NamingStrategy naming = null;
         Inclusion inclusion = null;
+        String typeKey = null;
+        Map<String, Class<?>> subTypes = null;
         boolean found = false;
 
         for (Annotation ann : annotations) {
@@ -235,6 +262,33 @@ public final class JacksonAnnotationSupport {
                         }
                     }
                 }
+                case "com.fasterxml.jackson.annotation.JsonTypeInfo" -> {
+                    Object use = invoke(ann, "use");
+                    if (use instanceof Enum<?> e && "NAME".equals(e.name())) {
+                        found = true;
+                        Object prop = invoke(ann, "property");
+                        typeKey = (prop instanceof String s && !s.isEmpty()) ? s : "@type";
+                    }
+                }
+                case "com.fasterxml.jackson.annotation.JsonSubTypes" -> {
+                    Object v = invoke(ann, "value");
+                    if (v != null && v.getClass().isArray()) {
+                        Object[] types = (Object[]) v;
+                        if (types.length > 0) {
+                            found = true;
+                            subTypes = new LinkedHashMap<>();
+                            for (Object t : types) {
+                                Object value = invoke((Annotation) t, "value");
+                                Object name = invoke((Annotation) t, "name");
+                                if (value instanceof Class<?> c) {
+                                    String n = (name instanceof String s && !s.isEmpty())
+                                            ? s : c.getSimpleName();
+                                    subTypes.put(n, c);
+                                }
+                            }
+                        }
+                    }
+                }
                 default -> {
                     // skip unknown annotations
                 }
@@ -242,7 +296,8 @@ public final class JacksonAnnotationSupport {
         }
 
         return found ? new BeanInfo(ignoreProperties, propertyOrder, alphabetic,
-                naming, inclusion) : null;
+                naming, inclusion, typeKey,
+                subTypes != null ? Map.copyOf(subTypes) : null) : null;
     }
 
     // ==================== Constructor/Method checks ====================

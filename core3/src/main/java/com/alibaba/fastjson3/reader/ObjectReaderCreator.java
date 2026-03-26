@@ -50,6 +50,14 @@ public final class ObjectReaderCreator {
             return createSealedReader(type, mixIn);
         }
 
+        // Jackson @JsonTypeInfo + @JsonSubTypes: polymorphic deserialization for non-sealed types
+        if (useJacksonAnnotation) {
+            JacksonAnnotationSupport.BeanInfo jacksonBean = JacksonAnnotationSupport.getBeanInfo(type);
+            if (jacksonBean != null && jacksonBean.typeKey() != null && jacksonBean.subTypes() != null) {
+                return createJacksonPolymorphicReader(type, mixIn, jacksonBean.typeKey(), jacksonBean.subTypes());
+            }
+        }
+
         Constructor<T> constructor = resolveConstructor(type, mixIn, useJacksonAnnotation);
         constructor.setAccessible(true);
 
@@ -281,6 +289,9 @@ public final class ObjectReaderCreator {
                 if (format == null && jacksonField.format() != null && !jacksonField.format().isEmpty()) {
                     format = jacksonField.format();
                 }
+                if (deserializeUsingClass == null && jacksonField.deserializeUsing() != null) {
+                    deserializeUsingClass = jacksonField.deserializeUsing();
+                }
             }
 
             fieldReaderList.add(new FieldReader(
@@ -442,6 +453,9 @@ public final class ObjectReaderCreator {
                 }
                 if (format == null && jacksonField.format() != null && !jacksonField.format().isEmpty()) {
                     format = jacksonField.format();
+                }
+                if (deserializeUsingClass == null && jacksonField.deserializeUsing() != null) {
+                    deserializeUsingClass = jacksonField.deserializeUsing();
                 }
             }
 
@@ -613,6 +627,43 @@ public final class ObjectReaderCreator {
             byte[] bytes = com.alibaba.fastjson3.JSON.toJSONBytes(jsonObj);
             try (JSONParser sub = JSONParser.of(bytes)) {
                 return (T) subReader.readObject(sub, sealedType, null, features);
+            }
+        };
+    }
+
+    /**
+     * Create an ObjectReader for Jackson @JsonTypeInfo + @JsonSubTypes polymorphic deserialization.
+     * Same strategy as createSealedReader but uses Jackson-provided subtype mappings.
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectReader<T> createJacksonPolymorphicReader(
+            Class<T> baseType, Class<?> mixIn,
+            String typeKey, Map<String, Class<?>> subTypes) {
+        Map<String, ObjectReader<?>> readerMap = new LinkedHashMap<>();
+        for (Map.Entry<String, Class<?>> entry : subTypes.entrySet()) {
+            // Pass useJacksonAnnotation=true so subtypes also get Jackson annotation processing
+            ObjectReader<?> reader = createObjectReader(entry.getValue(), mixIn, true);
+            if (reader != null) {
+                readerMap.put(entry.getKey(), reader);
+            }
+        }
+
+        return (ObjectReader<T>) (JSONParser parser, java.lang.reflect.Type fieldType, Object fieldName, long features) -> {
+            if (parser.readNull()) {
+                return null;
+            }
+            com.alibaba.fastjson3.JSONObject jsonObj = parser.readObject();
+            String typeName = jsonObj.getString(typeKey);
+            ObjectReader<?> subReader = (typeName != null) ? readerMap.get(typeName) : null;
+            if (subReader == null) {
+                throw new com.alibaba.fastjson3.JSONException(
+                        "cannot determine subtype for " + baseType.getName()
+                                + ", typeKey='" + typeKey + "', value='" + typeName + "'"
+                                + ", known types=" + readerMap.keySet());
+            }
+            byte[] bytes = com.alibaba.fastjson3.JSON.toJSONBytes(jsonObj);
+            try (JSONParser sub = JSONParser.of(bytes)) {
+                return (T) subReader.readObject(sub, baseType, null, features);
             }
         };
     }

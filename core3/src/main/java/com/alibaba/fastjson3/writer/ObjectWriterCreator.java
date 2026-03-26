@@ -199,6 +199,15 @@ public final class ObjectWriterCreator {
 
         String typeName = (jsonType != null && !jsonType.typeName().isEmpty()) ? jsonType.typeName() : null;
         String typeKey = (jsonType != null && !jsonType.typeKey().isEmpty()) ? jsonType.typeKey() : null;
+        if (typeKey == null && useJacksonAnnotation) {
+            JacksonAnnotationSupport.BeanInfo jacksonBean = findJacksonBeanInfoWithTypeKey(type);
+            if (jacksonBean != null) {
+                typeKey = jacksonBean.typeKey();
+                if (typeName == null) {
+                    typeName = type.getSimpleName();
+                }
+            }
+        }
         return buildObjectWriter(writers, null, typeName, typeKey);
     }
 
@@ -369,7 +378,7 @@ public final class ObjectWriterCreator {
 
             // Resolve format, custom writer, label, field features, and unwrapped
             String format = resolveFormat(jsonField, jacksonField, backingField, mixIn, useJacksonAnnotation);
-            ObjectWriter<?> customWriter = resolveSerializeUsing(jsonField, backingField, mixIn);
+            ObjectWriter<?> customWriter = resolveSerializeUsing(jsonField, backingField, mixIn, jacksonField);
             String label = resolveLabel(jsonField, backingField, mixIn);
             long fieldFeatures = resolveFieldFeatures(jsonField);
             boolean unwrapped = jsonField != null && jsonField.unwrapped();
@@ -472,7 +481,7 @@ public final class ObjectWriterCreator {
             }
 
             String format = resolveFormat(jsonField, jacksonField, null, mixIn, useJacksonAnnotation);
-            ObjectWriter<?> customWriter = resolveSerializeUsing(jsonField, null, mixIn);
+            ObjectWriter<?> customWriter = resolveSerializeUsing(jsonField, null, mixIn, jacksonField);
             String label = resolveLabel(jsonField, null, mixIn);
             long fieldFeatures = resolveFieldFeatures(jsonField);
             boolean unwrapped = jsonField != null && jsonField.unwrapped();
@@ -541,6 +550,15 @@ public final class ObjectWriterCreator {
         // Pre-compute @JSONType(typeName/typeKey) — zero cost if not annotated
         String typeName = (jsonType != null && !jsonType.typeName().isEmpty()) ? jsonType.typeName() : null;
         String typeKey = (jsonType != null && !jsonType.typeKey().isEmpty()) ? jsonType.typeKey() : null;
+        if (typeKey == null && useJacksonAnnotation) {
+            JacksonAnnotationSupport.BeanInfo jacksonBean = findJacksonBeanInfoWithTypeKey(type);
+            if (jacksonBean != null) {
+                typeKey = jacksonBean.typeKey();
+                if (typeName == null) {
+                    typeName = type.getSimpleName();
+                }
+            }
+        }
 
         return buildObjectWriter(writers, anyGetterMethod, typeName, typeKey);
     }
@@ -637,18 +655,22 @@ public final class ObjectWriterCreator {
             generator.incrementDepth();
             try {
                 generator.startObject();
-                // WriteClassName: write @type as the first property
-                if (generator.writeClassName) {
+                // Write type discriminator: annotation-driven (@JSONType/@JsonTypeInfo)
+                // always writes; WriteClassName feature respects skip rules
+                if (typeName != null || typeKey != null) {
+                    String key = typeKey != null ? typeKey : "@type";
+                    String name = typeName != null ? typeName : object.getClass().getName();
+                    generator.writeName(key);
+                    generator.writeString(name);
+                } else if (generator.writeClassName) {
                     Class<?> objectClass = object.getClass();
                     boolean skip = (generator.notWriteRootClassName && depth == 0)
                             || (generator.notWriteHashMapArrayListClassName && isCommonContainerType(objectClass))
                             || (generator.notWriteSetClassName && java.util.Set.class.isAssignableFrom(objectClass))
                             || (generator.notWriteNumberClassName && Number.class.isAssignableFrom(objectClass));
                     if (!skip) {
-                        String key = typeKey != null ? typeKey : "@type";
-                        String name = typeName != null ? typeName : objectClass.getName();
-                        generator.writeName(key);
-                        generator.writeString(name);
+                        generator.writeName("@type");
+                        generator.writeString(objectClass.getName());
                     }
                 }
                 // Before filters
@@ -900,7 +922,9 @@ public final class ObjectWriterCreator {
      * Resolve serializeUsing from @JSONField, instantiating the custom ObjectWriter.
      */
     @SuppressWarnings("unchecked")
-    private static ObjectWriter<?> resolveSerializeUsing(JSONField jsonField, Field backingField, Class<?> mixIn) {
+    private static ObjectWriter<?> resolveSerializeUsing(
+            JSONField jsonField, Field backingField, Class<?> mixIn,
+            JacksonAnnotationSupport.FieldInfo jacksonField) {
         Class<?> usingClass = null;
         if (jsonField != null && jsonField.serializeUsing() != Void.class) {
             usingClass = jsonField.serializeUsing();
@@ -913,6 +937,9 @@ public final class ObjectWriterCreator {
             if (fAnn != null && fAnn.serializeUsing() != Void.class) {
                 usingClass = fAnn.serializeUsing();
             }
+        }
+        if (usingClass == null && jacksonField != null && jacksonField.serializeUsing() != null) {
+            usingClass = jacksonField.serializeUsing();
         }
         if (usingClass != null) {
             if (!com.alibaba.fastjson3.ObjectWriter.class.isAssignableFrom(usingClass)) {
@@ -930,8 +957,27 @@ public final class ObjectWriterCreator {
     }
 
     /**
-     * Scan all methods for @JSONField(anyGetter = true) or Jackson @JsonAnyGetter.
-     * Separate from getter loop because anyGetter methods may not follow getXxx naming.
+     * Walk the class hierarchy (type → superclass → interfaces) to find Jackson
+     * {@code @JsonTypeInfo} with a typeKey. Needed because {@code @JsonTypeInfo} is not {@code @Inherited}.
+     */
+    private static JacksonAnnotationSupport.BeanInfo findJacksonBeanInfoWithTypeKey(Class<?> type) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            JacksonAnnotationSupport.BeanInfo info = JacksonAnnotationSupport.getBeanInfo(c);
+            if (info != null && info.typeKey() != null) {
+                return info;
+            }
+        }
+        for (Class<?> iface : type.getInterfaces()) {
+            JacksonAnnotationSupport.BeanInfo info = JacksonAnnotationSupport.getBeanInfo(iface);
+            if (info != null && info.typeKey() != null) {
+                return info;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Scan all methods for {@code @JSONField(anyGetter = true)} or Jackson {@code @JsonAnyGetter}.
      */
     private static Method findAnyGetterMethod(Class<?> type, Class<?> mixIn, boolean useJacksonAnnotation) {
         for (Method method : type.getMethods()) {
