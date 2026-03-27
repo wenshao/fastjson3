@@ -148,6 +148,12 @@ public abstract sealed class JSONParser implements Closeable
 
     static final int MAX_NESTING_DEPTH = 512;
 
+    /** Maximum string length (64 MB characters). Prevents OOM from crafted huge strings. */
+    static final int MAX_STRING_LENGTH = 64 * 1024 * 1024;
+
+    /** Maximum number literal length (2048 digits). Prevents CPU DoS from huge BigInteger/BigDecimal. */
+    static final int MAX_NUMBER_LENGTH = 2048;
+
     protected final long features;
     protected int offset;
     protected int depth;
@@ -408,7 +414,12 @@ public abstract sealed class JSONParser implements Closeable
         int quote = ch(offset);
         if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
             offset++;
-            return readStringContentWithQuote(quote);
+            String result = readStringContentWithQuote(quote);
+            if (result != null && result.length() > MAX_STRING_LENGTH) {
+                throw new JSONException("string length " + result.length() + " exceeds maximum "
+                        + MAX_STRING_LENGTH + " at offset " + offset);
+            }
+            return result;
         }
         throw new JSONException("expected quote at offset " + offset);
     }
@@ -884,6 +895,11 @@ public abstract sealed class JSONParser implements Closeable
         skipWhitespace();
         int start = offset;
         boolean isFloat = scanNumber();
+        int numLen = offset - start;
+        if (numLen > MAX_NUMBER_LENGTH) {
+            throw new JSONException("number length " + numLen + " exceeds maximum " + MAX_NUMBER_LENGTH
+                    + " at offset " + start);
+        }
         String numStr = extractString(start, offset);
 
         if (isFloat) {

@@ -23,12 +23,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Publish core3
-        run: mvn -B deploy -pl core3 -DskipTests -DaltDeploymentRepository=github::https://maven.pkg.github.com/wenshao/fastjson3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish core3-kotlin
-        run: mvn -B deploy -pl core3-kotlin -DskipTests -DaltDeploymentRepository=github::https://maven.pkg.github.com/wenshao/fastjson3
+      - name: Publish core3 and core3-kotlin
+        run: mvn -B deploy -pl core3,core3-kotlin -am -DskipTests -DaltDeploymentRepository=github::https://maven.pkg.github.com/wenshao/fastjson3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

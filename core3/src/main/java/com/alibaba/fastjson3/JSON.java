@@ -138,7 +138,7 @@ public final class JSON {
      */
     public static Object parse(java.io.InputStream in) {
         try {
-            byte[] bytes = in.readAllBytes();
+            byte[] bytes = readAllBytesWithLimit(in);
             return parse(bytes);
         } catch (java.io.IOException e) {
             throw new JSONException("read InputStream error", e);
@@ -434,7 +434,7 @@ public final class JSON {
      */
     public static JSONArray parseArray(java.io.InputStream in) {
         try {
-            byte[] bytes = in.readAllBytes();
+            byte[] bytes = readAllBytesWithLimit(in);
             return parseArray(bytes);
         } catch (java.io.IOException e) {
             throw new JSONException("read InputStream error", e);
@@ -453,7 +453,7 @@ public final class JSON {
      */
     public static <T> List<T> parseArray(java.io.InputStream in, Class<T> type) {
         try {
-            byte[] bytes = in.readAllBytes();
+            byte[] bytes = readAllBytesWithLimit(in);
             return parseArray(bytes, type);
         } catch (java.io.IOException e) {
             throw new JSONException("read InputStream error", e);
@@ -469,7 +469,7 @@ public final class JSON {
         long rf = globalReadFeatures.get();
         if (rf != 0) {
             try {
-                byte[] bytes = in.readAllBytes();
+                byte[] bytes = readAllBytesWithLimit(in);
                 return ObjectMapper.shared().readValue(bytes, type, rf);
             } catch (java.io.IOException e) {
                 throw new JSONException("read InputStream error", e);
@@ -483,7 +483,7 @@ public final class JSON {
      */
     public static JSONObject parseObject(java.io.InputStream in) {
         try {
-            byte[] bytes = in.readAllBytes();
+            byte[] bytes = readAllBytesWithLimit(in);
             return parseObject(bytes);
         } catch (java.io.IOException e) {
             throw new JSONException("read InputStream error", e);
@@ -497,7 +497,7 @@ public final class JSON {
         long rf = globalReadFeatures.get();
         if (rf != 0) {
             try {
-                byte[] bytes = in.readAllBytes();
+                byte[] bytes = readAllBytesWithLimit(in);
                 return ObjectMapper.shared().readValue(bytes, type, rf);
             } catch (java.io.IOException e) {
                 throw new JSONException("read InputStream error", e);
@@ -511,7 +511,7 @@ public final class JSON {
      */
     public static <T> T parseObject(java.io.InputStream in, Class<T> type, ReadFeature... features) {
         try {
-            byte[] bytes = in.readAllBytes();
+            byte[] bytes = readAllBytesWithLimit(in);
             return parseObject(bytes, type, features);
         } catch (java.io.IOException e) {
             throw new JSONException("read InputStream error", e);
@@ -1095,6 +1095,22 @@ public final class JSON {
     }
 
     private static final byte[] NULL_BYTES = {'n', 'u', 'l', 'l'};
+
+    /** Maximum InputStream size (128 MB). Prevents OOM from unbounded readAllBytes(). */
+    private static final int MAX_INPUT_SIZE = 128 * 1024 * 1024;
+
+    /**
+     * Read all bytes from an InputStream with a size limit.
+     * Prevents OOM from infinite or extremely large input streams.
+     */
+    private static byte[] readAllBytesWithLimit(java.io.InputStream in) throws java.io.IOException {
+        byte[] bytes = in.readAllBytes();
+        if (bytes.length > MAX_INPUT_SIZE) {
+            throw new JSONException("input size " + bytes.length + " bytes exceeds maximum "
+                    + MAX_INPUT_SIZE + " bytes (" + (MAX_INPUT_SIZE / 1024 / 1024) + " MB)");
+        }
+        return bytes;
+    }
 
     // ==================== JSONPath ====================
 

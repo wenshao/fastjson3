@@ -375,6 +375,37 @@ log.info("User data: {}", logMapper.writeValueAsString(user));
 - [ ] 启用日志审计
 - [ ] 定期更新依赖
 
+## 内置资源限制
+
+fastjson3 内置了多层防护，防止恶意输入导致拒绝服务（DoS）：
+
+### 解析限制
+
+| 限制 | 默认值 | 说明 |
+|------|--------|------|
+| 最大嵌套深度 | 512 层 | 防止 StackOverflow |
+| 最大字符串长度 | 64 MB | 防止超大字符串导致 OOM |
+| 最大数字长度 | 2048 位 | 防止超大 BigInteger/BigDecimal 导致 CPU DoS |
+| 最大 InputStream 大小 | 128 MB | 防止无穷流导致 OOM |
+| 最大序列化深度 | 512 层 | 防止循环引用导致 StackOverflow |
+
+### AutoTypeFilter 最佳实践
+
+```java
+// 推荐：使用 acceptClasses（类型安全，最严格）
+AutoTypeFilter filter = AutoTypeFilter.acceptClasses(Animal.class);
+
+// 可选：使用 acceptNames（包前缀匹配，注意包边界）
+// "com.myapp." 只匹配 com.myapp 包下的类，不会匹配 com.myappEvil 包
+AutoTypeFilter filter = AutoTypeFilter.acceptNames("com.myapp.");
+
+// 最推荐：使用 sealed class（无需 AutoType）
+public sealed interface Animal permits Cat, Dog {}
+```
+
+> **重要**：`SupportAutoType` 和 `SupportClassForName` 两个 Feature 已标记为 `@Deprecated`，
+> 它们是占位符，未实现任何功能。请使用 sealed class + `@JSONType(seeAlso=...)` 实现安全的多态类型。
+
 ## 相关文档
 
 - [📖 最佳实践 →](../best-practices.md)

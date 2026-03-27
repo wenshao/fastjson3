@@ -27,12 +27,29 @@ public interface AutoTypeFilter extends Filter {
     Class<?> apply(String typeName, Class<?> expectClass);
 
     /**
-     * Create a filter that accepts type names matching any of the given prefixes.
+     * Create a filter that accepts type names matching any of the given package prefixes.
+     *
+     * <p>Prefixes should end with {@code "."} to match a specific package.
+     * For example, {@code "com.myapp."} matches {@code "com.myapp.User"} but
+     * NOT {@code "com.myappEvil.Payload"} (package boundary enforced).</p>
+     *
+     * <p><strong>Security note:</strong> Prefer {@link #acceptClasses(Class[])} for
+     * tighter control. This method allows any class within the matched package.</p>
      */
     static AutoTypeFilter acceptNames(String... prefixes) {
         return (typeName, expectClass) -> {
+            if (typeName == null || typeName.isEmpty()) {
+                return null;
+            }
             for (String prefix : prefixes) {
                 if (typeName.startsWith(prefix)) {
+                    // Package boundary check: if prefix ends with '.', the match is exact.
+                    // If prefix does NOT end with '.', the next char must be '.' or end-of-string,
+                    // preventing "com.example" from matching "com.exampleEvil.Payload".
+                    if (!prefix.endsWith(".") && typeName.length() > prefix.length()
+                            && typeName.charAt(prefix.length()) != '.') {
+                        continue; // not an exact package boundary match
+                    }
                     try {
                         return Class.forName(typeName);
                     } catch (ClassNotFoundException e) {
