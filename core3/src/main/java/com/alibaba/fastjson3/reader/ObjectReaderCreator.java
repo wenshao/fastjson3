@@ -618,9 +618,8 @@ public final class ObjectReaderCreator {
 
             if (subReader == null) {
                 throw new com.alibaba.fastjson3.JSONException(
-                        "cannot determine subtype for sealed type " + sealedType.getName()
-                                + ", typeKey='" + typeKey + "', value='" + typeName + "'"
-                                + ", known types=" + readerMap.keySet());
+                        "cannot determine subtype, unknown type discriminator value '"
+                                + typeName + "'");
             }
 
             // Fast path: read directly from JSONObject (no byte[] round-trip)
@@ -661,9 +660,8 @@ public final class ObjectReaderCreator {
             ObjectReader<?> subReader = (typeName != null) ? readerMap.get(typeName) : null;
             if (subReader == null) {
                 throw new com.alibaba.fastjson3.JSONException(
-                        "cannot determine subtype for " + baseType.getName()
-                                + ", typeKey='" + typeKey + "', value='" + typeName + "'"
-                                + ", known types=" + readerMap.keySet());
+                        "cannot determine subtype, unknown type discriminator value '"
+                                + typeName + "'");
             }
             // Fast path: read directly from JSONObject (no byte[] round-trip)
             if (subReader instanceof ReflectionObjectReader<?> reflectReader) {

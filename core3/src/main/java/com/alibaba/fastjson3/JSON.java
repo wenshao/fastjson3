@@ -1100,14 +1100,15 @@ public final class JSON {
     private static final int MAX_INPUT_SIZE = 128 * 1024 * 1024;
 
     /**
-     * Read all bytes from an InputStream with a size limit.
-     * Prevents OOM from infinite or extremely large input streams.
+     * Read bytes from an InputStream with a pre-read size limit.
+     * Reads at most MAX_INPUT_SIZE + 1 bytes to detect oversized input
+     * WITHOUT loading the entire stream into memory first.
      */
     private static byte[] readAllBytesWithLimit(java.io.InputStream in) throws java.io.IOException {
-        byte[] bytes = in.readAllBytes();
+        byte[] bytes = in.readNBytes(MAX_INPUT_SIZE + 1);
         if (bytes.length > MAX_INPUT_SIZE) {
-            throw new JSONException("input size " + bytes.length + " bytes exceeds maximum "
-                    + MAX_INPUT_SIZE + " bytes (" + (MAX_INPUT_SIZE / 1024 / 1024) + " MB)");
+            throw new JSONException("input size exceeds maximum "
+                    + (MAX_INPUT_SIZE / 1024 / 1024) + " MB");
         }
         return bytes;
     }
