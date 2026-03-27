@@ -207,4 +207,34 @@ class DeepNestingTest {
         }
         return sb.toString();
     }
+
+    // ==================== Parser resource limits ====================
+
+    @Test
+    void rejectHugeNumber() {
+        // 3001 digits exceeds MAX_NUMBER_LENGTH (2048)
+        String huge = "1" + "0".repeat(3000);
+        assertThrows(JSONException.class, () -> JSON.parse(huge));
+    }
+
+    @Test
+    void rejectHugeNumberInObject() {
+        String json = "{\"value\":" + "9".repeat(3000) + "}";
+        assertThrows(JSONException.class, () -> JSON.parseObject(json));
+    }
+
+    @Test
+    void acceptNormalNumber() {
+        // 2048 digits should be accepted
+        String num = "1" + "0".repeat(2047);
+        assertDoesNotThrow(() -> JSON.parse(num));
+    }
+
+    @Test
+    void acceptNormalString() {
+        // Normal strings should not be affected by MAX_STRING_LENGTH
+        String json = "\"" + "a".repeat(10000) + "\"";
+        String result = JSON.parse(json, String.class);
+        assertEquals(10000, result.length());
+    }
 }
