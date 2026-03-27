@@ -51,7 +51,8 @@ public interface AutoTypeFilter extends Filter {
                         continue; // not an exact package boundary match
                     }
                     try {
-                        return Class.forName(typeName);
+                        // initialize=false: prevent static initializer execution for untrusted types
+                        return Class.forName(typeName, false, Thread.currentThread().getContextClassLoader());
                     } catch (ClassNotFoundException e) {
                         return null;
                     }
@@ -63,11 +64,15 @@ public interface AutoTypeFilter extends Filter {
 
     /**
      * Create a filter that accepts any of the given classes and their subtypes.
+     *
+     * <p><strong>Security note:</strong> Uses {@code Class.forName(name, false, classLoader)}
+     * to prevent static initializer execution on untrusted class names.</p>
      */
     static AutoTypeFilter acceptClasses(Class<?>... classes) {
         return (typeName, expectClass) -> {
             try {
-                Class<?> cls = Class.forName(typeName);
+                // initialize=false: prevent static initializer execution for untrusted types
+                Class<?> cls = Class.forName(typeName, false, Thread.currentThread().getContextClassLoader());
                 for (Class<?> accepted : classes) {
                     if (accepted.isAssignableFrom(cls)) {
                         return cls;

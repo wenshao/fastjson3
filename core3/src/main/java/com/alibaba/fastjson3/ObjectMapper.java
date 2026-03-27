@@ -1738,10 +1738,10 @@ public final class ObjectMapper {
             return null;
         }
         try {
-            byte[] bytes = in.readAllBytes();
+            byte[] bytes = in.readNBytes(MAX_INPUT_SIZE + 1);
             if (bytes.length > MAX_INPUT_SIZE) {
-                throw new JSONException("input size " + bytes.length + " bytes exceeds maximum "
-                        + MAX_INPUT_SIZE + " bytes (" + (MAX_INPUT_SIZE / 1024 / 1024) + " MB)");
+                throw new JSONException("input size exceeds maximum "
+                        + (MAX_INPUT_SIZE / 1024 / 1024) + " MB");
             }
             return bytes;
         } catch (IOException e) {
