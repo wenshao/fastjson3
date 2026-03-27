@@ -56,8 +56,16 @@ public enum ReadFeature {
     SupportSmartMatch,
 
     /**
-     * Support auto type detection for polymorphism
+     * Support auto type detection for polymorphism.
+     *
+     * <p><strong>Security warning:</strong> This feature is a placeholder and is NOT implemented
+     * in fastjson3. Enabling it has no effect. Use sealed classes with {@code @JSONType(seeAlso=...)}
+     * or Jackson {@code @JsonTypeInfo/@JsonSubTypes} for safe polymorphic deserialization instead.
+     * Do NOT implement arbitrary {@code @type} class loading — it enables Remote Code Execution.</p>
+     *
+     * @deprecated Not implemented. Use sealed classes or {@code @JSONType(seeAlso)} instead.
      */
+    @Deprecated
     SupportAutoType,
 
     /**
@@ -111,7 +119,16 @@ public enum ReadFeature {
     /** Don't throw on number overflow, truncate silently */
     NonErrorOnNumberOverflow,
 
-    /** Support Class.forName() for type resolution */
+    /**
+     * Support Class.forName() for type resolution.
+     *
+     * <p><strong>Security warning:</strong> This feature is a placeholder and is NOT implemented
+     * in fastjson3. Enabling it has no effect. Arbitrary Class.forName() from JSON input
+     * enables Remote Code Execution via gadget chains.</p>
+     *
+     * @deprecated Not implemented. Do not use.
+     */
+    @Deprecated
     SupportClassForName,
 
     /** Prefer no-arg constructor when available */

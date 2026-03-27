@@ -1730,12 +1730,20 @@ public final class ObjectMapper {
 
     // ==================== Internal ====================
 
+    /** Maximum InputStream size (128 MB). */
+    private static final int MAX_INPUT_SIZE = 128 * 1024 * 1024;
+
     private static byte[] readAllBytes(InputStream in) {
         if (in == null) {
             return null;
         }
         try {
-            return in.readAllBytes();
+            byte[] bytes = in.readAllBytes();
+            if (bytes.length > MAX_INPUT_SIZE) {
+                throw new JSONException("input size " + bytes.length + " bytes exceeds maximum "
+                        + MAX_INPUT_SIZE + " bytes (" + (MAX_INPUT_SIZE / 1024 / 1024) + " MB)");
+            }
+            return bytes;
         } catch (IOException e) {
             throw new JSONException("read InputStream error", e);
         }
