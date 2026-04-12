@@ -558,7 +558,7 @@ public final class NumberUtils {
         return off + 8;
     }
 
-    static int writeInt64(byte[] buf, int off, long val) {
+    public static int writeInt64(byte[] buf, int off, long val) {
         if (val < 0) {
             if (val == Long.MIN_VALUE) {
                 System.arraycopy(MIN_LONG_BYTES, 0, buf, off, MIN_LONG_BYTES.length);
@@ -612,7 +612,7 @@ public final class NumberUtils {
         return writeInt8(buf, off, v2, v1);
     }
 
-    static int writeInt32(byte[] buf, int off, long val) {
+    public static int writeInt32(byte[] buf, int off, long val) {
         if (val < 0) {
             val = -val;
             buf[off++] = (byte) '-';

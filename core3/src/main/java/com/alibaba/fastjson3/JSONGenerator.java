@@ -3294,145 +3294,23 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             return pos;
         }
 
+        /**
+         * Delegates to {@link com.alibaba.fastjson3.util.NumberUtils#writeInt32(byte[], int, long)}
+         * which uses magic-multiplier division (`val * 1759218605L >> 44` for /10000) and range-dispatched
+         * 3/4/8-byte-at-a-time helpers, avoiding the per-pair IDIV cost of the previous `/100` loop.
+         * Returns the number of bytes written so callers can keep their `pos += writeIntToBytes(...)` idiom.
+         */
         public static int writeIntToBytes(int val, byte[] buf, int pos) {
-            if (val == Integer.MIN_VALUE) {
-                // "-2147483648" = 11 bytes
-                buf[pos] = '-';
-                buf[pos + 1] = '2';
-                buf[pos + 2] = '1';
-                buf[pos + 3] = '4';
-                buf[pos + 4] = '7';
-                buf[pos + 5] = '4';
-                buf[pos + 6] = '8';
-                buf[pos + 7] = '3';
-                buf[pos + 8] = '6';
-                buf[pos + 9] = '4';
-                buf[pos + 10] = '8';
-                return 11;
-            }
-            int start = pos;
-            if (val < 0) {
-                buf[pos++] = '-';
-                val = -val;
-            }
-            // Count digits
-            int digits = stringSize(val);
-            int end = pos + digits;
-            // Write 2 digits at a time from the end using PACKED_DIGITS
-            int p = end;
-            while (val >= 100) {
-                int q = val / 100;
-                int r = val - q * 100;
-                val = q;
-                p -= 2;
-                JDKUtils.putShortDirect(buf, p, PACKED_DIGITS[r]);
-            }
-            if (val >= 10) {
-                p -= 2;
-                JDKUtils.putShortDirect(buf, p, PACKED_DIGITS[val]);
-            } else {
-                buf[--p] = (byte) ('0' + val);
-            }
-            return end - start;
+            return com.alibaba.fastjson3.util.NumberUtils.writeInt32(buf, pos, val) - pos;
         }
 
-        private static int stringSize(int x) {
-            if (x < 10) return 1;
-            if (x < 100) return 2;
-            if (x < 1000) return 3;
-            if (x < 10000) return 4;
-            if (x < 100000) return 5;
-            if (x < 1000000) return 6;
-            if (x < 10000000) return 7;
-            if (x < 100000000) return 8;
-            if (x < 1000000000) return 9;
-            return 10;
-        }
-
+        /**
+         * Delegates to {@link com.alibaba.fastjson3.util.NumberUtils#writeInt64(byte[], int, long)}
+         * which uses {@code Math.multiplyHigh} for 64-bit /10000 and range-dispatched
+         * 3/4/8-byte-at-a-time helpers. Returns the number of bytes written.
+         */
         public static int writeLongToBytes(long val, byte[] buf, int pos) {
-            if (val == Long.MIN_VALUE) {
-                // "-9223372036854775808" = 20 bytes
-                byte[] s = {'-', '9', '2', '2', '3', '3', '7', '2', '0', '3', '6', '8', '5', '4', '7', '7', '5', '8', '0', '8'};
-                System.arraycopy(s, 0, buf, pos, 20);
-                return 20;
-            }
-            int start = pos;
-            if (val < 0) {
-                buf[pos++] = '-';
-                val = -val;
-            }
-            // For values that fit in int, use the faster int path
-            if (val <= Integer.MAX_VALUE) {
-                return (pos - start) + writeIntToBytes((int) val, buf, pos);
-            }
-            // Split into high and low parts for digit extraction
-            // Note: hi can exceed Integer.MAX_VALUE for val > 2.147e18, so use long
-            long hi = val / 1000000000L;
-            int lo = (int) (val - hi * 1000000000L);
-            int hiDigits = longStringSize(hi);
-            int end = pos + hiDigits + 9;
-            int p = end;
-            // Write low 9 digits (zero-padded) using PACKED_DIGITS (1 putShort = 2 digits)
-            for (int j = 0; j < 4; j++) {
-                int q = lo / 100;
-                int r = lo - q * 100;
-                lo = q;
-                p -= 2;
-                JDKUtils.putShortDirect(buf, p, PACKED_DIGITS[r]);
-            }
-            buf[--p] = (byte) ('0' + lo);
-            // Write high part (fits in int after extracting last 2 digits via long)
-            // For val up to Long.MAX_VALUE, hi <= 9_223_372_036 (10 digits)
-            while (hi >= 100) {
-                int r = (int) (hi % 100);
-                hi /= 100;
-                p -= 2;
-                JDKUtils.putShortDirect(buf, p, PACKED_DIGITS[r]);
-            }
-            if (hi >= 10) {
-                p -= 2;
-                JDKUtils.putShortDirect(buf, p, PACKED_DIGITS[(int) hi]);
-            } else {
-                buf[--p] = (byte) ('0' + hi);
-            }
-            return end - start;
-        }
-
-        private static int intStringSize(int x) {
-            int d = 1;
-            if (x >= 100000) {
-                d += 5;
-                x /= 100000;
-            }
-            if (x >= 100) {
-                d += 2;
-                x /= 100;
-            }
-            if (x >= 10) {
-                d++;
-            }
-            return d;
-        }
-
-        private static int longStringSize(long x) {
-            // For values up to 9_223_372_036 (max hi part of Long.MAX_VALUE)
-            int d = 1;
-            if (x >= 1000000000L) {
-                d += 9;
-                x /= 1000000000L;
-            }
-            if (x >= 100000) {
-                d += 5;
-                x /= 100000;
-            }
-            if (x >= 100) {
-                d += 2;
-                x /= 100;
-            }
-            if (x >= 10) {
-                d++;
-            }
-            return d;
+            return com.alibaba.fastjson3.util.NumberUtils.writeInt64(buf, pos, val) - pos;
         }
     }
 }
