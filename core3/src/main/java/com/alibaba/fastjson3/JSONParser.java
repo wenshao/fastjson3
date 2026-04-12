@@ -875,6 +875,9 @@ public abstract sealed class JSONParser implements Closeable
         // POJO types: resolve reader from the shared ObjectMapper's provider.
         // Callers who need a custom mapper should use ObjectMapper.readValue() directly.
         ObjectReader<T> reader = ObjectMapper.shared().getObjectReader(type);
+        if (reader == null) {
+            throw new JSONException("no ObjectReader registered for type: " + type.getName());
+        }
         return reader.readObject(this, type, null, features);
     }
 
