@@ -112,9 +112,11 @@ eishay.EishayParseUTF8Bytes.jackson            1234.5                987.3
 
 ## Latest Results
 
-| Date | Machine | File |
-|------|---------|------|
-| 2026-03-21 | - | [results/2026-03-21.md](results/2026-03-21.md) |
+Per-release reports are published under the top-level [`docs/benchmark/`](../docs/benchmark/) directory, following the fastjson2 release benchmark convention.
+
+| Date | Machines | Report |
+|------|----------|--------|
+| 2026-04-12 | aarch64 (Neoverse-N2) + x86_64 (EPYC 9T95), JDK 25 | [`benchmark_3.0.0-SNAPSHOT-4f2fdbf.md`](../docs/benchmark/benchmark_3.0.0-SNAPSHOT-4f2fdbf.md) |
 
 ## Manual Usage
 

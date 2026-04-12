@@ -300,16 +300,13 @@ Key optimizations:
 - **Unsafe field access** — direct memory read/write bypassing reflection and bounds checking
 - **Buffer pooling** — thread-local buffer reuse to minimize GC pressure
 
-### Benchmark Results (JDK 25, 16 threads)
+### Benchmark Reports
 
-| Operation | fastjson2 | fastjson3 | wast | fastjson3 vs fastjson2 |
-|-----------|-----------|-----------|------|----------------------|
-| Parse Client | 1,921 ops/ms | **5,645 ops/ms** | 4,899 ops/ms | **+193.7%** |
-| Parse User | 907 ops/ms | **5,331 ops/ms** | 4,675 ops/ms | **+487.5%** |
-| Write Client | 3,091 ops/ms | **7,864 ops/ms** | 7,217 ops/ms | **+154.3%** |
-| Write User | 3,225 ops/ms | **8,446 ops/ms** | 6,378 ops/ms | **+161.9%** |
+Per-release benchmark reports following the [fastjson2 convention](https://github.com/alibaba/fastjson2/tree/main/docs/benchmark) — Eishay + JJB scenarios, multi-architecture, multi-JDK, with raw JMH output and error bars:
 
-> fastjson3 在 Parse 和 Write 场景下均全面领先，Write 场景超越 wast 9-32%
+- [`docs/benchmark/`](docs/benchmark/) — all release reports
+
+Methodology: JMH throughput mode (`ops/ms`), 3 warmup × 10 s, 5 measurement × 10 s, 1 fork, 16 threads — matching the configuration fastjson2 uses for its own release benchmarks. The reports compare fastjson3 against the latest fastjson2 release, plus jackson-databind, gson, and wast.
 
 ## Project Structure
 
