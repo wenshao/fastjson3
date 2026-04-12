@@ -351,4 +351,65 @@ class JSONParserTest {
         assertEquals("Alice", users.getJSONObject(0).getString("name"));
         assertEquals(25, users.getJSONObject(1).getIntValue("age"));
     }
+
+    // ==================== read(Class) for POJO types ====================
+
+    public static class Point {
+        public int x;
+        public int y;
+    }
+
+    public static class Container {
+        public String name;
+        public Point point;
+        public java.util.List<Integer> values;
+    }
+
+    @Test
+    void readPojoFromStringParser() {
+        try (JSONParser parser = JSONParser.of("{\"x\":3,\"y\":4}")) {
+            Point p = parser.read(Point.class);
+            assertNotNull(p);
+            assertEquals(3, p.x);
+            assertEquals(4, p.y);
+        }
+    }
+
+    @Test
+    void readPojoFromBytesParser() {
+        byte[] bytes = "{\"x\":10,\"y\":20}".getBytes(StandardCharsets.UTF_8);
+        try (JSONParser parser = JSONParser.of(bytes)) {
+            Point p = parser.read(Point.class);
+            assertNotNull(p);
+            assertEquals(10, p.x);
+            assertEquals(20, p.y);
+        }
+    }
+
+    @Test
+    void readNestedPojoFromParser() {
+        String json = "{\"name\":\"box\",\"point\":{\"x\":1,\"y\":2},\"values\":[10,20,30]}";
+        try (JSONParser parser = JSONParser.of(json)) {
+            Container c = parser.read(Container.class);
+            assertNotNull(c);
+            assertEquals("box", c.name);
+            assertNotNull(c.point);
+            assertEquals(1, c.point.x);
+            assertEquals(2, c.point.y);
+            assertNotNull(c.values);
+            assertEquals(3, c.values.size());
+            assertEquals(10, c.values.get(0));
+        }
+    }
+
+    @Test
+    void readPojoViaTypeMethod() {
+        try (JSONParser parser = JSONParser.of("{\"x\":7,\"y\":8}")) {
+            java.lang.reflect.Type type = Point.class;
+            Point p = parser.read(type);
+            assertNotNull(p);
+            assertEquals(7, p.x);
+            assertEquals(8, p.y);
+        }
+    }
 }

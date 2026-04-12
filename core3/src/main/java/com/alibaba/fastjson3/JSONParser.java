@@ -872,8 +872,10 @@ public abstract sealed class JSONParser implements Closeable
             }
             return (T) new AtomicLongArray(values);
         }
-        // For POJO types, read as JSONObject first and let ObjectMapper handle conversion
-        throw new UnsupportedOperationException("reading " + type.getName() + " not yet supported without ObjectReader");
+        // POJO types: resolve reader from the shared ObjectMapper's provider.
+        // Callers who need a custom mapper should use ObjectMapper.readValue() directly.
+        ObjectReader<T> reader = ObjectMapper.shared().getObjectReader(type);
+        return reader.readObject(this, type, null, features);
     }
 
     @SuppressWarnings("unchecked")
@@ -881,7 +883,11 @@ public abstract sealed class JSONParser implements Closeable
         if (type instanceof Class) {
             return read((Class<T>) type);
         }
-        throw new UnsupportedOperationException("reading generic type not yet supported without ObjectReader");
+        ObjectReader<T> reader = (ObjectReader<T>) ObjectMapper.shared().getObjectReader(type);
+        if (reader == null) {
+            throw new JSONException("no ObjectReader registered for type: " + type);
+        }
+        return reader.readObject(this, type, null, features);
     }
 
     @Override
