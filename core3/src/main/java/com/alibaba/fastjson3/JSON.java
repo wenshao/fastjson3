@@ -59,23 +59,40 @@ public final class JSON {
      * Returns null if non-ASCII, non-Latin1, or Unsafe unavailable.
      * Non-ASCII Latin1 bytes (0x80-0xFF) are not valid UTF-8 and would be
      * misinterpreted by the UTF8 parser, so we must fall back to getBytes(UTF_8).
+     *
+     * <p>The ASCII check uses an 8-byte SWAR scan ({@code word & 0x80808080_80808080})
+     * to reduce the per-byte branch loop to roughly 1/8 the iteration count. For a
+     * 469-byte Eishay payload this drops the scan from 469 branches to 59 long-reads
+     * plus a 5-byte tail.</p>
      */
     static byte[] getLatin1Bytes(String json) {
         if (com.alibaba.fastjson3.util.JDKUtils.ANDROID) {
             return null; // Android String internals differ; always use getBytes(UTF_8)
         }
-        int coder = com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json);
-        if (coder == 0) {
-            byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
-            if (value != null) {
-                // Quick ASCII check: scan for any byte >= 0x80
-                for (int i = 0; i < value.length; i++) {
-                    if (value[i] < 0) return null;
-                }
-                return value;
-            }
+        if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json) != 0) {
+            return null;
         }
-        return null;
+        byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
+        if (value == null) {
+            return null;
+        }
+        int len = value.length;
+        int i = 0;
+        int limit = len - 7;
+        while (i < limit) {
+            long word = com.alibaba.fastjson3.util.JDKUtils.getLong(value, i);
+            if ((word & 0x8080808080808080L) != 0) {
+                return null;
+            }
+            i += 8;
+        }
+        while (i < len) {
+            if (value[i] < 0) {
+                return null;
+            }
+            i++;
+        }
+        return value;
     }
 
     // ==================== Parse ====================

@@ -1,25 +1,28 @@
 package com.alibaba.fastjson3.benchmark.jjb;
 
-import com.alibaba.fastjson3.JSONParser;
 import com.alibaba.fastjson3.ObjectMapper;
-import com.alibaba.fastjson3.ObjectReader;
 import com.alibaba.fastjson3.reader.ReaderCreatorType;
-import org.openjdk.jmh.annotations.*;
+import org.openjdk.jmh.annotations.Benchmark;
+import org.openjdk.jmh.annotations.Level;
+import org.openjdk.jmh.annotations.Mode;
+import org.openjdk.jmh.annotations.Scope;
+import org.openjdk.jmh.annotations.Setup;
+import org.openjdk.jmh.annotations.State;
 
 import java.util.concurrent.TimeUnit;
 
 /**
- * Test ObjectReaderProvider with different ReaderCreatorType strategies.
- * Tests the User class (23 fields) with:
- * - AUTO: automatic strategy selection
- * - ASM: forced ASM generation
- * - REFLECT: forced reflection
+ * Compare ReaderCreatorType strategies on the User payload.
+ * <ul>
+ *   <li>AUTO    — ObjectMapper.shared() default strategy</li>
+ *   <li>ASM     — forced ASM codegen</li>
+ *   <li>REFLECT — forced reflection</li>
+ * </ul>
  */
 public class UserProviderBenchmark {
 
-    static byte[] utf8Bytes;
+    static final byte[] UTF8_BYTES;
 
-    // Single User JSON (23 fields + nested types)
     static final String USER_JSON = """
         {
             "about":"6D64jf3ia1g5yMOGLPag",
@@ -51,70 +54,58 @@ public class UserProviderBenchmark {
         """;
 
     static {
-        utf8Bytes = USER_JSON.getBytes();
+        UTF8_BYTES = USER_JSON.getBytes();
     }
-
-    // ==================== AUTO ====================
 
     @Benchmark
-    public Users.User auto_type() {
-        try (JSONParser parser = JSONParser.of(utf8Bytes)) {
-            return parser.read(Users.User.class);
-        }
+    public Users.User auto_type(AutoState s) {
+        return s.mapper.readValue(UTF8_BYTES, Users.User.class);
     }
-
-    // ==================== ASM ====================
 
     @Benchmark
-    public Users.User asm_type() {
-        try (JSONParser parser = JSONParser.of(utf8Bytes)) {
-            return parser.read(Users.User.class);
-        }
+    public Users.User asm_type(ASMState s) {
+        return s.mapper.readValue(UTF8_BYTES, Users.User.class);
     }
-
-    // ==================== REFLECT ====================
 
     @Benchmark
-    public Users.User reflect_type() {
-        try (JSONParser parser = JSONParser.of(utf8Bytes)) {
-            return parser.read(Users.User.class);
-        }
+    public Users.User reflect_type(ReflectState s) {
+        return s.mapper.readValue(UTF8_BYTES, Users.User.class);
     }
-
-    // ==================== Setup methods ====================
 
     @State(Scope.Benchmark)
     public static class AutoState {
-        ObjectMapper mapper = ObjectMapper.shared();
+        ObjectMapper mapper;
+
         @Setup(Level.Trial)
         public void setup() {
-            // Reset to default
+            mapper = ObjectMapper.shared();
+            mapper.readValue(UTF8_BYTES, Users.User.class);
         }
     }
 
     @State(Scope.Benchmark)
     public static class ASMState {
-        ObjectMapper mapper = ObjectMapper.builder()
-                .readerCreatorType(ReaderCreatorType.ASM)
-                .build();
+        ObjectMapper mapper;
 
-        @Setup(Level.Invocation)
+        @Setup(Level.Trial)
         public void setup() {
-            // Warmup the cache
-            mapper.readValue(utf8Bytes, Users.User.class);
+            mapper = ObjectMapper.builder()
+                    .readerCreatorType(ReaderCreatorType.ASM)
+                    .build();
+            mapper.readValue(UTF8_BYTES, Users.User.class);
         }
     }
 
     @State(Scope.Benchmark)
     public static class ReflectState {
-        ObjectMapper mapper = ObjectMapper.builder()
-                .readerCreatorType(ReaderCreatorType.REFLECT)
-                .build();
+        ObjectMapper mapper;
 
-        @Setup(Level.Invocation)
+        @Setup(Level.Trial)
         public void setup() {
-            // Warmup the cache
-            mapper.readValue(utf8Bytes, Users.User.class);
+            mapper = ObjectMapper.builder()
+                    .readerCreatorType(ReaderCreatorType.REFLECT)
+                    .build();
+            mapper.readValue(UTF8_BYTES, Users.User.class);
         }
     }
 
@@ -125,8 +116,8 @@ public class UserProviderBenchmark {
                 .timeUnit(TimeUnit.MILLISECONDS)
                 .warmupIterations(3)
                 .measurementIterations(5)
-                .forks(2)
-                .threads(1)
+                .forks(1)
+                .threads(16)
                 .build();
         new org.openjdk.jmh.runner.Runner(opts).run();
     }
