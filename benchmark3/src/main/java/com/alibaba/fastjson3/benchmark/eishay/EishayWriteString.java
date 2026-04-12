@@ -47,19 +47,26 @@ public class EishayWriteString {
         bh.consume(com.alibaba.fastjson3.JSON.toJSONString(mc));
     }
 
+    // Note: use ofUTF8() + toStringLatin1() to match JSON.toJSONString's internal path.
+    // Using JSONGenerator.of() (char-based) here would measure a different generator,
+    // not the writer-creator difference we actually want to isolate.
     @Benchmark
     public void fastjson3_reflect(Blackhole bh) {
-        try (com.alibaba.fastjson3.JSONGenerator gen = com.alibaba.fastjson3.JSONGenerator.of()) {
+        try (com.alibaba.fastjson3.JSONGenerator.UTF8 gen =
+                     (com.alibaba.fastjson3.JSONGenerator.UTF8) com.alibaba.fastjson3.JSONGenerator.ofUTF8()) {
             reflectWriter.write(gen, mc, null, null, 0);
-            bh.consume(gen.toString());
+            String result = gen.toStringLatin1();
+            bh.consume(result != null ? result : gen.toString());
         }
     }
 
     @Benchmark
     public void fastjson3_asm(Blackhole bh) {
-        try (com.alibaba.fastjson3.JSONGenerator gen = com.alibaba.fastjson3.JSONGenerator.of()) {
+        try (com.alibaba.fastjson3.JSONGenerator.UTF8 gen =
+                     (com.alibaba.fastjson3.JSONGenerator.UTF8) com.alibaba.fastjson3.JSONGenerator.ofUTF8()) {
             asmWriter.write(gen, mc, null, null, 0);
-            bh.consume(gen.toString());
+            String result = gen.toStringLatin1();
+            bh.consume(result != null ? result : gen.toString());
         }
     }
 
