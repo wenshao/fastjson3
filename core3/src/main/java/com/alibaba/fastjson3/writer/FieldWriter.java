@@ -134,25 +134,44 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         // Pre-encode enum constant names once per FieldWriter. Only populated for concrete
         // enum field types — generic Enum<?> or Object declarations fall back to the per-call
         // encoding path at serialization time.
+        //
+        // Note on enum static initialization: calling getEnumConstants() triggers static
+        // initialization of the enum class. If the class has a throwing static initializer
+        // or a missing class dependency, it would abort FieldWriter construction — a
+        // functional regression vs the pre-PR behavior where writer construction succeeds
+        // and the failure only surfaces when a non-null enum value is actually written. The
+        // try/catch below preserves the pre-PR semantics: any Throwable from the init path
+        // (ExceptionInInitializerError, NoClassDefFoundError, etc.) falls back to the
+        // per-call encoding path in JSONGenerator, where the same failure will surface at
+        // the first actual write of a non-null enum value. Fields that are always null in
+        // practice never trigger init at all.
         byte[][] enumBytes = null;
         boolean[] nonAscii = null;
         if (typeTag == TYPE_ENUM && fieldClass != null && fieldClass.isEnum()) {
-            Object[] constants = fieldClass.getEnumConstants();
-            if (constants != null && constants.length > 0) {
-                enumBytes = new byte[constants.length][];
-                for (int i = 0; i < constants.length; i++) {
-                    byte[] b = ((Enum<?>) constants[i]).name().getBytes(StandardCharsets.UTF_8);
-                    enumBytes[i] = b;
-                    for (byte v : b) {
-                        if (v < 0) {
-                            if (nonAscii == null) {
-                                nonAscii = new boolean[constants.length];
+            try {
+                Object[] constants = fieldClass.getEnumConstants();
+                if (constants != null && constants.length > 0) {
+                    enumBytes = new byte[constants.length][];
+                    for (int i = 0; i < constants.length; i++) {
+                        byte[] b = ((Enum<?>) constants[i]).name().getBytes(StandardCharsets.UTF_8);
+                        enumBytes[i] = b;
+                        for (byte v : b) {
+                            if (v < 0) {
+                                if (nonAscii == null) {
+                                    nonAscii = new boolean[constants.length];
+                                }
+                                nonAscii[i] = true;
+                                break;
                             }
-                            nonAscii[i] = true;
-                            break;
                         }
                     }
                 }
+            } catch (Throwable ignored) {
+                // Enum class static init failed or is unavailable — leave cache null so
+                // the runtime path in JSONGenerator falls back to per-call encoding,
+                // preserving the pre-PR "fail lazily on actual write" semantics.
+                enumBytes = null;
+                nonAscii = null;
             }
         }
         this.enumNameBytesUtf8 = enumBytes;
