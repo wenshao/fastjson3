@@ -2455,19 +2455,28 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         /**
          * Check if 8 bytes (as a long) contain no chars that need JSON escaping.
          * Checks: no byte < 0x20 (control), no '"' (0x22), no '\\' (0x5C).
-         * Fast path: if all bytes > '"' and none are '\\', return true immediately (3 ops).
-         * Full path: complete check for control chars and '"' (wast-style).
+         *
+         * <p>The body is split into a tiny fast path (~6 ops, well below the JIT
+         * {@code MaxInlineSize=35} threshold so it inlines into hot loops like
+         * {@link #writeLatinStringStatic}) and a separate slow path for the rare
+         * case where the fast check fails. Profile of EishayWriteUTF8Bytes shows
+         * the fast path covers >99% of ASCII text — keeping it small lets JIT
+         * inline it cleanly into the per-8-byte string-write loop.
          */
         public static boolean noEscape8(long v) {
             long hiMask = 0x8080808080808080L;
-            long lo = 0x0101010101010101L;
             // Check '\\' (0x5C): XOR with 0xA3 (complement) + add 0x01, high bit set if NOT '\\'
-            long notBackslash = (v ^ 0xA3A3A3A3A3A3A3A3L) + lo & hiMask;
+            long notBackslash = (v ^ 0xA3A3A3A3A3A3A3A3L) + 0x0101010101010101L & hiMask;
             // Fast path: all bytes > '"' (0x22) and not '\\' — covers >99% of ASCII text
             if ((notBackslash & v + 0x5D5D5D5D5D5D5D5DL) == hiMask) {
                 return true;
             }
+            return noEscape8Full(v, notBackslash, hiMask);
+        }
+
+        private static boolean noEscape8Full(long v, long notBackslash, long hiMask) {
             // Full check: control chars < 0x20, '"', '\\'
+            long lo = 0x0101010101010101L;
             long ctrl = (v - 0x2020202020202020L) & ~v & hiMask;
             long xq = v ^ 0x2222222222222222L;
             long quote = (xq - lo) & ~xq & hiMask;
