@@ -84,6 +84,22 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     // Optional: unwrap nested object properties into parent (from @JSONField(unwrapped=true))
     public final boolean unwrapped;
 
+    /**
+     * For {@link #TYPE_ENUM} fields: pre-encoded UTF-8 bytes per enum ordinal, computed
+     * once at FieldWriter construction. Skips the per-write {@code name().getBytes(UTF_8)}
+     * allocation and {@code StringCoding.hasNegatives} scan that async-profiler showed
+     * consumed ~4% of EishayWriteUTF8Bytes CPU. {@code null} when {@code fieldClass} is
+     * not a concrete enum type (e.g., declared as raw {@code Enum<?>} or {@code Object}).
+     */
+    public final byte[][] enumNameBytesUtf8;
+
+    /**
+     * Per-ordinal non-ASCII flag. {@code null} when every constant is pure ASCII — the
+     * common case for Java identifiers. Only allocated when at least one constant has a
+     * byte &lt; 0, in which case the full {@code boolean[]} is used for O(1) per-write lookup.
+     */
+    public final boolean[] enumConstantHasNonAscii;
+
     // Private constructor — use factory methods
     @SuppressWarnings("unchecked")
     private FieldWriter(
@@ -114,6 +130,33 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         this.nameBytes = encodeNameBytes(fieldName);
         this.nameBytesLen = nameBytes.length;
         this.nameByteLongs = encodeByteLongs(nameBytes);
+
+        // Pre-encode enum constant names once per FieldWriter. Only populated for concrete
+        // enum field types — generic Enum<?> or Object declarations fall back to the per-call
+        // encoding path at serialization time.
+        byte[][] enumBytes = null;
+        boolean[] nonAscii = null;
+        if (typeTag == TYPE_ENUM && fieldClass != null && fieldClass.isEnum()) {
+            Object[] constants = fieldClass.getEnumConstants();
+            if (constants != null && constants.length > 0) {
+                enumBytes = new byte[constants.length][];
+                for (int i = 0; i < constants.length; i++) {
+                    byte[] b = ((Enum<?>) constants[i]).name().getBytes(StandardCharsets.UTF_8);
+                    enumBytes[i] = b;
+                    for (byte v : b) {
+                        if (v < 0) {
+                            if (nonAscii == null) {
+                                nonAscii = new boolean[constants.length];
+                            }
+                            nonAscii[i] = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        this.enumNameBytesUtf8 = enumBytes;
+        this.enumConstantHasNonAscii = nonAscii;
     }
 
     // ==================== Factory methods ====================
