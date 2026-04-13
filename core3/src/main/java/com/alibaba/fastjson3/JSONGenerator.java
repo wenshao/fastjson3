@@ -3205,18 +3205,42 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
          * Write pre-encoded field name bytes directly into buf at pos.
          * Uses nameByteLongs for bulk 8-byte writes when available.
          */
+        /**
+         * Write a pre-encoded field name token (e.g. {@code "id":}) into {@code buf} at
+         * {@code pos}. The vast majority of MediaContent / JJB field names are 5-8 byte
+         * tokens (length-1 in the long-encoded array), so the fast path is a tiny
+         * single-{@code putLong} body that JIT inlines into every per-field write call
+         * site. Longer names and the no-Unsafe fallback go through the out-of-line
+         * {@link #writeNameStaticSlow} helper.
+         *
+         * <p>This mirrors the per-length specialization fastjson2 uses with
+         * {@code writeName3Raw}/{@code writeName5Raw}/etc. — same idea (single {@code
+         * putLong} for the common case) packed into one entry point so the
+         * {@code writeOneFieldStatic} call sites don't need a per-typeTag dispatch.
+         */
         public static int writeNameStatic(byte[] buf, int pos, long[] nameByteLongs, byte[] nameBytes, int nameBytesLen) {
-            if (nameByteLongs != null) {
-                int startPos = pos;
-                for (long v : nameByteLongs) {
-                    JDKUtils.putLongDirect(buf, pos, v);
-                    pos += 8;
-                }
-                return startPos + nameBytesLen;
-            } else {
-                System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+            if (nameByteLongs != null && nameByteLongs.length == 1) {
+                JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]);
                 return pos + nameBytesLen;
             }
+            return writeNameStaticSlow(buf, pos, nameByteLongs, nameBytes, nameBytesLen);
+        }
+
+        private static int writeNameStaticSlow(byte[] buf, int pos, long[] nameByteLongs, byte[] nameBytes, int nameBytesLen) {
+            if (nameByteLongs != null) {
+                int len = nameByteLongs.length;
+                if (len == 2) {
+                    JDKUtils.putLongDirect(buf, pos, nameByteLongs[0]);
+                    JDKUtils.putLongDirect(buf, pos + 8, nameByteLongs[1]);
+                } else {
+                    for (int i = 0; i < len; i++) {
+                        JDKUtils.putLongDirect(buf, pos + (i << 3), nameByteLongs[i]);
+                    }
+                }
+                return pos + nameBytesLen;
+            }
+            System.arraycopy(nameBytes, 0, buf, pos, nameBytesLen);
+            return pos + nameBytesLen;
         }
 
         /**
