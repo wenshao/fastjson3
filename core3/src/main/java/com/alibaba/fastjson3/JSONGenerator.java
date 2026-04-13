@@ -965,11 +965,23 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 if (fw.fieldOffset >= 0) {
                     Object enumVal = com.alibaba.fastjson3.util.JDKUtils.getObject(bean, fw.fieldOffset);
                     if (enumVal == null) return pos;
-                    String name = ((Enum<?>) enumVal).name();
-                    byte[] nameBytes = name.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-                    // Check if enum name contains non-ASCII chars
-                    for (byte b : nameBytes) {
-                        if (b < 0) { gen.hasNonAscii = true; break; }
+                    // Fast path: FieldWriter precomputed UTF-8 bytes per ordinal at
+                    // construction. Skips per-call name().getBytes(UTF_8) allocation +
+                    // StringCoding.hasNegatives scan (~4% of EishayWriteUTF8Bytes CPU).
+                    Enum<?> e = (Enum<?>) enumVal;
+                    byte[] nameBytes;
+                    if (fw.enumNameBytesUtf8 != null) {
+                        int ord = e.ordinal();
+                        nameBytes = fw.enumNameBytesUtf8[ord];
+                        if (fw.enumConstantHasNonAscii != null && fw.enumConstantHasNonAscii[ord]) {
+                            gen.hasNonAscii = true;
+                        }
+                    } else {
+                        // Fallback: raw Enum<?> or Object-typed field (rare).
+                        nameBytes = e.name().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                        for (byte b : nameBytes) {
+                            if (b < 0) { gen.hasNonAscii = true; break; }
+                        }
                     }
                     int needed = fw.nameBytesLen + nameBytes.length + 3;
                     if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
