@@ -3296,11 +3296,24 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
 
         /**
          * Delegates to {@link com.alibaba.fastjson3.util.NumberUtils#writeInt32(byte[], int, long)}
-         * which uses magic-multiplier division (`val * 1759218605L >> 44` for /10000) and range-dispatched
-         * 3/4/8-byte-at-a-time helpers, avoiding the per-pair IDIV cost of the previous `/100` loop.
-         * Returns the number of bytes written so callers can keep their `pos += writeIntToBytes(...)` idiom.
+         * which uses magic-multiplier division ({@code val * 1759218605L >> 44} for /10000) and
+         * range-dispatched 3/4/8-byte-at-a-time helpers, avoiding the per-pair IDIV cost of the
+         * previous {@code /100} loop. Returns the number of bytes written so callers can keep
+         * their {@code pos += writeIntToBytes(...)} idiom.
+         *
+         * <p><b>Buffer slack contract</b>: the underlying {@code writeInt3} helper uses a 4-byte
+         * {@code putInt} write for 1-3 digit values, which touches up to 3 bytes past the logical
+         * end of the digit run (filling them with NUL bytes that are immediately overwritten by
+         * subsequent writes or remain in buffer slack). Callers must therefore ensure {@code buf}
+         * has at least <b>14 bytes</b> available from {@code pos} (max 11 digits for
+         * {@code Integer.MIN_VALUE} + up to 3 trailing slack bytes). All internal callers in
+         * {@link JSONGenerator} satisfy this via the {@code SAFE_MARGIN} guarantee in
+         * {@code ensureCapacity}.
          */
         public static int writeIntToBytes(int val, byte[] buf, int pos) {
+            assert pos >= 0 && buf.length - pos >= 14
+                    : "writeIntToBytes requires >=14 bytes slack at pos " + pos
+                            + " but buf.length=" + buf.length;
             return com.alibaba.fastjson3.util.NumberUtils.writeInt32(buf, pos, val) - pos;
         }
 
@@ -3308,8 +3321,17 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
          * Delegates to {@link com.alibaba.fastjson3.util.NumberUtils#writeInt64(byte[], int, long)}
          * which uses {@code Math.multiplyHigh} for 64-bit /10000 and range-dispatched
          * 3/4/8-byte-at-a-time helpers. Returns the number of bytes written.
+         *
+         * <p><b>Buffer slack contract</b>: same as {@link #writeIntToBytes(int, byte[], int)} —
+         * the underlying {@code writeInt3} helper may write up to 3 bytes past the digit run for
+         * short tail values. Callers must ensure {@code buf} has at least <b>23 bytes</b>
+         * available from {@code pos} (max 20 digits for {@code Long.MIN_VALUE} + 3 trailing slack
+         * bytes).
          */
         public static int writeLongToBytes(long val, byte[] buf, int pos) {
+            assert pos >= 0 && buf.length - pos >= 23
+                    : "writeLongToBytes requires >=23 bytes slack at pos " + pos
+                            + " but buf.length=" + buf.length;
             return com.alibaba.fastjson3.util.NumberUtils.writeInt64(buf, pos, val) - pos;
         }
     }
