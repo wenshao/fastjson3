@@ -222,7 +222,7 @@ public final class ObjectReaderCreatorASM {
 
         generateClinit(cw, classInternalName, beanType, fieldReaders);
         generateInit(cw, classInternalName);
-        generateCreateInstance(cw, classInternalName);
+        generateCreateInstance(cw, classInternalName, beanType, beanInternalName);
         generateGetObjectClass(cw, classInternalName);
         generateReadObject(cw, classInternalName);
         generateReadObjectUTF8(cw, classInternalName, beanInternalName, fieldReaders);
@@ -307,14 +307,47 @@ public final class ObjectReaderCreatorASM {
 
     // ==================== createInstance ====================
 
-    private static void generateCreateInstance(ClassWriter cw, String classInternalName) {
+    /**
+     * Prefer {@code new ClassName()} when the bean type is public and exposes a
+     * public no-arg constructor — this emits 3 bytecodes (new + dup +
+     * invokespecial) that C2 can trivially inline, vs a JNI-style
+     * {@code UnsafeAllocator.allocateInstanceUnchecked} call which is
+     * ~10× slower per instance. Fall back to Unsafe for non-public beans or
+     * classes without an accessible no-arg constructor.
+     */
+    private static void generateCreateInstance(
+            ClassWriter cw,
+            String classInternalName,
+            Class<?> beanType,
+            String beanInternalName
+    ) {
         MethodWriter mw = cw.visitMethod(Opcodes.ACC_PUBLIC, "createInstance", "(J)Ljava/lang/Object;", 16);
-        // return UnsafeAllocator.allocateInstanceUnchecked(bc)
-        mw.getstatic(classInternalName, "bc", "Ljava/lang/Class;");
-        mw.invokestatic(TYPE_UNSAFE_ALLOC, "allocateInstanceUnchecked",
-                "(Ljava/lang/Class;)Ljava/lang/Object;");
-        mw.areturn();
-        mw.visitMaxs(1, 3);
+        if (canDirectlyInstantiate(beanType)) {
+            mw.new_(beanInternalName);
+            mw.dup();
+            mw.invokespecial(beanInternalName, "<init>", "()V");
+            mw.areturn();
+            mw.visitMaxs(2, 3);
+        } else {
+            // return UnsafeAllocator.allocateInstanceUnchecked(bc)
+            mw.getstatic(classInternalName, "bc", "Ljava/lang/Class;");
+            mw.invokestatic(TYPE_UNSAFE_ALLOC, "allocateInstanceUnchecked",
+                    "(Ljava/lang/Class;)Ljava/lang/Object;");
+            mw.areturn();
+            mw.visitMaxs(1, 3);
+        }
+    }
+
+    private static boolean canDirectlyInstantiate(Class<?> beanType) {
+        if (!Modifier.isPublic(beanType.getModifiers())) {
+            return false;
+        }
+        try {
+            java.lang.reflect.Constructor<?> ctor = beanType.getDeclaredConstructor();
+            return Modifier.isPublic(ctor.getModifiers());
+        } catch (NoSuchMethodException e) {
+            return false;
+        }
     }
 
     // ==================== getObjectClass ====================
