@@ -2778,6 +2778,532 @@ public abstract sealed class JSONParser implements Closeable
             return off;
         }
 
+        // ===========================================================
+        //   fastjson2-compatible name-match intrinsics
+        // -----------------------------------------------------------
+        //   These methods implement the fj2 ASM generator "genRead243"
+        //   calling convention:
+        //
+        //     Caller contract:
+        //       1. this.offset must point at the FIRST CHAR of the JSON
+        //          field name (one past the opening quote).
+        //       2. The caller has already done a pre-check via
+        //          {@link #getRawInt()} (4 bytes of name prefix as int)
+        //          and switched on that value to ensure this specific
+        //          nextIfName4Match<N> call matches the expected field.
+        //
+        //     What each method validates:
+        //       - Match2/3: only the trailing closing-quote and colon.
+        //         Name bytes are assumed validated by the caller's
+        //         switch on the leading 4-byte chunk.
+        //       - Match4: the 4th name byte + closing-quote + colon.
+        //       - Match5-8: last 4 name bytes via one int compare,
+        //         plus closing-quote + colon (position varies with N).
+        //       - Match9: last 8 name bytes via one long compare.
+        //
+        //     On success:
+        //       - this.offset is advanced past the closing '"', colon,
+        //         and any following whitespace — i.e. positioned at
+        //         the first non-whitespace byte of the field value.
+        //       - Returns true.
+        //
+        //     On failure:
+        //       - this.offset is left UNCHANGED.
+        //       - Returns false. The caller must fall back to the
+        //         generic hash-based field matcher.
+        //
+        //   These methods only make sense when called from bytecode
+        //   emitted by {@link com.alibaba.fastjson3.reader.ObjectReaderCreatorASM}
+        //   — they are not intended for direct use by hand-written code.
+        // ===========================================================
+
+        /**
+         * Skip leading whitespace and advance past the opening {@code "} of a
+         * field name. On success, {@code this.offset} is positioned at the first
+         * character of the field name — the precondition for {@link #getRawInt()}
+         * and the {@code nextIfName4Match<N>} family.
+         *
+         * <p>On success, this method also guarantees that at least 4 bytes
+         * remain in the buffer starting at {@code this.offset}, so a subsequent
+         * {@link #getRawInt()} call is safe without its own bounds check. The
+         * Match&lt;N&gt; methods each validate the additional bytes they need.
+         *
+         * <p>On failure (not at {@code "}, or insufficient bytes for getRawInt),
+         * {@code this.offset} is NOT modified. The caller should fall back to
+         * the generic hash path.
+         */
+        public final boolean advanceAfterNameOpeningQuote() {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset;
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            if (off >= e || b[off] != '"') {
+                return false;
+            }
+            off++;
+            // Reject when the buffer is too short for a subsequent 4-byte
+            // getRawInt() read — protects against UNSAFE OOB on malformed JSON.
+            // Valid JSON with at least one field + closing brace always has
+            // ≥ 4 more bytes after the opening quote, so this only rejects
+            // truncated input, which correctly falls back to the generic loop.
+            if (off + 4 > e) {
+                return false;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /**
+         * Read 4 bytes starting at {@code this.offset} as a native-order int.
+         * Used by the ASM generator to dispatch on the first 4 bytes of the
+         * current field name (which is the precondition for calling the
+         * {@code nextIfName4Match<N>} family).
+         */
+        public final int getRawInt() {
+            return com.alibaba.fastjson3.util.JDKUtils.getIntDirect(this.bytes, this.offset);
+        }
+
+        /**
+         * Read 8 bytes starting at {@code this.offset} as a native-order long.
+         * Used by the ASM generator when the caller needs to discriminate on
+         * an 8-byte prefix (e.g. extended switches).
+         */
+        public final long getRawLong() {
+            return com.alibaba.fastjson3.util.JDKUtils.getLongDirect(this.bytes, this.offset);
+        }
+
+        /**
+         * Match a 2-char field name whose leading 4 bytes were pre-checked
+         * by the caller. Validates only the trailing {@code ":} and skips
+         * whitespace past the colon.
+         *
+         * <p>Pattern consumed on success: {@code XX":(ws)} starting at
+         * {@code this.offset}, where {@code XX} is the 2 name bytes already
+         * validated by the caller's switch.</p>
+         */
+        public final boolean nextIfName4Match2() {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 4;
+            if (off > e || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /**
+         * Match a 3-char field name whose leading 4 bytes were pre-checked.
+         * Validates closing quote + colon. Layout: {@code XXX":(ws)}.
+         */
+        public final boolean nextIfName4Match3() {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 5;
+            if (off > e || b[off - 2] != '"' || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /**
+         * Match a 4-char field name with the 4th char passed as {@code c4}.
+         * The first 3 chars are assumed validated by the caller's switch.
+         * Layout: {@code XXXC":(ws)}.
+         */
+        public final boolean nextIfName4Match4(byte c4) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 6;
+            if (off > e || b[off - 3] != c4 || b[off - 2] != '"' || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /**
+         * Match a 5-char field name. {@code name1} is the last 4 bytes of the
+         * header — chars[2..4] + closing quote — encoded as a native-order int.
+         * Layout: {@code XXXXX":(ws)}.
+         */
+        public final boolean nextIfName4Match5(int name1) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 7;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 4) != name1
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /**
+         * Match a 6-char field name. {@code name1} is 4 bytes: chars[2..5] of
+         * the name, encoded as native-order int. Closing quote and colon are
+         * validated separately.
+         */
+        public final boolean nextIfName4Match6(int name1) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 8;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 5) != name1
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /**
+         * Match a 7-char field name. {@code name1} is 4 bytes: chars[2..5].
+         * Trailing chars[6] + quote + colon handled via byte compares.
+         */
+        public final boolean nextIfName4Match7(int name1) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 9;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 6) != name1
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /**
+         * Match an 8-char field name. {@code name1} is 4 bytes: chars[2..5].
+         * {@code c8} is the 8th name char. Trailing quote + colon validated.
+         */
+        public final boolean nextIfName4Match8(int name1, byte c8) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 10;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 7) != name1
+                    || b[off - 3] != c8
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /**
+         * Match a 9-char field name. {@code name1} is 8 bytes covering
+         * chars[2..9] as native-order long. Trailing quote + colon validated
+         * in the same long-read window.
+         */
+        public final boolean nextIfName4Match9(long name1) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 11;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 8) != name1
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        // ---------- Match10..16: one long + optional int/byte tail ----------
+
+        /** Match a 10-char name. {@code name1} long covers name[2..9]; trailing {@code ":} checked. */
+        public final boolean nextIfName4Match10(long name1) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 12;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 9) != name1
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match an 11-char name. {@code name1} long covers chars 2..9; trailing closing quote + colon checked. */
+        public final boolean nextIfName4Match11(long name1) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 13;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 10) != name1
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 12-char name. {@code name1} long + {@code name2} byte (12th char). */
+        public final boolean nextIfName4Match12(long name1, byte name2) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 14;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 11) != name1
+                    || b[off - 3] != name2
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 13-char name. {@code name1} long + {@code name2} int — trailing {@code "} and {@code :} packed into name2. */
+        public final boolean nextIfName4Match13(long name1, int name2) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 15;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 12) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 4) != name2) {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 14-char name. {@code name1} long + {@code name2} int; trailing colon checked separately. */
+        public final boolean nextIfName4Match14(long name1, int name2) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 16;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 13) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 5) != name2
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 15-char name. {@code name1} long + {@code name2} int; {@code "} and {@code :} checked separately. */
+        public final boolean nextIfName4Match15(long name1, int name2) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 17;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 14) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 6) != name2
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 16-char name. {@code name1} long + {@code name2} int + {@code name3} byte (16th char). */
+        public final boolean nextIfName4Match16(long name1, int name2, byte name3) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 18;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 15) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 7) != name2
+                    || b[off - 3] != name3
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        // ---------- Match17..23: two longs + optional int/byte tail ----------
+
+        /** Match a 17-char name. Two full 8-byte long compares cover all 17 chars + {@code "} + {@code :} (17+2=19, 19-16=3 unused bytes at start). */
+        public final boolean nextIfName4Match17(long name1, long name2) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 19;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 16) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 8) != name2) {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match an 18-char name. */
+        public final boolean nextIfName4Match18(long name1, long name2) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 20;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 17) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 9) != name2
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 19-char name. */
+        public final boolean nextIfName4Match19(long name1, long name2) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 21;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 18) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 10) != name2
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 20-char name. {@code name3} byte is the 20th char. */
+        public final boolean nextIfName4Match20(long name1, long name2, byte name3) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 22;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 19) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 11) != name2
+                    || b[off - 3] != name3
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 21-char name. {@code name3} int includes {@code "} and {@code :}. */
+        public final boolean nextIfName4Match21(long name1, long name2, int name3) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 23;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 20) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 12) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 4) != name3) {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 22-char name. */
+        public final boolean nextIfName4Match22(long name1, long name2, int name3) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 24;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 21) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 13) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 5) != name3
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 23-char name. */
+        public final boolean nextIfName4Match23(long name1, long name2, int name3) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 25;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 22) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 14) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 6) != name3
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
         /**
          * Offset-based separator reading. Takes offset as parameter.
          * Returns positive value (new offset after ',') for comma.

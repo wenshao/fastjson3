@@ -113,6 +113,35 @@ public class DynamicClassLoader
 
     public DynamicClassLoader(ClassLoader parent) {
         super(parent);
+        exportInternalPackagesToThisLoader();
+    }
+
+    /**
+     * Classes defined via {@link ClassLoader#defineClass} land in this loader's
+     * unnamed module. ASM-generated readers/writers reference internal helpers
+     * in {@code com.alibaba.fastjson3.util} (JDKUtils, UnsafeAllocator) which
+     * is NOT exported by the {@code com.alibaba.fastjson3} module — so without
+     * an explicit cross-module export, calls from the generated code fail with
+     * {@link IllegalAccessError} at link time when the library is used from a
+     * JPMS modulepath (e.g. Maven surefire in module mode). Open the needed
+     * internal packages to this loader's unnamed module at construction time.
+     */
+    private void exportInternalPackagesToThisLoader() {
+        Module fj3Module = DynamicClassLoader.class.getModule();
+        if (!fj3Module.isNamed()) {
+            return; // classpath mode — JPMS rules don't apply
+        }
+        try {
+            Module target = this.getUnnamedModule();
+            fj3Module.addExports("com.alibaba.fastjson3.util", target);
+            fj3Module.addExports("com.alibaba.fastjson3.internal.asm", target);
+        } catch (Throwable t) {
+            // Unusual classloader scenarios (OSGi, framework containers) may
+            // throw on Module.addExports. Falling back silently is acceptable
+            // — in classpath-style deployments the generated code already
+            // works without this call, and JPMS-strict users will get a
+            // clear IllegalAccessError pointing at the missing exports.
+        }
     }
 
     static ClassLoader getParentClassLoader() {
