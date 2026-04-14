@@ -339,8 +339,17 @@ public final class ObjectReaderCreatorASM {
     }
 
     private static boolean canDirectlyInstantiate(Class<?> beanType) {
-        if (!Modifier.isPublic(beanType.getModifiers())) {
-            return false;
+        // Walk the enclosing-class chain — all enclosing types must be public
+        // for the generated class (in a different package) to reference
+        // {@code beanType} via {@code new} bytecode. A public inner class of a
+        // package-private outer class passes {@code Modifier.isPublic} on the
+        // inner itself but is NOT accessible from {@code gen} package, which
+        // would cause {@link IllegalAccessError} at link time. Fall back to
+        // Unsafe allocation for those.
+        for (Class<?> cls = beanType; cls != null; cls = cls.getEnclosingClass()) {
+            if (!Modifier.isPublic(cls.getModifiers())) {
+                return false;
+            }
         }
         try {
             java.lang.reflect.Constructor<?> ctor = beanType.getDeclaredConstructor();

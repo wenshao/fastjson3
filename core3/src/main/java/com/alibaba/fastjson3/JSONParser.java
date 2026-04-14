@@ -2823,8 +2823,14 @@ public abstract sealed class JSONParser implements Closeable
          * character of the field name — the precondition for {@link #getRawInt()}
          * and the {@code nextIfName4Match<N>} family.
          *
-         * <p>On failure (not at {@code "}), {@code this.offset} is NOT modified.
-         * The caller should fall back to the generic hash path.</p>
+         * <p>On success, this method also guarantees that at least 4 bytes
+         * remain in the buffer starting at {@code this.offset}, so a subsequent
+         * {@link #getRawInt()} call is safe without its own bounds check. The
+         * Match&lt;N&gt; methods each validate the additional bytes they need.
+         *
+         * <p>On failure (not at {@code "}, or insufficient bytes for getRawInt),
+         * {@code this.offset} is NOT modified. The caller should fall back to
+         * the generic hash path.
          */
         public final boolean advanceAfterNameOpeningQuote() {
             final byte[] b = this.bytes;
@@ -2836,7 +2842,16 @@ public abstract sealed class JSONParser implements Closeable
             if (off >= e || b[off] != '"') {
                 return false;
             }
-            this.offset = off + 1;
+            off++;
+            // Reject when the buffer is too short for a subsequent 4-byte
+            // getRawInt() read — protects against UNSAFE OOB on malformed JSON.
+            // Valid JSON with at least one field + closing brace always has
+            // ≥ 4 more bytes after the opening quote, so this only rejects
+            // truncated input, which correctly falls back to the generic loop.
+            if (off + 4 > e) {
+                return false;
+            }
+            this.offset = off;
             return true;
         }
 

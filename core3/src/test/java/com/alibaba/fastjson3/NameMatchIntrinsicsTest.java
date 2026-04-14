@@ -353,4 +353,55 @@ class NameMatchIntrinsicsTest {
         assertTrue(p.nextIfName4Match5(name1));
         assertEquals(b.length, getOffset(p));
     }
+
+    // ---------- advanceAfterNameOpeningQuote bounds guarantee ----------
+
+    /**
+     * advanceAfterNameOpeningQuote must reject when fewer than 4 bytes remain
+     * after the opening quote — this is the precondition that lets the
+     * subsequent {@link JSONParser.UTF8#getRawInt()} read safely without its
+     * own bounds check.
+     */
+    @Test
+    void advanceRejectsWhenInsufficientBytesForGetRawInt() throws Exception {
+        // 5 bytes: {"x":   — only 3 bytes (x":) after the opening quote.
+        byte[] b = "{\"x\":".getBytes(StandardCharsets.UTF_8);
+        JSONParser.UTF8 p = parser(b);
+        // Position at the opening quote (byte index 1).
+        Field f = JSONParser.class.getDeclaredField("offset");
+        f.setAccessible(true);
+        f.setInt(p, 1);
+        assertFalse(p.advanceAfterNameOpeningQuote(),
+                "must reject when <4 bytes remain after opening quote");
+        // offset must not be advanced on failure
+        assertEquals(1, getOffset(p));
+    }
+
+    @Test
+    void advanceAcceptsWhenExactly4BytesRemain() throws Exception {
+        // 6 bytes: {"x":1 — 4 bytes (x":1) after the opening quote.
+        byte[] b = "{\"x\":1".getBytes(StandardCharsets.UTF_8);
+        JSONParser.UTF8 p = parser(b);
+        Field f = JSONParser.class.getDeclaredField("offset");
+        f.setAccessible(true);
+        f.setInt(p, 1);
+        assertTrue(p.advanceAfterNameOpeningQuote(),
+                "must accept when exactly 4 bytes remain after opening quote");
+        assertEquals(2, getOffset(p));
+        // getRawInt is safe now.
+        int raw = p.getRawInt();
+        int expected = com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, 2);
+        assertEquals(expected, raw);
+    }
+
+    @Test
+    void advanceRejectsWhenNotAtOpeningQuote() throws Exception {
+        byte[] b = "not-a-json-object".getBytes(StandardCharsets.UTF_8);
+        JSONParser.UTF8 p = parser(b);
+        Field f = JSONParser.class.getDeclaredField("offset");
+        f.setAccessible(true);
+        f.setInt(p, 0);
+        assertFalse(p.advanceAfterNameOpeningQuote());
+        assertEquals(0, getOffset(p));
+    }
 }
