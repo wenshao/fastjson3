@@ -237,6 +237,111 @@ class NameMatchIntrinsicsTest {
 
     // ---------- Near-end boundary ----------
 
+    // ---------- Match10..23 (long-name intrinsics, Phase 1 of 路径丙) ----------
+
+    /**
+     * Exercises a Match<N> method by constructing JSON like {@code "<name>":42},
+     * seeking to the first char of the name, calling the method, and asserting
+     * offset is positioned at the value start. Caller supplies the correct
+     * constant args extracted from the same bytes.
+     */
+    private static void assertLongNameMatch(String name, java.util.function.BiFunction<JSONParser.UTF8, byte[], Boolean> invoker) throws Exception {
+        byte[] b = ("\"" + name + "\":42").getBytes(StandardCharsets.UTF_8);
+        JSONParser.UTF8 p = parser(b);
+        seekToName(p, b, name);
+        assertTrue(invoker.apply(p, b), "Match failed for name=" + name);
+        assertEquals((byte) '4', b[getOffset(p)], "offset not at '4' for name=" + name);
+    }
+
+    @Test
+    void match10_success() throws Exception {
+        // "0123456789" — 10 chars. name1 = long at offset+3 (i.e. bytes[4..11]).
+        assertLongNameMatch("0123456789", (p, b) ->
+                p.nextIfName4Match10(com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 4)));
+    }
+
+    @Test
+    void match11_success() throws Exception {
+        assertLongNameMatch("0123456789A", (p, b) ->
+                p.nextIfName4Match11(com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 4)));
+    }
+
+    @Test
+    void match12_success() throws Exception {
+        // long at offset+3 + byte name2 at offset+11 (the 12th char)
+        assertLongNameMatch("0123456789AB", (p, b) ->
+                p.nextIfName4Match12(
+                        com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 4),
+                        (byte) 'B'));
+    }
+
+    @Test
+    void match13_success() throws Exception {
+        // long at offset+3 + int at offset+11 (4 bytes: last name char + '"' + ':' + pad)
+        assertLongNameMatch("0123456789ABC", (p, b) ->
+                p.nextIfName4Match13(
+                        com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 4),
+                        com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, 12)));
+    }
+
+    @Test
+    void match16_success() throws Exception {
+        assertLongNameMatch("0123456789ABCDEF", (p, b) ->
+                p.nextIfName4Match16(
+                        com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 4),
+                        com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, 12),
+                        (byte) 'F'));
+    }
+
+    @Test
+    void match17_success() throws Exception {
+        // 17 chars. Two longs: long1 at offset+3 (bytes[4..11]), long2 at offset+11 (bytes[12..19]).
+        assertLongNameMatch("0123456789ABCDEFG", (p, b) ->
+                p.nextIfName4Match17(
+                        com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 4),
+                        com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 12)));
+    }
+
+    @Test
+    void match20_success() throws Exception {
+        assertLongNameMatch("0123456789ABCDEFGHIJ", (p, b) ->
+                p.nextIfName4Match20(
+                        com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 4),
+                        com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 12),
+                        (byte) 'J'));
+    }
+
+    @Test
+    void match23_success() throws Exception {
+        assertLongNameMatch("0123456789ABCDEFGHIJKLM", (p, b) ->
+                p.nextIfName4Match23(
+                        com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 4),
+                        com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 12),
+                        com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, 20)));
+    }
+
+    @Test
+    void match10_failsOnWrongLong() throws Exception {
+        byte[] b = "\"0123456789\":42".getBytes(StandardCharsets.UTF_8);
+        JSONParser.UTF8 p = parser(b);
+        seekToName(p, b, "0123456789");
+        int preOff = getOffset(p);
+        assertFalse(p.nextIfName4Match10(0xDEADBEEFCAFEBABEL));
+        assertEquals(preOff, getOffset(p));
+    }
+
+    @Test
+    void match17_failsOnSecondLongMismatch() throws Exception {
+        byte[] b = "\"0123456789ABCDEFG\":42".getBytes(StandardCharsets.UTF_8);
+        JSONParser.UTF8 p = parser(b);
+        seekToName(p, b, "0123456789ABCDEFG");
+        int preOff = getOffset(p);
+        // First long correct, second wrong
+        long good = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, 4);
+        assertFalse(p.nextIfName4Match17(good, 0xFFFFFFFFFFFFFFFFL));
+        assertEquals(preOff, getOffset(p));
+    }
+
     @Test
     void match5_failsGracefullyAtEndOfBuffer() throws Exception {
         // Only "\"abcde\": (no value) — advance would hit end
