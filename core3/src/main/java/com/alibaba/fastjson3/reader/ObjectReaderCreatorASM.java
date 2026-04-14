@@ -69,6 +69,78 @@ public final class ObjectReaderCreatorASM {
         }
     }
 
+    // ===================== Fast-path helpers (PR #2 of parse-stage1) =====================
+    //
+    // When every field in the bean has an ASCII name of length 2..9 and the
+    // per-field 4-byte prefixes are mutually unique, we can emit a switch-based
+    // speculation phase that uses {@code nextIfName4Match<N>} intrinsics for
+    // constant-time long/int comparisons instead of the byte-array matcher.
+    // Beans that don't qualify keep using the existing {@code tryMatchFieldHeaderOff}
+    // speculation phase — no regression on them.
+
+    private static boolean canUseFastPath(FieldReader[] fieldReaders) {
+        if (fieldReaders.length == 0) {
+            return false;
+        }
+        java.util.HashSet<Integer> prefixes = new java.util.HashSet<>();
+        for (FieldReader fr : fieldReaders) {
+            String name = fr.fieldName;
+            int L = name.length();
+            if (L < 2 || L > 9) {
+                return false;
+            }
+            for (int i = 0; i < L; i++) {
+                if (name.charAt(i) > 127) {
+                    return false;   // non-ASCII: byte[] != char[]
+                }
+            }
+            if (!prefixes.add(computePrefix(name))) {
+                return false;       // collision on the 4-byte dispatch key
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Compute the 4-byte native-order int that the runtime will see at
+     * {@code this.offset} after {@code advanceAfterNameOpeningQuote()}.
+     * For names of length &ge;4 this is the first 4 name bytes; for shorter
+     * names the prefix includes the closing quote (and colon for length 2)
+     * so the single dispatch key uniquely identifies short field names too.
+     */
+    private static int computePrefix(String name) {
+        int L = name.length();
+        byte[] buf = new byte[4];
+        buf[0] = (byte) name.charAt(0);
+        buf[1] = (byte) name.charAt(1);
+        if (L >= 3) {
+            buf[2] = (byte) name.charAt(2);
+        } else {
+            buf[2] = '"';
+        }
+        if (L >= 4) {
+            buf[3] = (byte) name.charAt(3);
+        } else if (L == 3) {
+            buf[3] = '"';
+        } else {
+            buf[3] = ':';
+        }
+        return com.alibaba.fastjson3.util.JDKUtils.getIntDirect(buf, 0);
+    }
+
+    /** Encode 4 bytes as a native-order int using the same primitive as the runtime. */
+    private static int encodeInt(byte b0, byte b1, byte b2, byte b3) {
+        byte[] buf = {b0, b1, b2, b3};
+        return com.alibaba.fastjson3.util.JDKUtils.getIntDirect(buf, 0);
+    }
+
+    /** Encode 8 bytes as a native-order long using the same primitive as the runtime. */
+    private static long encodeLong(byte b0, byte b1, byte b2, byte b3,
+                                   byte b4, byte b5, byte b6, byte b7) {
+        byte[] buf = {b0, b1, b2, b3, b4, b5, b6, b7};
+        return com.alibaba.fastjson3.util.JDKUtils.getLongDirect(buf, 0);
+    }
+
     private static boolean canGenerate(Class<?> type, FieldReader[] fields) {
         if (type.isInterface() || type.isArray() || type.isEnum()
                 || type.isPrimitive() || Modifier.isAbstract(type.getModifiers())) {
@@ -366,67 +438,167 @@ public final class ObjectReaderCreatorASM {
         mw.aload(0);
         mw.getfield(classInternalName, "fieldReaders", "[" + DESC_FIELD_READER);
         mw.astore(11);
-        // off = utf8.getOffset()
-        mw.aload(1);
-        mw.invokevirtual(TYPE_JSON_PARSER, "getOffset", "()I");
-        mw.istore(12);
 
         String readOffDesc = "(ILjava/lang/Object;" + DESC_FIELD_READER + ")I";
 
-        // ==================== Ordered Speculation Phase ====================
-        // Uses local offset (no this.offset heap access on fast path).
         Label genericLoopTop = new Label();
         Label returnInstance = new Label();
 
-        for (int i = 0; i < fieldReaders.length; i++) {
-            // off = utf8.tryMatchFieldHeaderOff(off, fieldReaders[i].fieldNameHeader)
-            mw.aload(1);  // utf8
-            mw.iload(12); // off
-            mw.aload(11); // frArray
-            mw.bipush(i);
-            mw.aaload();   // frArray[i]
-            mw.getfield(TYPE_FIELD_READER, "fieldNameHeader", "[B");
-            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "tryMatchFieldHeaderOff", "(I[B)I");
-            mw.istore(12);
-            mw.iload(12);
-            mw.iconst_m1();
-            mw.if_icmpeq(genericLoopTop); // -1 = mismatch -> fallback
+        boolean fastPath = canUseFastPath(fieldReaders);
 
-            // Read field value using offset-based methods
-            generateFieldCaseOff(mw, classInternalName, fieldReaders[i], i, readOffDesc);
+        if (fastPath) {
+            // ==================== Fast Path Speculation (PR #2 of parse-stage1) ====================
+            // Uses getRawInt switch + nextIfName4Match<N> intrinsic (long/int compare)
+            // instead of the byte[] tryMatchFieldHeaderOff.
+            //
+            // On any prefix or tail mismatch, restore this.offset to the pre-quote
+            // position and fall through to the hash-based generic loop.
+            Label fastLoopTop = new Label();
+            Label fastMiss = new Label();
+            Label afterFastField = new Label();
 
-            // sep = utf8.readFieldSepOff(off) — positive=comma, negative='}'
+            mw.visitLabel(fastLoopTop);
+
+            // 1. Skip ws + check opening quote + advance past it.
             mw.aload(1);
-            mw.iload(12);
-            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readFieldSepOff", "(I)I");
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "advanceAfterNameOpeningQuote", "()Z");
+            mw.ifeq(genericLoopTop);
+
+            // 2. Read first 4 bytes of the name and dispatch on them.
+            mw.aload(1);
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "getRawInt", "()I");
+
+            int n = fieldReaders.length;
+            // lookupswitch requires keys sorted in ascending int order.
+            int[] prefixes = new int[n];
+            int[] fieldIdxByPrefix = new int[n];
+            for (int i = 0; i < n; i++) {
+                prefixes[i] = computePrefix(fieldReaders[i].fieldName);
+                fieldIdxByPrefix[i] = i;
+            }
+            // Simple insertion sort — n is typically small.
+            for (int i = 1; i < n; i++) {
+                int kp = prefixes[i];
+                int kf = fieldIdxByPrefix[i];
+                int j = i - 1;
+                while (j >= 0 && prefixes[j] > kp) {
+                    prefixes[j + 1] = prefixes[j];
+                    fieldIdxByPrefix[j + 1] = fieldIdxByPrefix[j];
+                    j--;
+                }
+                prefixes[j + 1] = kp;
+                fieldIdxByPrefix[j + 1] = kf;
+            }
+
+            Label[] fastCaseLabels = new Label[n];
+            for (int c = 0; c < n; c++) {
+                fastCaseLabels[c] = new Label();
+            }
+            Label fastDefault = new Label();
+            mw.visitLookupSwitchInsn(fastDefault, prefixes, fastCaseLabels);
+
+            for (int c = 0; c < n; c++) {
+                mw.visitLabel(fastCaseLabels[c]);
+                int fieldIdx = fieldIdxByPrefix[c];
+                emitMatchCall(mw, fieldReaders[fieldIdx]);
+                mw.ifeq(fastMiss);
+
+                // Success: read field value using the non-off generateFieldCase
+                // (uses this.offset, which Match<N> has advanced past ':' and trailing ws).
+                generateFieldCase(mw, classInternalName, beanInternalName,
+                        fieldReaders[fieldIdx], fieldIdx);
+                mw.goto_(afterFastField);
+            }
+
+            // Default case: no prefix match -> same as a Match<N> miss.
+            mw.visitLabel(fastDefault);
+            // Fall through to fastMiss. (Labelled goto for clarity.)
+            mw.goto_(fastMiss);
+
+            // Fast miss: this.offset is at the first name char (post opening quote).
+            // Back it up by 1 so the hash path can re-read the quote + field name.
+            mw.visitLabel(fastMiss);
+            mw.aload(1);
+            mw.aload(1);
+            mw.invokevirtual(TYPE_JSON_PARSER, "getOffset", "()I");
+            mw.iconst_1();
+            mw.isub();
+            mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
+            mw.goto_(genericLoopTop);
+
+            // Separator after a successful fast-path field read.
+            mw.visitLabel(afterFastField);
+            mw.aload(1);
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readFieldSeparator", "()I");
             mw.istore(9);
             mw.iload(9);
-            mw.iconst_m1();
-            mw.if_icmple(returnInstance); // result <= -1 means '}', recover offset
-            // comma: off = result
+            mw.ifeq(fastLoopTop);        // 0 = comma -> next iteration
             mw.iload(9);
+            mw.iconst_1();
+            Label fastErrorSep = new Label();
+            mw.if_icmpne(fastErrorSep);
+            mw.aload(4);
+            mw.areturn();
+            mw.visitLabel(fastErrorSep);
+            mw.new_(TYPE_JSON_EXCEPTION);
+            mw.dup();
+            mw.visitLdcInsn("expected ',' or '}'");
+            mw.invokespecial(TYPE_JSON_EXCEPTION, "<init>", "(Ljava/lang/String;)V");
+            mw.athrow();
+        } else {
+            // off = utf8.getOffset() — initialised only for the off-as-local path
+            mw.aload(1);
+            mw.invokevirtual(TYPE_JSON_PARSER, "getOffset", "()I");
             mw.istore(12);
-            // fall through to next field
+
+            // ==================== Ordered Speculation (byte[] header) ====================
+            for (int i = 0; i < fieldReaders.length; i++) {
+                // off = utf8.tryMatchFieldHeaderOff(off, fieldReaders[i].fieldNameHeader)
+                mw.aload(1);  // utf8
+                mw.iload(12); // off
+                mw.aload(11); // frArray
+                mw.bipush(i);
+                mw.aaload();   // frArray[i]
+                mw.getfield(TYPE_FIELD_READER, "fieldNameHeader", "[B");
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "tryMatchFieldHeaderOff", "(I[B)I");
+                mw.istore(12);
+                mw.iload(12);
+                mw.iconst_m1();
+                mw.if_icmpeq(genericLoopTop); // -1 = mismatch -> fallback
+
+                generateFieldCaseOff(mw, classInternalName, fieldReaders[i], i, readOffDesc);
+
+                // sep = utf8.readFieldSepOff(off) — positive=comma, negative='}'
+                mw.aload(1);
+                mw.iload(12);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readFieldSepOff", "(I)I");
+                mw.istore(9);
+                mw.iload(9);
+                mw.iconst_m1();
+                mw.if_icmple(returnInstance); // result <= -1 means '}', recover offset
+                // comma: off = result
+                mw.iload(9);
+                mw.istore(12);
+                // fall through to next field
+            }
+
+            // All fields matched but JSON has more fields
+            mw.aload(1);
+            mw.iload(12);
+            mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
+            mw.goto_(genericLoopTop);
+
+            // --- Return instance (off-as-local path only) ---
+            mw.visitLabel(returnInstance);
+            mw.iload(9);
+            mw.ineg();
+            mw.istore(12);
+            mw.aload(1);
+            mw.iload(12);
+            mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
+            mw.aload(4);
+            mw.areturn();
         }
-
-        // All fields matched but JSON has more fields
-        // Sync offset and fall to generic loop
-        mw.aload(1);
-        mw.iload(12);
-        mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
-        mw.goto_(genericLoopTop);
-
-        // --- Return instance ---
-        mw.visitLabel(returnInstance);
-        // Recover offset: for '}' case, result = -(off+1), so off = -result
-        mw.iload(9);
-        mw.ineg();
-        mw.istore(12);
-        mw.aload(1);
-        mw.iload(12);
-        mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
-        mw.aload(4);
-        mw.areturn();
 
         // ==================== Generic Fallback Loop ====================
         // this.offset was set by tryMatchFieldHeaderOff on mismatch
@@ -526,6 +698,88 @@ public final class ObjectReaderCreatorASM {
         mw.athrow();
 
         mw.visitMaxs(12, 13);
+    }
+
+    /**
+     * Emit the call to {@code nextIfName4Match<N>} for a single field. Precomputes
+     * the tail constants from the field name bytes and pushes them on the stack.
+     * Leaves a boolean result on the stack.
+     */
+    private static void emitMatchCall(MethodWriter mw, FieldReader fr) {
+        String name = fr.fieldName;
+        int L = name.length();
+        mw.aload(1);
+        switch (L) {
+            case 2:
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match2", "()Z");
+                break;
+            case 3:
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match3", "()Z");
+                break;
+            case 4: {
+                mw.bipush((byte) name.charAt(3));
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match4", "(B)Z");
+                break;
+            }
+            case 5: {
+                int name1 = encodeInt(
+                        (byte) name.charAt(3),
+                        (byte) name.charAt(4),
+                        (byte) '"',
+                        (byte) ':');
+                mw.visitLdcInsn(name1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match5", "(I)Z");
+                break;
+            }
+            case 6: {
+                int name1 = encodeInt(
+                        (byte) name.charAt(3),
+                        (byte) name.charAt(4),
+                        (byte) name.charAt(5),
+                        (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match6", "(I)Z");
+                break;
+            }
+            case 7: {
+                int name1 = encodeInt(
+                        (byte) name.charAt(3),
+                        (byte) name.charAt(4),
+                        (byte) name.charAt(5),
+                        (byte) name.charAt(6));
+                mw.visitLdcInsn(name1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match7", "(I)Z");
+                break;
+            }
+            case 8: {
+                int name1 = encodeInt(
+                        (byte) name.charAt(3),
+                        (byte) name.charAt(4),
+                        (byte) name.charAt(5),
+                        (byte) name.charAt(6));
+                mw.visitLdcInsn(name1);
+                mw.bipush((byte) name.charAt(7));
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match8", "(IB)Z");
+                break;
+            }
+            case 9: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3),
+                        (byte) name.charAt(4),
+                        (byte) name.charAt(5),
+                        (byte) name.charAt(6),
+                        (byte) name.charAt(7),
+                        (byte) name.charAt(8),
+                        (byte) '"',
+                        (byte) ':');
+                mw.visitLdcInsn(name1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match9", "(J)Z");
+                break;
+            }
+            default:
+                throw new IllegalStateException(
+                        "emitMatchCall: unsupported field name length " + L + " for " + name);
+        }
     }
 
     private static void generateFieldCase(

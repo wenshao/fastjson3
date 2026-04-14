@@ -2818,6 +2818,29 @@ public abstract sealed class JSONParser implements Closeable
         // ===========================================================
 
         /**
+         * Skip leading whitespace and advance past the opening {@code "} of a
+         * field name. On success, {@code this.offset} is positioned at the first
+         * character of the field name — the precondition for {@link #getRawInt()}
+         * and the {@code nextIfName4Match<N>} family.
+         *
+         * <p>On failure (not at {@code "}), {@code this.offset} is NOT modified.
+         * The caller should fall back to the generic hash path.</p>
+         */
+        public final boolean advanceAfterNameOpeningQuote() {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset;
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            if (off >= e || b[off] != '"') {
+                return false;
+            }
+            this.offset = off + 1;
+            return true;
+        }
+
+        /**
          * Read 4 bytes starting at {@code this.offset} as a native-order int.
          * Used by the ASM generator to dispatch on the first 4 bytes of the
          * current field name (which is the precondition for calling the
