@@ -3304,6 +3304,322 @@ public abstract sealed class JSONParser implements Closeable
             return true;
         }
 
+        // ====================================================================
+        // nextIfValue4Match — value-side counterpart to nextIfName4Match.
+        //
+        // Used by the ASM generator (and planned enum inline) to match a JSON
+        // string *value* whose content has been pre-discriminated by a lookup
+        // switch on a 4- or 8-byte prefix. On entry {@code this.offset} points
+        // at the first content byte of the value (past the opening {@code "}).
+        //
+        // These helpers verify the tail bytes the prefix did not cover, the
+        // closing {@code "}, and the post-value separator. The convention
+        // follows fastjson2's {@code nextIfValue4Match} family so a generator
+        // pre-verifying 4 bytes via a {@code getInt(bytes, offset - 1)} read
+        // — i.e. opening quote + 3 content bytes — can call them directly.
+        //
+        // Post-value separator handling (mirrors fj3's existing field-reading
+        // contract, not fastjson2's {@code ch}-lookahead state):
+        //   - {@code ','}: consume, skip whitespace, advance {@code this.offset}
+        //     to the first byte of the next field name.
+        //   - {@code '}'} / {@code ']'}: leave {@code this.offset} at the
+        //     terminator so the caller's outer loop (via
+        //     {@code readFieldSeparator} / {@code readArraySeparator}) can
+        //     observe end-of-object / end-of-array.
+        // ====================================================================
+
+        /**
+         * Match a 2-char value. Caller's prefix int covers the full
+         * {@code "XX"} (opening quote + 2 content chars + closing quote);
+         * only the post-value separator is verified here.
+         */
+        public final boolean nextIfValue4Match2() {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 3;
+            if (off >= e) {
+                return false;
+            }
+            int c = b[off] & 0xff;
+            if (c == ',') {
+                off++;
+                while (off < e && b[off] <= ' ') {
+                    off++;
+                }
+                this.offset = off;
+                return true;
+            }
+            if (c == '}' || c == ']') {
+                this.offset = off;
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Match a 3-char value. Caller's prefix int covers opening quote +
+         * 3 content chars; this helper verifies the closing {@code "} and
+         * the post-value separator.
+         */
+        public final boolean nextIfValue4Match3() {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 4;
+            if (off >= e || b[off - 1] != '"') {
+                return false;
+            }
+            int c = b[off] & 0xff;
+            if (c == ',') {
+                off++;
+                while (off < e && b[off] <= ' ') {
+                    off++;
+                }
+                this.offset = off;
+                return true;
+            }
+            if (c == '}' || c == ']') {
+                this.offset = off;
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Match a 4-char value. {@code c4} = 4th content byte (index 3).
+         * Caller's prefix covers opening quote + first 3 content chars.
+         */
+        public final boolean nextIfValue4Match4(byte c4) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 5;
+            if (off >= e || b[off - 2] != c4 || b[off - 1] != '"') {
+                return false;
+            }
+            int c = b[off] & 0xff;
+            if (c == ',') {
+                off++;
+                while (off < e && b[off] <= ' ') {
+                    off++;
+                }
+                this.offset = off;
+                return true;
+            }
+            if (c == '}' || c == ']') {
+                this.offset = off;
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Match a 5-char value. {@code c4}, {@code c5} = content chars at
+         * indices 3 and 4. Caller's prefix covers opening quote + first 3
+         * content chars.
+         */
+        public final boolean nextIfValue4Match5(byte c4, byte c5) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 6;
+            if (off >= e
+                    || b[off - 3] != c4
+                    || b[off - 2] != c5
+                    || b[off - 1] != '"') {
+                return false;
+            }
+            int c = b[off] & 0xff;
+            if (c == ',') {
+                off++;
+                while (off < e && b[off] <= ' ') {
+                    off++;
+                }
+                this.offset = off;
+                return true;
+            }
+            if (c == '}' || c == ']') {
+                this.offset = off;
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Match a 6-char value. {@code name1} is a native-order int covering
+         * content chars at indices 3–5 plus the closing {@code "}. No
+         * explicit closing-quote check — it lives inside {@code name1}.
+         */
+        public final boolean nextIfValue4Match6(int name1) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 7;
+            if (off >= e
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 4) != name1) {
+                return false;
+            }
+            int c = b[off] & 0xff;
+            if (c == ',') {
+                off++;
+                while (off < e && b[off] <= ' ') {
+                    off++;
+                }
+                this.offset = off;
+                return true;
+            }
+            if (c == '}' || c == ']') {
+                this.offset = off;
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Match a 7-char value. {@code name1} is a native-order int covering
+         * content chars 3–6. Trailing closing {@code "} is checked separately.
+         */
+        public final boolean nextIfValue4Match7(int name1) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 8;
+            if (off >= e
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 5) != name1
+                    || b[off - 1] != '"') {
+                return false;
+            }
+            int c = b[off] & 0xff;
+            if (c == ',') {
+                off++;
+                while (off < e && b[off] <= ' ') {
+                    off++;
+                }
+                this.offset = off;
+                return true;
+            }
+            if (c == '}' || c == ']') {
+                this.offset = off;
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Match an 8-char value. {@code name1} is an int covering content
+         * chars 3–6; {@code c8} = content char at index 7. Trailing closing
+         * {@code "} verified.
+         */
+        public final boolean nextIfValue4Match8(int name1, byte c8) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 9;
+            if (off >= e
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 6) != name1
+                    || b[off - 2] != c8
+                    || b[off - 1] != '"') {
+                return false;
+            }
+            int c = b[off] & 0xff;
+            if (c == ',') {
+                off++;
+                while (off < e && b[off] <= ' ') {
+                    off++;
+                }
+                this.offset = off;
+                return true;
+            }
+            if (c == '}' || c == ']') {
+                this.offset = off;
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Match a 9-char value. {@code name1} is an int covering content
+         * chars 3–6; {@code c8}, {@code c9} = content chars at indices 7, 8.
+         * Trailing closing {@code "} verified.
+         */
+        public final boolean nextIfValue4Match9(int name1, byte c8, byte c9) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 10;
+            if (off >= e
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 7) != name1
+                    || b[off - 3] != c8
+                    || b[off - 2] != c9
+                    || b[off - 1] != '"') {
+                return false;
+            }
+            int c = b[off] & 0xff;
+            if (c == ',') {
+                off++;
+                while (off < e && b[off] <= ' ') {
+                    off++;
+                }
+                this.offset = off;
+                return true;
+            }
+            if (c == '}' || c == ']') {
+                this.offset = off;
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Match a 10-char value. {@code name1} is a native-order long
+         * covering content chars 3–9 plus the closing {@code "}.
+         */
+        public final boolean nextIfValue4Match10(long name1) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 11;
+            if (off >= e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 8) != name1) {
+                return false;
+            }
+            int c = b[off] & 0xff;
+            if (c == ',') {
+                off++;
+                while (off < e && b[off] <= ' ') {
+                    off++;
+                }
+                this.offset = off;
+                return true;
+            }
+            if (c == '}' || c == ']') {
+                this.offset = off;
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Match an 11-char value. {@code name1} is a long covering content
+         * chars 3–10. Trailing closing {@code "} verified separately.
+         */
+        public final boolean nextIfValue4Match11(long name1) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 12;
+            if (off >= e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 9) != name1
+                    || b[off - 1] != '"') {
+                return false;
+            }
+            int c = b[off] & 0xff;
+            if (c == ',') {
+                off++;
+                while (off < e && b[off] <= ' ') {
+                    off++;
+                }
+                this.offset = off;
+                return true;
+            }
+            if (c == '}' || c == ']') {
+                this.offset = off;
+                return true;
+            }
+            return false;
+        }
+
         /**
          * Offset-based separator reading. Takes offset as parameter.
          * Returns positive value (new offset after ',') for comma.
