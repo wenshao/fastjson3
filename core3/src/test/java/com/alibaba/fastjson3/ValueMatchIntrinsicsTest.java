@@ -58,21 +58,21 @@ class ValueMatchIntrinsicsTest {
     // ---------- Match2 ----------
 
     @Test
-    void match2_commaAdvancesPastCommaAndWs() throws Exception {
+    void match2_commaLeavesOffsetAtComma() throws Exception {
         byte[] b = "\"ab\",\"next\"".getBytes(StandardCharsets.UTF_8);
         JSONParser.UTF8 p = parser(b);
         seekToValue(p, b, "ab");
         assertTrue(p.nextIfValue4Match2());
-        assertEquals((byte) '"', b[getOffset(p)]);
+        assertEquals((byte) ',', b[getOffset(p)]);
     }
 
     @Test
-    void match2_commaSkipsTrailingWhitespace() throws Exception {
-        byte[] b = "\"ab\",   \"next\"".getBytes(StandardCharsets.UTF_8);
+    void match2_whitespaceBeforeCommaFails() throws Exception {
+        // No whitespace tolerance between closing quote and separator.
+        byte[] b = "\"ab\" ,\"next\"".getBytes(StandardCharsets.UTF_8);
         JSONParser.UTF8 p = parser(b);
         seekToValue(p, b, "ab");
-        assertTrue(p.nextIfValue4Match2());
-        assertEquals((byte) '"', b[getOffset(p)]);
+        assertFalse(p.nextIfValue4Match2());
     }
 
     @Test
@@ -120,7 +120,7 @@ class ValueMatchIntrinsicsTest {
         JSONParser.UTF8 p = parser(b);
         seekToValue(p, b, "abc");
         assertTrue(p.nextIfValue4Match3());
-        assertEquals((byte) '4', b[getOffset(p)]);
+        assertEquals((byte) ',', b[getOffset(p)]);
     }
 
     @Test
@@ -151,7 +151,7 @@ class ValueMatchIntrinsicsTest {
         JSONParser.UTF8 p = parser(b);
         seekToValue(p, b, "male");
         assertTrue(p.nextIfValue4Match4((byte) 'e'));
-        assertEquals((byte) 't', b[getOffset(p)]);
+        assertEquals((byte) ',', b[getOffset(p)]);
     }
 
     @Test
@@ -192,7 +192,7 @@ class ValueMatchIntrinsicsTest {
         byte[] tail4 = new byte[]{'n', 'g', 'e', '"'};
         int name1 = com.alibaba.fastjson3.util.JDKUtils.getIntDirect(tail4, 0);
         assertTrue(p.nextIfValue4Match6(name1));
-        assertEquals((byte) 'n', b[getOffset(p)]);
+        assertEquals((byte) ',', b[getOffset(p)]);
     }
 
     @Test
@@ -227,7 +227,7 @@ class ValueMatchIntrinsicsTest {
         byte[] tail4 = new byte[]{'G', 'E', '1', '2'};
         int name1 = com.alibaba.fastjson3.util.JDKUtils.getIntDirect(tail4, 0);
         assertTrue(p.nextIfValue4Match8(name1, (byte) '3'));
-        assertEquals((byte) '4', b[getOffset(p)]);
+        assertEquals((byte) ',', b[getOffset(p)]);
     }
 
     // ---------- Match9 ----------
@@ -240,7 +240,7 @@ class ValueMatchIntrinsicsTest {
         byte[] tail4 = new byte[]{'H', 'A', 'B', 'E'};
         int name1 = com.alibaba.fastjson3.util.JDKUtils.getIntDirect(tail4, 0);
         assertTrue(p.nextIfValue4Match9(name1, (byte) 'T', (byte) 'A'));
-        assertEquals((byte) '1', b[getOffset(p)]);
+        assertEquals((byte) ',', b[getOffset(p)]);
     }
 
     // ---------- Match10 ----------
@@ -276,7 +276,7 @@ class ValueMatchIntrinsicsTest {
         byte[] tail8 = new byte[]{'G', 'N', 'O', 'S', 'T', 'I', 'C', '1'};
         long name1 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(tail8, 0);
         assertTrue(p.nextIfValue4Match11(name1));
-        assertEquals((byte) '2', b[getOffset(p)]);
+        assertEquals((byte) ',', b[getOffset(p)]);
     }
 
     @Test

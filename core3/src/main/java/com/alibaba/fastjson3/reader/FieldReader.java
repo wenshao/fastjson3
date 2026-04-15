@@ -79,7 +79,7 @@ public final class FieldReader implements Comparable<FieldReader> {
     public final JSONSchema jsonSchema;
 
     // Cached enum constants for enum fields (null for non-enum fields)
-    final Object[] enumConstants;
+    public final Object[] enumConstants;
 
     // Optional: field-level deserialization features (from @JSONField(deserializeFeatures=))
     public final long fieldFeatures;

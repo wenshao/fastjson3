@@ -3307,25 +3307,23 @@ public abstract sealed class JSONParser implements Closeable
         // ====================================================================
         // nextIfValue4Match — value-side counterpart to nextIfName4Match.
         //
-        // Used by the ASM generator (and planned enum inline) to match a JSON
-        // string *value* whose content has been pre-discriminated by a lookup
-        // switch on a 4- or 8-byte prefix. On entry {@code this.offset} points
-        // at the first content byte of the value (past the opening {@code "}).
+        // Used by the ASM generator (enum inline etc.) to match a JSON string
+        // *value* whose content has been pre-discriminated by a lookup switch
+        // on a 4-byte prefix. On entry {@code this.offset} points at the first
+        // content byte of the value (past the opening {@code "}).
         //
         // These helpers verify the tail bytes the prefix did not cover, the
-        // closing {@code "}, and the post-value separator. The convention
-        // follows fastjson2's {@code nextIfValue4Match} family so a generator
-        // pre-verifying 4 bytes via a {@code getInt(bytes, offset - 1)} read
-        // — i.e. opening quote + 3 content bytes — can call them directly.
+        // closing {@code "}, and that the next byte is a valid value terminator
+        // ({@code ','}, {@code '}'}, or {@code ']'}). On success
+        // {@code this.offset} is left *at* the terminator byte — not past it —
+        // so the caller's outer loop (via {@code readFieldSeparator} /
+        // {@code readArraySeparator}) consumes the terminator exactly as it
+        // would after any other field-value read.
         //
-        // Post-value separator handling (mirrors fj3's existing field-reading
-        // contract, not fastjson2's {@code ch}-lookahead state):
-        //   - {@code ','}: consume, skip whitespace, advance {@code this.offset}
-        //     to the first byte of the next field name.
-        //   - {@code '}'} / {@code ']'}: leave {@code this.offset} at the
-        //     terminator so the caller's outer loop (via
-        //     {@code readFieldSeparator} / {@code readArraySeparator}) can
-        //     observe end-of-object / end-of-array.
+        // No whitespace is skipped between the closing quote and the
+        // terminator: if there is whitespace there the helper returns false
+        // and the caller falls back to the generic path. This matches
+        // fastjson2's contract (fj2's fast path also requires compact JSON).
         // ====================================================================
 
         /**
@@ -3341,19 +3339,11 @@ public abstract sealed class JSONParser implements Closeable
                 return false;
             }
             int c = b[off] & 0xff;
-            if (c == ',') {
-                off++;
-                while (off < e && b[off] <= ' ') {
-                    off++;
-                }
-                this.offset = off;
-                return true;
+            if (c != ',' && c != '}' && c != ']') {
+                return false;
             }
-            if (c == '}' || c == ']') {
-                this.offset = off;
-                return true;
-            }
-            return false;
+            this.offset = off;
+            return true;
         }
 
         /**
@@ -3369,19 +3359,11 @@ public abstract sealed class JSONParser implements Closeable
                 return false;
             }
             int c = b[off] & 0xff;
-            if (c == ',') {
-                off++;
-                while (off < e && b[off] <= ' ') {
-                    off++;
-                }
-                this.offset = off;
-                return true;
+            if (c != ',' && c != '}' && c != ']') {
+                return false;
             }
-            if (c == '}' || c == ']') {
-                this.offset = off;
-                return true;
-            }
-            return false;
+            this.offset = off;
+            return true;
         }
 
         /**
@@ -3396,19 +3378,11 @@ public abstract sealed class JSONParser implements Closeable
                 return false;
             }
             int c = b[off] & 0xff;
-            if (c == ',') {
-                off++;
-                while (off < e && b[off] <= ' ') {
-                    off++;
-                }
-                this.offset = off;
-                return true;
+            if (c != ',' && c != '}' && c != ']') {
+                return false;
             }
-            if (c == '}' || c == ']') {
-                this.offset = off;
-                return true;
-            }
-            return false;
+            this.offset = off;
+            return true;
         }
 
         /**
@@ -3427,19 +3401,11 @@ public abstract sealed class JSONParser implements Closeable
                 return false;
             }
             int c = b[off] & 0xff;
-            if (c == ',') {
-                off++;
-                while (off < e && b[off] <= ' ') {
-                    off++;
-                }
-                this.offset = off;
-                return true;
+            if (c != ',' && c != '}' && c != ']') {
+                return false;
             }
-            if (c == '}' || c == ']') {
-                this.offset = off;
-                return true;
-            }
-            return false;
+            this.offset = off;
+            return true;
         }
 
         /**
@@ -3456,19 +3422,11 @@ public abstract sealed class JSONParser implements Closeable
                 return false;
             }
             int c = b[off] & 0xff;
-            if (c == ',') {
-                off++;
-                while (off < e && b[off] <= ' ') {
-                    off++;
-                }
-                this.offset = off;
-                return true;
+            if (c != ',' && c != '}' && c != ']') {
+                return false;
             }
-            if (c == '}' || c == ']') {
-                this.offset = off;
-                return true;
-            }
-            return false;
+            this.offset = off;
+            return true;
         }
 
         /**
@@ -3485,19 +3443,11 @@ public abstract sealed class JSONParser implements Closeable
                 return false;
             }
             int c = b[off] & 0xff;
-            if (c == ',') {
-                off++;
-                while (off < e && b[off] <= ' ') {
-                    off++;
-                }
-                this.offset = off;
-                return true;
+            if (c != ',' && c != '}' && c != ']') {
+                return false;
             }
-            if (c == '}' || c == ']') {
-                this.offset = off;
-                return true;
-            }
-            return false;
+            this.offset = off;
+            return true;
         }
 
         /**
@@ -3516,19 +3466,11 @@ public abstract sealed class JSONParser implements Closeable
                 return false;
             }
             int c = b[off] & 0xff;
-            if (c == ',') {
-                off++;
-                while (off < e && b[off] <= ' ') {
-                    off++;
-                }
-                this.offset = off;
-                return true;
+            if (c != ',' && c != '}' && c != ']') {
+                return false;
             }
-            if (c == '}' || c == ']') {
-                this.offset = off;
-                return true;
-            }
-            return false;
+            this.offset = off;
+            return true;
         }
 
         /**
@@ -3548,19 +3490,11 @@ public abstract sealed class JSONParser implements Closeable
                 return false;
             }
             int c = b[off] & 0xff;
-            if (c == ',') {
-                off++;
-                while (off < e && b[off] <= ' ') {
-                    off++;
-                }
-                this.offset = off;
-                return true;
+            if (c != ',' && c != '}' && c != ']') {
+                return false;
             }
-            if (c == '}' || c == ']') {
-                this.offset = off;
-                return true;
-            }
-            return false;
+            this.offset = off;
+            return true;
         }
 
         /**
@@ -3576,19 +3510,11 @@ public abstract sealed class JSONParser implements Closeable
                 return false;
             }
             int c = b[off] & 0xff;
-            if (c == ',') {
-                off++;
-                while (off < e && b[off] <= ' ') {
-                    off++;
-                }
-                this.offset = off;
-                return true;
+            if (c != ',' && c != '}' && c != ']') {
+                return false;
             }
-            if (c == '}' || c == ']') {
-                this.offset = off;
-                return true;
-            }
-            return false;
+            this.offset = off;
+            return true;
         }
 
         /**
@@ -3605,19 +3531,11 @@ public abstract sealed class JSONParser implements Closeable
                 return false;
             }
             int c = b[off] & 0xff;
-            if (c == ',') {
-                off++;
-                while (off < e && b[off] <= ' ') {
-                    off++;
-                }
-                this.offset = off;
-                return true;
+            if (c != ',' && c != '}' && c != ']') {
+                return false;
             }
-            if (c == '}' || c == ']') {
-                this.offset = off;
-                return true;
-            }
-            return false;
+            this.offset = off;
+            return true;
         }
 
         /**
