@@ -55,6 +55,43 @@ public final class ObjectWriterCreatorASM {
     }
 
     /**
+     * Per-thread guard against infinite recursion when the ASM creator
+     * eagerly resolves nested POJO / list-element writers. Each
+     * {@link #generateWriter} call adds its bean type before recursing; the
+     * recursive call sees the type in the set and falls back to a runtime
+     * lookup rather than looping. Cleared on outermost return.
+     */
+    private static final ThreadLocal<java.util.Set<Class<?>>> CREATING =
+            ThreadLocal.withInitial(java.util.HashSet::new);
+
+    /**
+     * Returns true if {@code fc} is a "nested POJO" the writer generator
+     * can pre-cache an ASM child writer for. Excludes primitives/String/
+     * boxed wrappers/enums/Maps/Collections/arrays/Date-time/UUID — those
+     * have specialized fast paths or tight built-in codecs.
+     */
+    private static boolean isNestedPojo(Class<?> fc) {
+        if (fc == null || fc.isPrimitive() || fc.isArray() || fc.isInterface()
+                || fc.isEnum() || fc == String.class || fc == Object.class) {
+            return false;
+        }
+        if (Modifier.isAbstract(fc.getModifiers())) {
+            return false;
+        }
+        if (fc == Integer.class || fc == Long.class || fc == Double.class
+                || fc == Float.class || fc == Boolean.class || fc == Byte.class
+                || fc == Short.class || fc == Character.class
+                || fc == java.util.UUID.class || fc == java.util.Date.class
+                || fc == java.math.BigDecimal.class || fc == java.math.BigInteger.class
+                || java.time.temporal.TemporalAccessor.class.isAssignableFrom(fc)
+                || java.util.Map.class.isAssignableFrom(fc)
+                || java.util.Collection.class.isAssignableFrom(fc)) {
+            return false;
+        }
+        return Modifier.isPublic(fc.getModifiers());
+    }
+
+    /**
      * Create an ObjectWriter for the given type via ASM bytecode generation.
      * Generated writers use direct getfield access and invoke JSONGenerator's
      * writeNameXxx methods for each field, with upfront ensureCapacity.
@@ -206,10 +243,16 @@ public final class ObjectWriterCreatorASM {
             cw.visitField(Opcodes.ACC_STATIC | Opcodes.ACC_FINAL, "nn" + i, "I");   // nameBytesLen
         }
 
+        // Per-class instance field holding pre-resolved nested writers.
+        // Slot i holds an ObjectWriter for the i-th field if it's a nested
+        // POJO (or List<POJO> element), null otherwise. Populated by the
+        // generated constructor from the array passed in by generateWriter.
+        cw.visitField(Opcodes.ACC_FINAL, "ow", "[Lcom/alibaba/fastjson3/ObjectWriter;");
+
         // Generate <clinit> to initialize name data
         generateClinit(cw, classInternalName, fields);
 
-        // Generate constructor
+        // Generate constructor (now takes ObjectWriter[] for nested writers)
         generateInit(cw, classInternalName);
 
         // Generate write method
@@ -219,11 +262,84 @@ public final class ObjectWriterCreatorASM {
         byte[] bytecode = cw.toByteArray();
         Class<?> writerClass = CLASS_LOADER.loadClass(className, bytecode, 0, bytecode.length);
 
+        // Eagerly resolve per-field nested writers via recursive ASM creation.
+        // Mirrors PR #74 on the read side. Slot i holds an OW_<X> for either:
+        //   - a nested POJO field's type (consumed by generateWriteGeneric),
+        //   - a List<E> element type (consumed by W#4's inline list loop in
+        //     generateWriteListPojo).
+        // The dispatch is picked at gen time based on the field type so the
+        // call site always passes the right value (field value vs each
+        // element). Slots stay null for fields with no cacheable child writer.
+        ObjectWriter<?>[] nestedWriters = new ObjectWriter<?>[fields.size()];
+        java.util.Set<Class<?>> creating = CREATING.get();
+        boolean ownGuard = creating.add(beanType);
         try {
-            return (ObjectWriter<?>) writerClass.getConstructor().newInstance();
+            for (int i = 0; i < fields.size(); i++) {
+                FieldWriterInfo fi = fields.get(i);
+                Class<?> fc = fi.fieldClass;
+                Class<?> target = null;
+                if (isNestedPojo(fc)) {
+                    target = fc;
+                } else if (fc != null && java.util.List.class.isAssignableFrom(fc)) {
+                    Class<?> elem = resolveListElementType(beanType, fi);
+                    if (elem != null && isNestedPojo(elem)) {
+                        target = elem;
+                    }
+                }
+                if (target == null || creating.contains(target)) {
+                    continue;
+                }
+                try {
+                    // Check BuiltinCodecs first — types like Optional, URI,
+                    // Path, Year, Duration, Period, etc. live in named JDK
+                    // modules so canGenerate() rejects them, and a generic
+                    // REFLECT writer would mis-serialize them. The codec
+                    // returns the special writer that matches what the old
+                    // writeAny path would have called, preserving correctness.
+                    ObjectWriter<?> child = com.alibaba.fastjson3.BuiltinCodecs.getWriter(target);
+                    if (child == null) {
+                        child = createObjectWriter(target);
+                    }
+                    nestedWriters[i] = child;
+                } catch (Throwable ignored) {
+                    // leave null → falls back to writeAny at runtime
+                }
+            }
+        } finally {
+            if (ownGuard) {
+                creating.remove(beanType);
+            }
+        }
+
+        try {
+            return (ObjectWriter<?>) writerClass
+                    .getConstructor(ObjectWriter[].class)
+                    .newInstance((Object) nestedWriters);
         } catch (Exception e) {
             throw new JSONException("Failed to instantiate generated writer for " + beanType.getName(), e);
         }
+    }
+
+    /**
+     * Best-effort resolution of the element class for a {@code List<E>}
+     * field. Reads the generic type signature from the backing field; if
+     * there's only a getter, reads the generic return type. Returns null
+     * for raw {@code List} or wildcards (which can't be cached statically).
+     */
+    private static Class<?> resolveListElementType(Class<?> beanType, FieldWriterInfo fi) {
+        java.lang.reflect.Type genericType = null;
+        if (fi.field != null) {
+            genericType = fi.field.getGenericType();
+        } else if (fi.getter != null) {
+            genericType = fi.getter.getGenericReturnType();
+        }
+        if (genericType instanceof java.lang.reflect.ParameterizedType pt) {
+            java.lang.reflect.Type[] args = pt.getActualTypeArguments();
+            if (args.length == 1 && args[0] instanceof Class<?> c) {
+                return c;
+            }
+        }
+        return null;
     }
 
     // ==================== Bytecode generation methods ====================
@@ -268,11 +384,17 @@ public final class ObjectWriterCreatorASM {
     }
 
     private static void generateInit(ClassWriter cw, String classInternalName) {
-        MethodWriter mw = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", 16);
+        // Constructor takes the per-field nested-writer array. See
+        // generateWriter for how it's populated (recursive ASM creation).
+        MethodWriter mw = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>",
+                "([Lcom/alibaba/fastjson3/ObjectWriter;)V", 16);
         mw.aload(0);
         mw.invokespecial("java/lang/Object", "<init>", "()V");
+        mw.aload(0);
+        mw.aload(1);
+        mw.putfield(classInternalName, "ow", "[Lcom/alibaba/fastjson3/ObjectWriter;");
         mw.return_();
-        mw.visitMaxs(1, 1);
+        mw.visitMaxs(2, 2);
     }
 
     private static void generateWriteMethod(
@@ -316,7 +438,9 @@ public final class ObjectWriterCreatorASM {
         mw.invokevirtual(TYPE_JSON_GENERATOR, "endObject", "()V");
 
         mw.return_();
-        mw.visitMaxs(10, 8);
+        // Locals 9 = elementWriter, 10 = list iterator, 11 = list item
+        // (used by generateWriteListPojo, W#4).
+        mw.visitMaxs(10, 12);
     }
 
     private static void generateWriteField(
@@ -339,7 +463,22 @@ public final class ObjectWriterCreatorASM {
             case FieldWriter.TYPE_INT_ARRAY -> generateWriteTypedArray(mw, classInternalName, beanInternalName, fi, namePrefix, "[I", "writeIntArray", "([I)V");
             case FieldWriter.TYPE_STRING_ARRAY -> generateWriteTypedArray(mw, classInternalName, beanInternalName, fi, namePrefix, "[Ljava/lang/String;", "writeStringArray", "([Ljava/lang/String;)V");
             case FieldWriter.TYPE_DOUBLE_ARRAY -> generateWriteTypedArray(mw, classInternalName, beanInternalName, fi, namePrefix, "[D", "writeDoubleArray", "([D)V");
-            default -> generateWriteGeneric(mw, classInternalName, beanInternalName, fi, namePrefix);
+            default -> {
+                // Phase W#4: List<E> field with a cached element writer or
+                // String element type → emit an inline write loop. Otherwise
+                // fall through to the generic writer-or-writeAny path.
+                if (fi.fieldClass != null
+                        && java.util.List.class.isAssignableFrom(fi.fieldClass)) {
+                    Class<?> elemClass = resolveListElementType(null, fi);
+                    if (elemClass == String.class) {
+                        generateWriteListString(mw, classInternalName, beanInternalName, fi, namePrefix);
+                    } else {
+                        generateWriteListPojo(mw, classInternalName, beanInternalName, fi, namePrefix, fieldIndex);
+                    }
+                } else {
+                    generateWriteGeneric(mw, classInternalName, beanInternalName, fi, namePrefix, fieldIndex);
+                }
+            }
         }
     }
 
@@ -624,11 +763,17 @@ public final class ObjectWriterCreatorASM {
 
     private static void generateWriteGeneric(
             MethodWriter mw, String classInternalName, String beanInternalName,
-            FieldWriterInfo fi, String namePrefix
+            FieldWriterInfo fi, String namePrefix, int fieldIndex
     ) {
-        // Object value = bean.getField() or bean.field (using Unsafe)
+        // Prefer Unsafe field-offset read over getter (Unsafe bypasses access
+        // checks AND avoids cross-classloader invokevirtual problems). Falls
+        // back to invokevirtual on the getter only when there's no backing
+        // field at all (calculated property).
         mw.aload(7);
-        if (fi.getter != null) {
+        if (fi.field != null) {
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+            mw.invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
+        } else if (fi.getter != null) {
             String retDesc = getDescriptor(fi.fieldClass);
             mw.invokevirtual(beanInternalName, fi.getter.getName(),
                     "()" + retDesc);
@@ -637,9 +782,9 @@ public final class ObjectWriterCreatorASM {
                 boxPrimitive(mw, fi.fieldClass);
             }
         } else {
-            // Use Unsafe to read field
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
-            mw.invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
+            // Should be unreachable — generateWriter rejects FieldWriterInfo
+            // with neither field nor getter via the early null check.
+            mw.aconst_null();
         }
         mw.astore(8);
 
@@ -657,11 +802,251 @@ public final class ObjectWriterCreatorASM {
         mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
                 "([JI[C[B)V");
 
-        // generator.writeAny(value)
+        // Pre-cached nested writer fast path: if this.ow[fieldIndex] != null,
+        // call nestedWriter.write(generator, value, null, null, features) —
+        // mirrors the read-side PR #74. The cache slot is monomorphic per
+        // field, so C2's inline cache devirtualizes the invokeinterface to
+        // a direct call into the child OW_<X>.write. No ObjectMapper lookup.
+        mw.aload(0);
+        mw.getfield(classInternalName, "ow", "[Lcom/alibaba/fastjson3/ObjectWriter;");
+        mw.bipush(fieldIndex);
+        mw.aaload();
+        mw.astore(9);
+
+        mw.aload(9);
+        Label noCachedWriter = new Label();
+        mw.ifnull(noCachedWriter);
+
+        // nestedWriter.write(generator, value, null, null, features)
+        mw.aload(9);
+        mw.aload(1);  // generator
+        mw.aload(8);  // value
+        mw.aconst_null();
+        mw.aconst_null();
+        mw.lload(5);  // features (slots 5+6, long)
+        mw.invokeinterface(TYPE_OBJECT_WRITER, "write",
+                "(Lcom/alibaba/fastjson3/JSONGenerator;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/reflect/Type;J)V");
+        mw.goto_(end);
+
+        mw.visitLabel(noCachedWriter);
+        // Fallback: generator.writeAny(value)
         mw.aload(1);
         mw.aload(8);
         mw.invokevirtual(TYPE_JSON_GENERATOR, "writeAny",
                 "(Ljava/lang/Object;)V");
+
+        mw.visitLabel(end);
+    }
+
+    /**
+     * Phase W#4 — inline {@code List<E>} write loop where {@code E} is a
+     * nested POJO with a pre-resolved ASM child writer cached in
+     * {@code this.ow[fieldIndex]}.
+     *
+     * <p>Generated bytecode:</p>
+     * <pre>
+     *   list = bean.field (via Unsafe)
+     *   if (list == null) goto end;
+     *   writePreEncodedNameLongs(...);
+     *   elementWriter = this.ow[fieldIndex];
+     *   if (elementWriter == null) {
+     *       generator.writeAny(list);  // fallback
+     *       goto end;
+     *   }
+     *   generator.startArray();
+     *   for (Object item : list) {
+     *       generator.beforeArrayValue();
+     *       if (item == null) {
+     *           generator.writeNull();
+     *       } else {
+     *           elementWriter.write(generator, item, null, null, features);
+     *       }
+     *   }
+     *   generator.endArray();
+     * end:
+     * </pre>
+     *
+     * <p>Key win: the {@code elementWriter.write} invokeinterface is
+     * monomorphic per call site, so C2 devirtualizes it and (often) inlines
+     * the child OW_E.write body. Compared with the previous
+     * {@code writeAny(item)} per element, this eliminates per-element
+     * {@code ObjectMapper.shared().getObjectWriter(item.getClass())} lookups
+     * — the dominant cost on aarch64 Eishay write profiles.</p>
+     */
+    private static void generateWriteListPojo(
+            MethodWriter mw, String classInternalName, String beanInternalName,
+            FieldWriterInfo fi, String namePrefix, int fieldIndex
+    ) {
+        // list = bean.<field> (Unsafe-preferred)
+        mw.aload(7);
+        if (fi.field != null) {
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");
+            mw.invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
+        } else if (fi.getter != null) {
+            mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                    "()" + getDescriptor(fi.fieldClass));
+        } else {
+            mw.aconst_null();
+        }
+        mw.astore(8); // list
+
+        Label end = new Label();
+        mw.aload(8);
+        mw.ifnull(end);
+
+        // generator.writePreEncodedNameLongs(...)
+        mw.aload(1);
+        loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+                "([JI[C[B)V");
+
+        // elementWriter = this.ow[fieldIndex]
+        mw.aload(0);
+        mw.getfield(classInternalName, "ow", "[Lcom/alibaba/fastjson3/ObjectWriter;");
+        mw.bipush(fieldIndex);
+        mw.aaload();
+        mw.astore(9); // elementWriter
+
+        // If no cached writer, fall back to writeAny(list)
+        Label haveWriter = new Label();
+        mw.aload(9);
+        mw.ifnonnull(haveWriter);
+        mw.aload(1);
+        mw.aload(8);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeAny",
+                "(Ljava/lang/Object;)V");
+        mw.goto_(end);
+
+        mw.visitLabel(haveWriter);
+        // generator.startArray()
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "startArray", "()V");
+
+        // Iterator-based loop (works for any List subtype, no random-access
+        // assumption). The JIT recognizes the pattern and unrolls for
+        // ArrayList in particular.
+        mw.aload(8);
+        mw.invokeinterface("java/util/List", "iterator", "()Ljava/util/Iterator;");
+        mw.astore(10); // iterator
+
+        Label loopTop = new Label();
+        Label loopEnd = new Label();
+        mw.visitLabel(loopTop);
+        mw.aload(10);
+        mw.invokeinterface("java/util/Iterator", "hasNext", "()Z");
+        mw.ifeq(loopEnd);
+
+        // generator.beforeArrayValue()
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "beforeArrayValue", "()V");
+
+        // Object item = iterator.next()
+        mw.aload(10);
+        mw.invokeinterface("java/util/Iterator", "next", "()Ljava/lang/Object;");
+        mw.astore(11); // item
+
+        // if (item == null) generator.writeNull()
+        mw.aload(11);
+        Label notNullItem = new Label();
+        mw.ifnonnull(notNullItem);
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNull", "()V");
+        mw.goto_(loopTop);
+
+        mw.visitLabel(notNullItem);
+        // elementWriter.write(generator, item, null, null, features)
+        mw.aload(9);
+        mw.aload(1);
+        mw.aload(11);
+        mw.aconst_null();
+        mw.aconst_null();
+        mw.lload(5);
+        mw.invokeinterface(TYPE_OBJECT_WRITER, "write",
+                "(Lcom/alibaba/fastjson3/JSONGenerator;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/reflect/Type;J)V");
+        mw.goto_(loopTop);
+
+        mw.visitLabel(loopEnd);
+        // generator.endArray()
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "endArray", "()V");
+
+        mw.visitLabel(end);
+    }
+
+    /**
+     * Phase W#4 — inline {@code List<String>} write loop. Bypasses
+     * {@code writeAny} for String elements; uses {@code generator.writeString}
+     * directly. Mirrors {@link #generateWriteListPojo} but with no element
+     * writer cache (the JSONGenerator already has a tight String emit path).
+     */
+    private static void generateWriteListString(
+            MethodWriter mw, String classInternalName, String beanInternalName,
+            FieldWriterInfo fi, String namePrefix
+    ) {
+        // list = bean.<field> (Unsafe-preferred)
+        mw.aload(7);
+        if (fi.field != null) {
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");
+            mw.invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
+        } else if (fi.getter != null) {
+            mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                    "()" + getDescriptor(fi.fieldClass));
+        } else {
+            mw.aconst_null();
+        }
+        mw.astore(8);
+
+        Label end = new Label();
+        mw.aload(8);
+        mw.ifnull(end);
+
+        // generator.writePreEncodedNameLongs(...)
+        mw.aload(1);
+        loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+                "([JI[C[B)V");
+
+        // generator.startArray()
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "startArray", "()V");
+
+        // Iterator-based loop
+        mw.aload(8);
+        mw.invokeinterface("java/util/List", "iterator", "()Ljava/util/Iterator;");
+        mw.astore(10);
+
+        Label loopTop = new Label();
+        Label loopEnd = new Label();
+        mw.visitLabel(loopTop);
+        mw.aload(10);
+        mw.invokeinterface("java/util/Iterator", "hasNext", "()Z");
+        mw.ifeq(loopEnd);
+
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "beforeArrayValue", "()V");
+
+        mw.aload(10);
+        mw.invokeinterface("java/util/Iterator", "next", "()Ljava/lang/Object;");
+        mw.astore(11);
+
+        mw.aload(11);
+        Label notNullItem = new Label();
+        mw.ifnonnull(notNullItem);
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNull", "()V");
+        mw.goto_(loopTop);
+
+        mw.visitLabel(notNullItem);
+        // generator.writeString((String) item)
+        mw.aload(1);
+        mw.aload(11);
+        mw.checkcast("java/lang/String");
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeString", "(Ljava/lang/String;)V");
+        mw.goto_(loopTop);
+
+        mw.visitLabel(loopEnd);
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "endArray", "()V");
 
         mw.visitLabel(end);
     }
@@ -826,9 +1211,24 @@ public final class ObjectWriterCreatorASM {
             String jsonName = resolveJsonName(propertyName, jsonField, naming);
             int ordinal = jsonField != null ? jsonField.ordinal() : 0;
 
-            // Prefer backing field for direct getfield access
+            // Prefer backing field for Unsafe-based access. Visibility doesn't
+            // matter — Unsafe.getXxx with a field offset bypasses access checks,
+            // so private fields work just as well as public ones, AND avoid
+            // the cross-classloader `invokevirtual getter` problem entirely.
+            // Falling back to the getter is only needed when no backing field
+            // exists (calculated property), or when the field is marked
+            // static / transient (which should be skipped per the public-field
+            // path's existing convention).
+            //
+            // The previous gate of `Modifier.isPublic(backingField)` silently
+            // rejected every Eishay POJO and routed `EishayWriteUTF8Bytes.
+            // fastjson3_asm` through ReflectObjectWriter — JFR profiling on
+            // the post-Path-B run exposed it.
             Field backingField = findDeclaredField(beanType, propertyName);
-            if (backingField != null && Modifier.isPublic(backingField.getModifiers())) {
+            boolean useField = backingField != null
+                    && !Modifier.isStatic(backingField.getModifiers())
+                    && !Modifier.isTransient(backingField.getModifiers());
+            if (useField) {
                 writerMap.put(propertyName, new FieldWriterInfo(
                         jsonName, ordinal, method.getReturnType(), backingField, null));
             } else {
