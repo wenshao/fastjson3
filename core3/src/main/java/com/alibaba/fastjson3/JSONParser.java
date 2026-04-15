@@ -1719,13 +1719,10 @@ public abstract sealed class JSONParser implements Closeable
             // Inline readStringContent fast path for ASCII
             int start = off;
 
-            // Fast scan: find first quote, backslash, or non-ASCII byte
+            // Fast scan: find first quote, backslash, or non-ASCII byte.
+            // SWAR-only — see readStringDirect for rationale.
             if (quote == '"') {
-                if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
-                    off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
-                } else {
-                    off = swarScanString(b, off, e);
-                }
+                off = swarScanString(b, off, e);
             }
 
             while (off < e) {
@@ -1770,13 +1767,14 @@ public abstract sealed class JSONParser implements Closeable
             off++;
             int start = off;
 
-            // Fast scan: find first quote, backslash, or non-ASCII byte
+            // Fast scan: find first quote, backslash, or non-ASCII byte.
+            // Use SWAR rather than the Vector API — measured on aarch64
+            // (Neoverse V2 w/ NEON 128-bit) the Vector API's per-call
+            // load+compare+mask sequence dominates for 10–40 byte strings,
+            // while the 8-byte SWAR loop has lower fixed overhead. On x86
+            // with AVX-512 the two paths are within noise.
             if (quote == '"') {
-                if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
-                    off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
-                } else {
-                    off = swarScanString(b, off, e);
-                }
+                off = swarScanString(b, off, e);
             }
 
             while (off < e) {
@@ -1851,11 +1849,6 @@ public abstract sealed class JSONParser implements Closeable
             }
             off++;
             int start = off;
-            // Use SWAR (scalar 8-byte word) not SIMD here. For Eishay-shape
-            // strings (10–40 chars) the SWAR loop processes 1–5 iterations
-            // with lower fixed overhead than the Vector API's load + mask +
-            // trailing-zeros sequence. SIMD wins on very long strings but
-            // those are rare in POJO field values.
             off = swarScanString(b, off, e);
             // Fast path: plain closing quote, no escape, no non-ASCII.
             if (off < e) {
@@ -1877,7 +1870,7 @@ public abstract sealed class JSONParser implements Closeable
                     return readStringUTF8(start, (byte) '"');
                 }
             }
-            // SWAR/SIMD ran out of the vector window; fall back to scalar tail.
+            // SWAR ran out of the 8-byte window; fall back to scalar tail.
             while (off < e) {
                 byte tc = b[off];
                 if (tc == '"') {
@@ -1949,8 +1942,9 @@ public abstract sealed class JSONParser implements Closeable
             int start = off;
             int value = c - '0';
             off++;
-            // Unrolled digit loop — no overflow check per iteration.
-            // Max 9 more digits for a positive 10-digit int.
+            // Single-digit loop — faster than digit2 on both x86 and ARM
+            // JFR profiles. No per-iteration overflow check; verify once
+            // after the loop and fall back to readIntDirect for anomalies.
             while (off < e) {
                 c = b[off];
                 if (c < '0' || c > '9') {
@@ -1960,7 +1954,6 @@ public abstract sealed class JSONParser implements Closeable
                 off++;
             }
             int digits = off - start;
-            // Reject > 10 digits (overflow risk) or overflow at 10 digits.
             if (digits > 10 || (digits == 10 && (value < 0 || (!neg && value > Integer.MAX_VALUE)
                     || (neg && value > (long) Integer.MAX_VALUE + 1)))) {
                 this.offset = start - (neg ? 1 : 0);
@@ -2222,11 +2215,11 @@ public abstract sealed class JSONParser implements Closeable
             off++; // skip opening '"'
             int start = off;
 
-            // Vector API: scan VECTOR_SIZE bytes at a time (32/64 bytes)
-            if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
-                off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, end);
-            } else {
-                // SWAR fallback: scan 8 bytes at a time for '"', '\\', or non-ASCII (>= 0x80)
+            // SWAR scan 8 bytes at a time for '"', '\\', or non-ASCII (>= 0x80).
+            // SIMD via the Vector API was tested on aarch64 (Neoverse V2) and
+            // lost to SWAR for 10–40 byte Eishay-shape strings due to per-call
+            // load+compare+mask overhead. x86 AVX-512 is neutral.
+            {
                 while (off + 8 <= end) {
                     long word = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
                     long v1 = word ^ SWAR_QUOTE;
@@ -2585,9 +2578,9 @@ public abstract sealed class JSONParser implements Closeable
             off++; // skip opening '"'
             int start = off;
 
-            if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
-                off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, end);
-            } else {
+            // SWAR scan — SIMD (Vector API) loses on short strings for
+            // aarch64 (see readStringDirect).
+            {
                 while (off + 8 <= end) {
                     long word = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
                     long v1 = word ^ SWAR_QUOTE;
@@ -3816,6 +3809,33 @@ public abstract sealed class JSONParser implements Closeable
             }
             this.offset = off;
             return off < e ? (b[off] & 0xFF) : -1;
+        }
+
+        /**
+         * Fast-path variant of {@link #readFieldSeparator} for the ASM
+         * generator's inner loop. Assumes compact JSON (no whitespace
+         * between fields) — the overwhelming common case — and falls back
+         * to the general {@code readFieldSeparator} only when the byte at
+         * {@code this.offset} is not {@code ','} / {@code '}'}.
+         *
+         * <p>Saves the while-loop ws scan plus one bounds check per field
+         * when compact JSON is being parsed. Measured ~4% of CPU time on
+         * aarch64 EishayParseString post-#76.</p>
+         */
+        public final int readFieldSeparatorFast() {
+            int off = this.offset;
+            if (off < this.end) {
+                byte c = this.bytes[off];
+                if (c == ',') {
+                    this.offset = off + 1;
+                    return 0;
+                }
+                if (c == '}') {
+                    this.offset = off + 1;
+                    return 1;
+                }
+            }
+            return readFieldSeparator();
         }
 
         /**
