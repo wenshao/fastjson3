@@ -486,14 +486,29 @@ public final class ObjectWriterCreatorASM {
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        // Primitive int: direct write using Unsafe
+        if (emitNameWrite(mw, encodedNameBytes(fi.jsonName))) {
+            // W#5 fast path: writeName1L/2L + writeInt32 (trailing comma in writeInt32)
+            mw.aload(1); // generator
+            if (fi.field != null && fi.fieldClass == int.class) {
+                mw.aload(7);
+                mw.getstatic(classInternalName, "fo" + namePrefix, "J");
+                mw.invokestatic(TYPE_JDK_UTILS, "getInt", "(Ljava/lang/Object;J)I");
+            } else if (fi.getter != null) {
+                mw.aload(7);
+                mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                        "()" + getDescriptor(fi.fieldClass));
+            } else {
+                throw new JSONException("no field or getter for int property: " + fi.jsonName);
+            }
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeInt32", "(I)V");
+            return;
+        }
+        // Legacy fallback for > 16-byte or non-ASCII encoded names (rare).
         mw.aload(1); // generator
         loadNameFields(mw, classInternalName, namePrefix);
         mw.aload(7); // bean
-
         if (fi.field != null && fi.fieldClass == int.class) {
-            // Use Unsafe to read field
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");
             mw.invokestatic(TYPE_JDK_UTILS, "getInt", "(Ljava/lang/Object;J)I");
         } else if (fi.getter != null) {
             mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -501,7 +516,6 @@ public final class ObjectWriterCreatorASM {
         } else {
             throw new JSONException("no field or getter for int property: " + fi.jsonName);
         }
-
         mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt32Compact",
                 "([JI[B[CI)V");
     }
@@ -510,231 +524,165 @@ public final class ObjectWriterCreatorASM {
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        boolean isBoxed = (fi.fieldClass == Long.class);
-
-        if (isBoxed) {
-            // Boxed type: need null check
-            mw.aload(7); // bean
-            if (fi.field != null) {
-                mw.getfield(beanInternalName, fi.field.getName(), "Ljava/lang/Long;");
-            } else if (fi.getter != null) {
-                mw.invokevirtual(beanInternalName, fi.getter.getName(), "()Ljava/lang/Long;");
-            } else {
-                throw new JSONException("no field or getter for long property: " + fi.jsonName);
-            }
-            mw.astore(8); // local 8 = Long value
-
-            // if (value == null) skip
-            Label notNull = new Label();
-            mw.aload(8);
-            mw.ifnonnull(notNull);
-            Label end = new Label();
-            mw.goto_(end);
-
-            mw.visitLabel(notNull);
+        // Boxed Long fields are rejected upstream in generateWriter — only the
+        // primitive long path reaches here.
+        if (emitNameWrite(mw, encodedNameBytes(fi.jsonName))) {
+            // W#5 fast path: writeName1L/2L + writeInt64
             mw.aload(1); // generator
-            loadNameFields(mw, classInternalName, namePrefix);
-            mw.aload(8);
-            mw.invokevirtual("java/lang/Long", "longValue", "()J");
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt64Compact", "([JI[B[CJ)V");
-
-            mw.visitLabel(end);
-        } else {
-            // Primitive long: direct write using Unsafe
-            mw.aload(1);
-            loadNameFields(mw, classInternalName, namePrefix);
-            mw.aload(7); // bean
             if (fi.field != null && fi.fieldClass == long.class) {
-                // Use Unsafe to read field
-                mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+                mw.aload(7);
+                mw.getstatic(classInternalName, "fo" + namePrefix, "J");
                 mw.invokestatic(TYPE_JDK_UTILS, "getLongField", "(Ljava/lang/Object;J)J");
             } else if (fi.getter != null) {
+                mw.aload(7);
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
                         "()" + getDescriptor(fi.fieldClass));
             } else {
                 throw new JSONException("no field or getter for long property: " + fi.jsonName);
             }
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt64Compact",
-                    "([JI[B[CJ)V");
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeInt64", "(J)V");
+            return;
         }
+        // Legacy fallback for > 16-byte or non-ASCII encoded names.
+        mw.aload(1);
+        loadNameFields(mw, classInternalName, namePrefix);
+        mw.aload(7);
+        if (fi.field != null && fi.fieldClass == long.class) {
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");
+            mw.invokestatic(TYPE_JDK_UTILS, "getLongField", "(Ljava/lang/Object;J)J");
+        } else if (fi.getter != null) {
+            mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                    "()" + getDescriptor(fi.fieldClass));
+        } else {
+            throw new JSONException("no field or getter for long property: " + fi.jsonName);
+        }
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameInt64Compact",
+                "([JI[B[CJ)V");
     }
 
     private static void generateWriteDouble(
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        boolean isBoxed = (fi.fieldClass == Double.class);
-
-        if (isBoxed) {
-            // Boxed type: need null check
-            mw.aload(7); // bean
-            if (fi.field != null) {
-                mw.getfield(beanInternalName, fi.field.getName(), "Ljava/lang/Double;");
-            } else if (fi.getter != null) {
-                mw.invokevirtual(beanInternalName, fi.getter.getName(), "()Ljava/lang/Double;");
-            } else {
-                throw new JSONException("no field or getter for double property: " + fi.jsonName);
-            }
-            mw.astore(8); // local 8 = Double value
-
-            // if (value == null) skip
-            Label notNull = new Label();
-            mw.aload(8);
-            mw.ifnonnull(notNull);
-            Label end = new Label();
-            mw.goto_(end);
-
-            mw.visitLabel(notNull);
+        if (emitNameWrite(mw, encodedNameBytes(fi.jsonName))) {
+            // W#5 fast path: writeName1L/2L + writeDouble
             mw.aload(1); // generator
-            loadNameFields(mw, classInternalName, namePrefix);
-            mw.aload(8);
-            mw.invokevirtual("java/lang/Double", "doubleValue", "()D");
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameDoubleCompact", "([JI[B[CD)V");
-
-            mw.visitLabel(end);
-        } else {
-            // Primitive double: direct write using Unsafe
-            mw.aload(1);
-            loadNameFields(mw, classInternalName, namePrefix);
-            mw.aload(7);
-
             if (fi.field != null && fi.fieldClass == double.class) {
-                // Use Unsafe to read field
-                mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+                mw.aload(7);
+                mw.getstatic(classInternalName, "fo" + namePrefix, "J");
                 mw.invokestatic(TYPE_JDK_UTILS, "getDouble", "(Ljava/lang/Object;J)D");
             } else if (fi.getter != null) {
+                mw.aload(7);
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
                         "()" + getDescriptor(fi.fieldClass));
             } else {
                 throw new JSONException("no field or getter for double property: " + fi.jsonName);
             }
-
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameDoubleCompact",
-                    "([JI[B[CD)V");
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeDouble", "(D)V");
+            return;
         }
+        mw.aload(1);
+        loadNameFields(mw, classInternalName, namePrefix);
+        mw.aload(7);
+        if (fi.field != null && fi.fieldClass == double.class) {
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");
+            mw.invokestatic(TYPE_JDK_UTILS, "getDouble", "(Ljava/lang/Object;J)D");
+        } else if (fi.getter != null) {
+            mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                    "()" + getDescriptor(fi.fieldClass));
+        } else {
+            throw new JSONException("no field or getter for double property: " + fi.jsonName);
+        }
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameDoubleCompact",
+                "([JI[B[CD)V");
     }
 
     private static void generateWriteFloat(
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        boolean isBoxed = (fi.fieldClass == Float.class);
-
-        if (isBoxed) {
-            // Boxed type: need null check
-            mw.aload(7); // bean
-            if (fi.field != null) {
-                mw.getfield(beanInternalName, fi.field.getName(), "Ljava/lang/Float;");
-            } else if (fi.getter != null) {
-                mw.invokevirtual(beanInternalName, fi.getter.getName(), "()Ljava/lang/Float;");
-            } else {
-                throw new JSONException("no field or getter for float property: " + fi.jsonName);
-            }
-            mw.astore(8); // local 8 = Float value
-
-            // if (value == null) skip
-            Label notNull = new Label();
-            mw.aload(8);
-            mw.ifnonnull(notNull);
-            Label end = new Label();
-            mw.goto_(end);
-
-            mw.visitLabel(notNull);
-            mw.aload(1);
-            loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
-                    "([JI[C[B)V");
-            mw.aload(1);
-            mw.aload(8);
-            mw.invokevirtual("java/lang/Float", "floatValue", "()F");
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeFloat", "(F)V");
-
-            mw.visitLabel(end);
-        } else {
-            // Primitive float: direct write using Unsafe
-            mw.aload(1);
-            loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
-                    "([JI[C[B)V");
-
-            mw.aload(1);
-            mw.aload(7);
+        if (emitNameWrite(mw, encodedNameBytes(fi.jsonName))) {
+            // W#5 fast path: writeName1L/2L + writeFloat
+            mw.aload(1); // generator
             if (fi.field != null && fi.fieldClass == float.class) {
-                // Use Unsafe to read field
-                mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+                mw.aload(7);
+                mw.getstatic(classInternalName, "fo" + namePrefix, "J");
                 mw.invokestatic(TYPE_JDK_UTILS, "getFloat", "(Ljava/lang/Object;J)F");
             } else if (fi.getter != null) {
+                mw.aload(7);
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
                         "()" + getDescriptor(fi.fieldClass));
             } else {
                 throw new JSONException("no field or getter for float property: " + fi.jsonName);
             }
             mw.invokevirtual(TYPE_JSON_GENERATOR, "writeFloat", "(F)V");
+            return;
         }
+        // Legacy fallback.
+        mw.aload(1);
+        loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+                "([JI[C[B)V");
+        mw.aload(1);
+        mw.aload(7);
+        if (fi.field != null && fi.fieldClass == float.class) {
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");
+            mw.invokestatic(TYPE_JDK_UTILS, "getFloat", "(Ljava/lang/Object;J)F");
+        } else if (fi.getter != null) {
+            mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                    "()" + getDescriptor(fi.fieldClass));
+        } else {
+            throw new JSONException("no field or getter for float property: " + fi.jsonName);
+        }
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeFloat", "(F)V");
     }
 
     private static void generateWriteBool(
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
-        boolean isBoxed = (fi.fieldClass == Boolean.class);
-
-        if (isBoxed) {
-            // Boxed type: need null check
-            mw.aload(7); // bean
-            if (fi.field != null) {
-                mw.getfield(beanInternalName, fi.field.getName(), "Ljava/lang/Boolean;");
-            } else if (fi.getter != null) {
-                mw.invokevirtual(beanInternalName, fi.getter.getName(), "()Ljava/lang/Boolean;");
-            } else {
-                throw new JSONException("no field or getter for boolean property: " + fi.jsonName);
-            }
-            mw.astore(8); // local 8 = Boolean value
-
-            // if (value == null) skip
-            Label notNull = new Label();
-            mw.aload(8);
-            mw.ifnonnull(notNull);
-            Label end = new Label();
-            mw.goto_(end);
-
-            mw.visitLabel(notNull);
+        if (emitNameWrite(mw, encodedNameBytes(fi.jsonName))) {
+            // W#5 fast path: writeName1L/2L + writeBool
             mw.aload(1); // generator
-            loadNameFields(mw, classInternalName, namePrefix);
-            mw.aload(8);
-            mw.invokevirtual("java/lang/Boolean", "booleanValue", "()Z");
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameBoolCompact", "([JI[B[CZ)V");
-
-            mw.visitLabel(end);
-        } else {
-            // Primitive boolean: direct write using Unsafe
-            mw.aload(1);
-            loadNameFields(mw, classInternalName, namePrefix);
-            mw.aload(7);
-
             if (fi.field != null && fi.fieldClass == boolean.class) {
-                // Use Unsafe to read field
-                mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+                mw.aload(7);
+                mw.getstatic(classInternalName, "fo" + namePrefix, "J");
                 mw.invokestatic(TYPE_JDK_UTILS, "getBoolean", "(Ljava/lang/Object;J)Z");
             } else if (fi.getter != null) {
+                mw.aload(7);
                 mw.invokevirtual(beanInternalName, fi.getter.getName(),
                         "()" + getDescriptor(fi.fieldClass));
             } else {
                 throw new JSONException("no field or getter for boolean property: " + fi.jsonName);
             }
-            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameBoolCompact", "([JI[B[CZ)V");
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeBool", "(Z)V");
+            return;
         }
+        mw.aload(1);
+        loadNameFields(mw, classInternalName, namePrefix);
+        mw.aload(7);
+        if (fi.field != null && fi.fieldClass == boolean.class) {
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");
+            mw.invokestatic(TYPE_JDK_UTILS, "getBoolean", "(Ljava/lang/Object;J)Z");
+        } else if (fi.getter != null) {
+            mw.invokevirtual(beanInternalName, fi.getter.getName(),
+                    "()" + getDescriptor(fi.fieldClass));
+        } else {
+            throw new JSONException("no field or getter for boolean property: " + fi.jsonName);
+        }
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameBoolCompact", "([JI[B[CZ)V");
     }
 
     private static void generateWriteString(
             MethodWriter mw, String classInternalName, String beanInternalName,
             FieldWriterInfo fi, String namePrefix
     ) {
+        byte[] encodedName = encodedNameBytes(fi.jsonName);
+
         // String value = JDKUtils.getObject(bean, fieldOffset);
         mw.aload(7);
         if (fi.field != null) {
-            // Use Unsafe to read field
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J");  // field offset
+            mw.getstatic(classInternalName, "fo" + namePrefix, "J");
             mw.invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
             mw.checkcast("java/lang/String");
         } else {
@@ -743,20 +691,26 @@ public final class ObjectWriterCreatorASM {
         }
         mw.astore(8); // local 8 = string value
 
-        // if (value == null) { /* skip or writeNull */ } else { writeNameString }
         Label notNull = new Label();
         mw.aload(8);
         mw.ifnonnull(notNull);
-        // null case: skip (default behavior: omit nulls)
         Label end = new Label();
         mw.goto_(end);
 
         mw.visitLabel(notNull);
-        mw.aload(1); // generator
-        loadNameFields(mw, classInternalName, namePrefix);
-        mw.aload(8); // value
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameStringCompact",
-                "([JI[B[CLjava/lang/String;)V");
+        if (emitNameWrite(mw, encodedName)) {
+            // W#5 fast path: writeName1L/2L + writeString
+            mw.aload(1);
+            mw.aload(8);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeString", "(Ljava/lang/String;)V");
+        } else {
+            // Legacy fallback for > 16-byte or non-ASCII encoded names.
+            mw.aload(1);
+            loadNameFields(mw, classInternalName, namePrefix);
+            mw.aload(8);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameStringCompact",
+                    "([JI[B[CLjava/lang/String;)V");
+        }
 
         mw.visitLabel(end);
     }
@@ -796,11 +750,16 @@ public final class ObjectWriterCreatorASM {
         mw.goto_(end);
 
         mw.visitLabel(notNull);
-        // generator.writePreEncodedNameLongs(...)
-        mw.aload(1);
-        loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
-                "([JI[C[B)V");
+        // W#5: prefer per-length writeName1L/2L over writePreEncodedNameLongs
+        // so the emitted bytecode for the name token is 7–12 bytes instead of
+        // 15 (4 × getstatic + invokevirtual). Falls back for > 16-byte or
+        // non-ASCII names.
+        if (!emitNameWrite(mw, encodedNameBytes(fi.jsonName))) {
+            mw.aload(1);
+            loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+                    "([JI[C[B)V");
+        }
 
         // Pre-cached nested writer fast path: if this.ow[fieldIndex] != null,
         // call nestedWriter.write(generator, value, null, null, features) —
@@ -894,11 +853,13 @@ public final class ObjectWriterCreatorASM {
         mw.aload(8);
         mw.ifnull(end);
 
-        // generator.writePreEncodedNameLongs(...)
-        mw.aload(1);
-        loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
-                "([JI[C[B)V");
+        // W#5: prefer per-length writeName1L/2L over writePreEncodedNameLongs.
+        if (!emitNameWrite(mw, encodedNameBytes(fi.jsonName))) {
+            mw.aload(1);
+            loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+                    "([JI[C[B)V");
+        }
 
         // elementWriter = this.ow[fieldIndex]
         mw.aload(0);
@@ -1000,11 +961,13 @@ public final class ObjectWriterCreatorASM {
         mw.aload(8);
         mw.ifnull(end);
 
-        // generator.writePreEncodedNameLongs(...)
-        mw.aload(1);
-        loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
-                "([JI[C[B)V");
+        // W#5: prefer per-length writeName1L/2L over writePreEncodedNameLongs.
+        if (!emitNameWrite(mw, encodedNameBytes(fi.jsonName))) {
+            mw.aload(1);
+            loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+                    "([JI[C[B)V");
+        }
 
         // generator.startArray()
         mw.aload(1);
@@ -1075,9 +1038,12 @@ public final class ObjectWriterCreatorASM {
         mw.goto_(end);
 
         mw.visitLabel(notNull);
-        mw.aload(1);
-        loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
-        mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs", "([JI[C[B)V");
+        // W#5: prefer per-length writeName1L/2L over writePreEncodedNameLongs.
+        if (!emitNameWrite(mw, encodedNameBytes(fi.jsonName))) {
+            mw.aload(1);
+            loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs", "([JI[C[B)V");
+        }
 
         mw.aload(1);
         mw.aload(8);
@@ -1106,6 +1072,90 @@ public final class ObjectWriterCreatorASM {
         mw.getstatic(classInternalName, "nn" + namePrefix, "I");
         mw.getstatic(classInternalName, "nc" + namePrefix, "[C");
         mw.getstatic(classInternalName, "nb" + namePrefix, "[B");
+    }
+
+    /** W#5 — compute the full {@code "jsonName":} UTF-8 bytes. */
+    private static byte[] encodedNameBytes(String jsonName) {
+        return ("\"" + jsonName + "\":").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /**
+     * W#5 — emit a call to {@code writeName1L} or {@code writeName2L} on
+     * the generator, writing the pre-encoded name token {@code "jsonName":}
+     * directly into the output buffer via {@code Unsafe.putLong}. Names
+     * with encoded length &gt; 16 or containing any non-ASCII byte fall
+     * back to the legacy {@code loadNameFields + writeNameStringCompact}
+     * path — the caller takes the {@code else} branch.
+     *
+     * <p>{@link #packNameLong0}/{@link #packNameLong1} pack using
+     * {@link com.alibaba.fastjson3.util.JDKUtils#getLongDirect}, so the
+     * long constants embedded in the generated bytecode are already in
+     * <em>native byte order</em>. {@code putLongDirect} at runtime writes
+     * the original byte sequence back regardless of host endianness —
+     * crucial for portability beyond x86 / aarch64 LE. Using inline
+     * helpers (rather than routing through {@code FieldWriter.encodeByteLongs})
+     * matters at JIT-time on aarch64: during the multi-round audit we
+     * found the extra cross-class call from {@code emitNameWrite}
+     * perturbed ARM C2's tiered compilation of {@code OW_*.write} in a
+     * way that cost ~25% throughput — the generated class files were
+     * byte-identical, but the standalone compile of the generator
+     * triggered different downstream JIT decisions. Keeping the packing
+     * inline sidesteps that.
+     *
+     * <p>The non-ASCII rejection matters for the base-class default
+     * implementation of {@code writeName1L/2L} on {@code JSONGenerator},
+     * which reconstructs {@code char[]} by sign-extending each byte. That
+     * is only correct for pure-ASCII field names — a UTF-8 multi-byte
+     * sequence would produce garbled characters. UTF8 subclass doesn't
+     * care (it writes bytes directly), but since we can't tell the
+     * runtime target at ASM generate time, it's safer to restrict the
+     * compact path to ASCII names and keep non-ASCII names on the slow
+     * path that uses pre-computed {@code char[]} / {@code byte[]} statics.
+     *
+     * @return {@code true} if compact emit was used; {@code false} if the
+     *         caller must use the legacy fallback.
+     */
+    private static boolean emitNameWrite(MethodWriter mw, byte[] encodedName) {
+        int len = encodedName.length;
+        if (len == 0 || len > 16) {
+            return false;
+        }
+        for (int i = 0; i < len; i++) {
+            if (encodedName[i] < 0) {
+                return false; // non-ASCII byte — fall back
+            }
+        }
+        mw.aload(1); // generator
+        mw.visitLdcInsn(packNameLong0(encodedName));
+        if (len <= 8) {
+            mw.visitLdcInsn(len);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeName1L", "(JI)V");
+        } else {
+            mw.visitLdcInsn(packNameLong1(encodedName));
+            mw.visitLdcInsn(len);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writeName2L", "(JJI)V");
+        }
+        return true;
+    }
+
+    /**
+     * Pack the first 8 bytes of {@code encodedName} into a long using native
+     * byte order (matches {@link com.alibaba.fastjson3.util.JDKUtils#putLongDirect}).
+     * Bytes past {@code encodedName.length} are zero-padded.
+     */
+    private static long packNameLong0(byte[] encodedName) {
+        byte[] padded = new byte[8];
+        System.arraycopy(encodedName, 0, padded, 0, Math.min(8, encodedName.length));
+        return com.alibaba.fastjson3.util.JDKUtils.getLongDirect(padded, 0);
+    }
+
+    /** Pack bytes 8..15 of {@code encodedName} into a long (native byte order). */
+    private static long packNameLong1(byte[] encodedName) {
+        byte[] padded = new byte[8];
+        if (encodedName.length > 8) {
+            System.arraycopy(encodedName, 8, padded, 0, Math.min(8, encodedName.length - 8));
+        }
+        return com.alibaba.fastjson3.util.JDKUtils.getLongDirect(padded, 0);
     }
 
     private static void pushString(MethodWriter mw, String value) {

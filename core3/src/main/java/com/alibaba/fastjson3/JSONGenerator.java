@@ -491,6 +491,57 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         writeNameBool(nameByteLongs, nameBytesLen, nameBytes, nameChars, value);
     }
 
+    // ---- Per-length raw name writers (Phase W#5 — ported from fj2 JSONWriterUTF8.writeNameXRaw) ----
+    //
+    // These take the pre-packed UTF-8 name bytes `"name":` as 1 or 2 longs and
+    // write them directly via Unsafe.putLong. No length switch inside the
+    // method — the caller (ASM-generated code) picks the right overload based
+    // on the encoded name byte length. Each is tiny (~20 bytes bytecode) so
+    // the JIT reliably inlines them into the generated writer.
+    //
+    // Caller contract: the top-level write() has already called
+    // ensureCapacityPublic for the full object, so writeName1L / writeName2L
+    // skip the per-call capacity check. If the name bytes are <= 5, the
+    // full `"name":` token fits in the first long; 6-13 char bean fields
+    // need two longs. The trailing comma is written by the subsequent
+    // writeInt32 / writeString / etc. call, matching fj3's existing
+    // trailing-comma model (endObject strips the tail comma).
+
+    public void writeName1L(long nameLong0, int nameBytesLen) {
+        // Default: reconstruct {nameBytes, nameChars} from the long in
+        // native byte order (matching ObjectWriterCreatorASM's use of
+        // JDKUtils.getLongDirect when packing) and delegate to
+        // writePreEncodedName. Only hit by non-UTF8 subclasses (Char);
+        // the UTF8 subclass overrides with the fast putLongDirect path.
+        // ASM-generated classes only use writeName1L/2L for names whose
+        // pre-encoded `"jsonName":` UTF-8 bytes are pure ASCII (otherwise
+        // emitNameWrite returns false and the legacy fallback is taken),
+        // so sign-extending each byte to a char yields the correct
+        // JSON-identifier chars here.
+        byte[] raw = new byte[8];
+        JDKUtils.putLongDirect(raw, 0, nameLong0);
+        byte[] b = new byte[nameBytesLen];
+        char[] c = new char[nameBytesLen];
+        for (int i = 0; i < nameBytesLen; i++) {
+            b[i] = raw[i];
+            c[i] = (char) (raw[i] & 0xFF);
+        }
+        writePreEncodedName(c, b);
+    }
+
+    public void writeName2L(long nameLong0, long nameLong1, int nameBytesLen) {
+        byte[] raw = new byte[16];
+        JDKUtils.putLongDirect(raw, 0, nameLong0);
+        JDKUtils.putLongDirect(raw, 8, nameLong1);
+        byte[] b = new byte[nameBytesLen];
+        char[] c = new char[nameBytesLen];
+        for (int i = 0; i < nameBytesLen; i++) {
+            b[i] = raw[i];
+            c[i] = (char) (raw[i] & 0xFF);
+        }
+        writePreEncodedName(c, b);
+    }
+
     // ---- Array writers (avoid writeAny dispatch per element) ----
 
     public void writeLongArray(long[] arr) {
@@ -3026,6 +3077,28 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 count += nameBytesLen;
             }
             writeString(value);
+        }
+
+        // Per-length raw name writers (W#5) — see abstract declarations on
+        // JSONGenerator base for the design rationale. These UTF8 overrides
+        // are the fast path: one putLong per long arg, no branches. Callers
+        // (ASM-generated writer code) are expected to have pre-reserved
+        // capacity and to write the trailing comma via the subsequent value
+        // method (writeInt32 / writeString / ...).
+
+        @Override
+        public void writeName1L(long nameLong0, int nameBytesLen) {
+            int pos = count;
+            JDKUtils.putLongDirect(buf, pos, nameLong0);
+            count = pos + nameBytesLen;
+        }
+
+        @Override
+        public void writeName2L(long nameLong0, long nameLong1, int nameBytesLen) {
+            int pos = count;
+            JDKUtils.putLongDirect(buf, pos, nameLong0);
+            JDKUtils.putLongDirect(buf, pos + 8, nameLong1);
+            count = pos + nameBytesLen;
         }
 
         @Override
