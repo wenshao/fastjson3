@@ -103,9 +103,10 @@ ObjectReaderCreator moduleCreator = clazz ->
 通过 SPI 扩展：
 
 ```java
+// AUTO provider 是默认，JVM 上自动走 ASM。显式指定只用于测试 / 特殊对照
 ObjectMapper mapper = ObjectMapper.builder()
-    .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-    .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
+    .writerCreatorType(WriterCreatorType.ASM)
+    .readerCreatorType(ReaderCreatorType.ASM)
     .modules(List.of(new CustomModule()))
     .build();
 ```

@@ -188,14 +188,12 @@ public class PerformanceExample {
         System.out.println("    - 注释: false");
         System.out.println("    - 严格模式: true");
 
-        // ASM 配置
+        // 性能优化配置（AUTO provider 已是默认，JVM 上自动走 ASM 路径）
         System.out.println("\n  性能优化配置:");
         ObjectMapper perfMapper = ObjectMapper.builder()
-            .readerCreator(com.alibaba.fastjson3.reader.ObjectReaderCreatorASM::createObjectReader)
-            .writerCreator(com.alibaba.fastjson3.writer.ObjectWriterCreatorASM::createObjectWriter)
             .enableWrite(com.alibaba.fastjson3.WriteFeature.OptimizedForAscii)
             .build();
-        System.out.println("    - ASM 字节码生成: enabled");
+        System.out.println("    - AUTO provider → ASM: 已默认启用");
         System.out.println("    - ASCII 优化: enabled");
     }
 

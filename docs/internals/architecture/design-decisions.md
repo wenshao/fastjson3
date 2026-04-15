@@ -109,33 +109,44 @@ public final void writeField(JSONGenerator gen, Object bean) {
 }
 ```
 
-## 为什么默认使用反射而非 ASM？
+## 为什么默认使用 AUTO (ASM) provider？
 
 ### 决策
 
-ObjectReader 默认使用 REFLECT；ObjectWriter 默认使用 AUTO（优先尝试 ASM，失败回退反射）。
+JVM 上 Reader 和 Writer 都默认使用 AUTO provider（`AutoObjectReaderProvider` / `AutoObjectWriterProvider`），简单 POJO 自动走 ASM 字节码生成路径，复杂类型（Record、Sealed Class、`@JSONType(schema=...)`）自动 fallback 到反射。Android / Native Image 上 AUTO 永远选反射，因为 ASM 不可用。
 
 ### 原因
 
-1. **兼容性** - 反射适用于所有平台
-2. **启动速度** - 无需字节码生成开销
-3. **JIT 最优** - 紧凑循环结构让 JIT 深度内联，实测比 ASM 快 10-13%
+1. **性能最优** - Path B（PR #72–#81）完成后，ASM 路径在 x86_64 / aarch64 上 Parse 和 Write 全面超过 fj2 2.0.61
+2. **自动适配** - AUTO provider 在 runtime 检查 `Class.forName("ObjectWriterCreatorASM")` 和 `JDKUtils.NATIVE_IMAGE`，不可用时平滑 fallback 到反射，用户无需感知
+3. **启动成本可控** - ASM 生成只在首次解析/序列化该类型时发生一次，后续走缓存
 
-### 性能权衡
+### 性能权衡（Path B 之后）
 
-| 操作 | 反射 | ASM | 差异 |
-|------|------|-----|------|
-| Read | **100%** | ~87% | 反射更快 |
-| Write | **100%** | ~87% | 反射更快 |
+| 操作 | ASM / fj2 | 反射 / fj2 | ASM 优势 |
+|------|---------:|----------:|---------:|
+| Parse UTF8Bytes (aarch64) | **115.25%** | 73.05% | +42.2 pp |
+| Parse UTF8Bytes (x86_64) | **118.79%** | 79.56% | +39.2 pp |
+| Write UTF8Bytes (aarch64) | **110.57%** | 102.63% | +7.9 pp |
+| Write UTF8Bytes (x86_64) | **110.01%** | 98.79% | +11.2 pp |
 
-> 反射路径的紧凑循环结构让 JIT 能深度内联，实测比 ASM 展开代码快 10-13%。
+> ASM 胜出的关键：PR #74 的 Unsafe 字段访问 + `readStringValueFast` SWAR 路径让 Parse 快 40 pp；PR #81 的 `writeName1L/2L` 按长度特化让 aarch64 的 `OW_*.write` 落在 JIT `FreqInlineSize=325` 预算内，是 ARM Write 的关键。
+>
+> 数据来源：[`docs/benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md`](../../benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md)。
 
-### 启用方式
+### 强制路径（只在测试/对照中使用）
 
 ```java
-ObjectMapper mapper = ObjectMapper.builder()
-    .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-    .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
+// 强制 ASM 路径（业务代码不需要，AUTO 已自动选 ASM）
+ObjectMapper asmOnly = ObjectMapper.builder()
+    .writerCreatorType(WriterCreatorType.ASM)
+    .readerCreatorType(ReaderCreatorType.ASM)
+    .build();
+
+// 强制 REFLECT 路径（测试 fallback 行为）
+ObjectMapper reflectOnly = ObjectMapper.builder()
+    .writerCreatorType(WriterCreatorType.REFLECT)
+    .readerCreatorType(ReaderCreatorType.REFLECT)
     .build();
 ```
 

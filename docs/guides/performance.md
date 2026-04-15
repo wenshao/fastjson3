@@ -46,14 +46,27 @@ User user = mapper.readValue(json, User.class);
 
 ### 3. 默认配置已是最优
 
-fastjson3 默认配置已针对 JIT 优化（Reader 反射，Writer AUTO）。无需手动配置 ASM。
+fastjson3 默认配置已经是最快的。JVM 环境下 Reader 和 Writer 都通过 `AutoObjectReaderProvider` / `AutoObjectWriterProvider` 自动为简单 POJO 选择 ASM 代码生成路径，无需手动配置。
 
 ```java
 // ✅ 默认配置已经是最快的
 ObjectMapper mapper = ObjectMapper.shared();
 ```
 
-**原因：** 反射路径的紧凑循环结构让 JIT 能深度内联关键方法（如 `writeNameString`、`readStringOff`），实测比 ASM 展开代码快 10-13%。
+**原因：** 完成 Path B（PR #72–#81）后，ASM 生成的 Reader/Writer 在 x86_64 和 aarch64 上都显著超过 fastjson2：
+- Parse: ASM **115–119%** of fj2（aarch64/x86_64）
+- Write: ASM **110–144%** of fj2
+
+ASM 路径通过**按字段展开 + 按长度特化**（`writeName1L/2L`、`readStringValueFast`）配合 Unsafe 字段访问，让 JIT 能深度内联到调用方。详见 [`docs/benchmark/`](../benchmark/) 下的最新报告。
+
+> **何时手动指定路径？** 只在需要强制统一行为的测试环境下才建议手动指定：
+> ```java
+> ObjectMapper asmOnly = ObjectMapper.builder()
+>     .writerCreatorType(WriterCreatorType.ASM)
+>     .readerCreatorType(ReaderCreatorType.ASM)
+>     .build();
+> ```
+> Native-image / Android 环境会自动退回反射路径；用户代码无需关心。
 
 ### 4. 使用预编译的 JSONPath
 
@@ -225,16 +238,30 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 ## 性能对比
 
-不同操作的性能参考（相对值）：
+### 输入输出格式
 
 | 操作 | 相对性能 | 说明 |
 |------|----------|------|
-| `toJSONBytes()` | 100% | 基准（UTF-8 直接输出） |
-| `toJSONString()` | ~85% | 需要额外编码转换 |
-| 反射模式（默认） | 100% | JIT 深度内联，最快路径 |
-| ASM 模式 | ~87-90% | 方法体过大阻碍 JIT 内联 |
-| `ObjectPath.extract()` | 100% | 基准 |
-| 先解析再查询 | ~70% | 需要完整解析 |
+| `writeValueAsBytes()` / `toJSONBytes()` | 100% | 基准（UTF-8 直接输出） |
+| `writeValueAsString()` / `toJSONString()` | ~85% | 需要额外编码转换 |
+| `readValue(byte[], ...)` | 100% | 基准（UTF-8 直接解析） |
+| `readValue(String, ...)` | ~90% | 需要字符解析路径 |
+| `JSONPath.extract()` | 100% | 基准（零拷贝路径） |
+| 先 `readValue` 再查询 | ~70% | 需要完整物化 |
+
+### Reader/Writer 路径（对比 fastjson2 2.0.61）
+
+以下是 [`benchmark_3.0.0-SNAPSHOT-66a5e2a.md`](../benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md) 的主要结果（Eishay 场景，JDK 25，3 fork × 5 iter，单线程）：
+
+| 场景 | aarch64 (Neoverse N2) | x86_64 (EPYC 9T95) |
+|------|---------------------:|-------------------:|
+| `EishayParseUTF8Bytes` — ASM / fj2 | **115.25%** ✅ | **118.79%** ✅ |
+| `EishayParseString` — ASM / fj2 | **100.09%** ✅ | **107.00%** ✅ |
+| `EishayWriteUTF8Bytes` — ASM / fj2 | **110.57%** ✅ | **110.01%** ✅ |
+| `EishayWriteString` — ASM / fj2 | **126.01%** ✅ | **143.55%** ✅ |
+
+- **ASM 路径**（当前默认）全平台全场景超过 fastjson2 2.0.61。
+- **反射路径**（仅 native-image / Android / 复杂类型 fallback）会慢 15–30pp，不在业务路径上。
 
 ## 性能分析
 
@@ -301,7 +328,7 @@ java -XX:+UseG1GC YourApp
 
 1. **复用 ObjectMapper** - 单例或共享实例
 2. **优先 byte[]** - UTF-8 数据使用字节
-3. **使用默认配置** - JIT 深度内联后比 ASM 快 10-13%
+3. **使用默认配置** - AUTO provider 自动走 ASM 路径，全平台超过 fastjson2
 4. **预编译 JSONPath** - 缓存编译结果
 5. **禁用不需要的特性** - 减少开销
 6. **使用流式处理** - 大数据量场景

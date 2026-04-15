@@ -322,9 +322,7 @@ public class JsonConfig {
             .addReaderModule(new BusinessModule())
             .addWriterModule(new BusinessModule())
 
-            // ASM 优化
-            .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-            .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
+            // AUTO provider 已是默认，JVM 上自动走 ASM 路径，无需手动指定
 
             .build();
     }

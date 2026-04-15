@@ -216,8 +216,8 @@ public String log(Object obj) {
 .enableRead(ReadFeature.AllowComments)  // 安全风险
 
 // ✅ 好：生产环境使用优化配置
+// （AUTO provider 已是默认，JVM 上自动走 ASM 路径，无需手动指定 reader/writer）
 ObjectMapper.builder()
-    .readerCreator(ObjectReaderCreatorASM::createObjectReader)
     .enableWrite(WriteFeature.OptimizedForAscii)
     .build();
 ```

@@ -204,19 +204,20 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 ### 默认配置（推荐）
 
-默认配置下：Reader 使用 REFLECT（反射路径，JIT 深度内联后最快）；Writer 使用 AUTO（会在满足条件时尝试 ASM，否则回退反射）。大部分场景下无需额外配置。
+JVM 环境下，Reader 和 Writer 都默认使用 AUTO provider — 简单 POJO 自动走 ASM 字节码生成路径，复杂类型（Record、Sealed Class、`@JSONType(schema=...)`）自动 fallback 到反射。Android / Native Image 平台上 ASM 不可用，AUTO 会选择反射。大部分场景下无需额外配置。
 
 ```java
-// 默认配置，直接使用
+// 默认配置已是最优，直接使用
 ObjectMapper mapper = ObjectMapper.shared();
 
-// 如需强制 Writer 也使用反射路径（避免 ASM 尝试开销）：
+// 需要强制 REFLECT 路径（测试 / 对照用途）：
 ObjectMapper reflectOnly = ObjectMapper.builder()
     .writerProvider(new com.alibaba.fastjson3.writer.ReflectObjectWriterProvider())
+    .readerProvider(new com.alibaba.fastjson3.reader.ReflectObjectReaderProvider())
     .build();
 ```
 
-> 实测中反射路径经 JIT 深度内联后比 ASM 快 10-13%。AUTO 模式下 ASM 生成失败会自动回退反射，不影响正确性。
+> Path B（PR #72–#81）完成后，ASM 路径在 x86_64 和 aarch64 上 Parse 和 Write 全面超过 fastjson2 2.0.61（109–119% 区间）。详见 [`docs/benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md`](../benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md)。AUTO 模式下 ASM 生成失败会自动回退反射，不影响正确性。
 
 ### ASCII 优化
 

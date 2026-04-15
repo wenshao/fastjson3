@@ -305,8 +305,9 @@ Key optimizations:
 Per-release benchmark reports following the [fastjson2 convention](https://github.com/alibaba/fastjson2/tree/main/docs/benchmark) — Eishay + JJB scenarios, multi-architecture, multi-JDK, with raw JMH output and error bars:
 
 - [`docs/benchmark/`](docs/benchmark/) — all release reports
+- Latest: [`benchmark_3.0.0-SNAPSHOT-66a5e2a.md`](docs/benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md) — post Path B Write; fastjson3 ASM path now **beats fastjson2 2.0.61 on every instrumented Parse + Write scenario** on both aarch64 and x86_64.
 
-Methodology: JMH throughput mode (`ops/ms`), 3 warmup × 10 s, 5 measurement × 10 s, 1 fork, 16 threads — matching the configuration fastjson2 uses for its own release benchmarks. The reports compare fastjson3 against the latest fastjson2 release, plus jackson-databind, gson, and wast.
+Methodology: JMH throughput mode (`ops/s`), 3 warmup × 2 s, 5 measurement × 2 s, 3 forks, single-threaded — matching the cross-platform runner [`scripts/bench-eishay-cross-platform.sh`](scripts/bench-eishay-cross-platform.sh) used to generate each report. The runner ships a single `benchmark3.jar` to each host and runs JMH in parallel. Reports compare fastjson3 against the latest fastjson2 release, plus jackson-databind, gson, and wast.
 
 ## Project Structure
 

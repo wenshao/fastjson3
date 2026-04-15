@@ -223,9 +223,12 @@ public class NativeImageConfig {
 
     @Bean
     public ObjectMapper objectMapper() {
+        // native-image 下 ASM 字节码生成不可用，必须使用反射路径。
+        // AUTO provider 在 native-image 环境中会自动选择 REFLECT，
+        // 所以下面显式指定只是为了表达意图 / 避免启动期 Class.forName 检查。
         ObjectMapper mapper = ObjectMapper.builder()
-            .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-            .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
+            .writerCreatorType(WriterCreatorType.REFLECT)
+            .readerCreatorType(ReaderCreatorType.REFLECT)
             .build();
 
         // 预热常用类型
