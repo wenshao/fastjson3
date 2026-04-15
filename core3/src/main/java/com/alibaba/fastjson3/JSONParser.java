@@ -1851,11 +1851,12 @@ public abstract sealed class JSONParser implements Closeable
             }
             off++;
             int start = off;
-            if (com.alibaba.fastjson3.util.JDKUtils.VECTOR_SUPPORT) {
-                off = com.alibaba.fastjson3.util.VectorizedScanner.scanStringSimple(b, off, e);
-            } else {
-                off = swarScanString(b, off, e);
-            }
+            // Use SWAR (scalar 8-byte word) not SIMD here. For Eishay-shape
+            // strings (10–40 chars) the SWAR loop processes 1–5 iterations
+            // with lower fixed overhead than the Vector API's load + mask +
+            // trailing-zeros sequence. SIMD wins on very long strings but
+            // those are rare in POJO field values.
+            off = swarScanString(b, off, e);
             // Fast path: plain closing quote, no escape, no non-ASCII.
             if (off < e) {
                 byte post = b[off];
