@@ -6,9 +6,9 @@ ObjectReader/ObjectWriter 的可插拔创建策略。
 
 fastjson3 提供了 `ObjectReaderProvider` 和 `ObjectWriterProvider` 接口来控制 Reader/Writer 的创建策略：
 
-- **REFLECT**: 反射 + Unsafe（默认）
-- **AUTO**: 自动选择最佳策略
+- **AUTO**: 自动选择最佳策略（**默认**，JVM 上走 ASM，Android / Native Image 自动回退反射）
 - **ASM**: 强制使用 ASM 字节码生成
+- **REFLECT**: 强制使用反射 + Unsafe
 
 ## Provider 接口
 
@@ -103,50 +103,59 @@ ObjectMapper mapper = ObjectMapper.builder()
 
 强制使用 ASM 字节码生成：
 
-- 性能最优（约 7-20% 提升）
+- **性能最优路径**（Path B 完成后，x86_64 / aarch64 上 Parse / Write 全面超过 fj2 2.0.61）
 - 启动时间稍长（需要生成字节码）
-- 不适用于 Native Image
+- 不适用于 Native Image 和 Android
 
 ### ReflectObjectReaderProvider / ReflectObjectWriterProvider
 
 强制使用反射 + Unsafe：
 
 - 启动快
-- 适用于 Native Image
-- Write 性能与 ASM 持平
+- 适用于 Native Image / Android
+- 比 ASM 路径慢 ~15–30 pp（Parse），~5–10 pp（Write）
 
 ## 性能对比
 
-### Writer（序列化）
+Path B（PR #72–#81）完成后，ASM 路径全面领先：
 
-| 场景 | 反射 | ASM | 差异 |
-|------|------|-----|------|
-| 简单 POJO (Users) | **100%** | ~87% | 反射快 13% |
-| 嵌套 POJO (User+Friend) | **100%** | ~87% | 反射快 13% |
+### Parse UTF8Bytes（按 fj2 2.0.61 归一）
 
-### Reader（反序列化）
+| 平台 | ASM | 反射 | ASM - 反射 |
+|------|-----:|-----:|----------:|
+| aarch64 (Neoverse N2) | **115.25%** | 73.05% | +42.2 pp |
+| x86_64 (EPYC 9T95) | **118.79%** | 79.56% | +39.2 pp |
 
-| 场景 | 反射 | ASM | 差异 |
-|------|------|-----|------|
-| 简单 POJO | **100%** | ~90% | 反射快 10% |
-| 嵌套 POJO | **100%** | ~83% | 反射快 17% |
+### Write UTF8Bytes（按 fj2 2.0.61 归一）
 
-### 为什么反射比 ASM 更快
+| 平台 | ASM | 反射 | ASM - 反射 |
+|------|-----:|-----:|----------:|
+| aarch64 | **110.57%** | 102.63% | +7.9 pp |
+| x86_64 | **110.01%** | 98.79% | +11.2 pp |
 
-反射路径的 `readFieldsLoop` / `writeFields` 循环结构紧凑（方法体 < 325 bytes），JIT 能将整个 FieldWriter/FieldReader 调用链内联为一个编译单元。ASM 生成的方法体将所有字段展开在一个方法中，超出 JIT 内联预算，关键解析/序列化方法（如 `writeNameString`、`readStringOff`）无法被内联。
+数据来源：[`docs/benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md`](../../benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md)。
+
+### 为什么 ASM 比反射更快
+
+ASM 生成的 Reader/Writer 通过以下机制全面碾压反射路径：
+
+- **Unsafe 字段访问** - ASM 生成字节码直接调用 `JDKUtils.getInt/putLongDirect`，跳过反射的访问检查
+- **按字段展开** - 每个字段的 name-match 和 value-write 都内联到一个大方法中，没有 per-field dispatch cost
+- **`readStringValueFast` SWAR** - PR #74 的 parse 路径每 8 字节检查一次结束符，比反射路径的 per-byte 快 6–8x
+- **`writeName1L/2L` 按长度特化** - PR #81 的 write 路径让每个 `"jsonName":` 只用 1 条 `ldc2_w + invokevirtual`，ASM 生成的 `OW_*.write` 始终落在 JIT 的 `FreqInlineSize=325` 预算内
 
 ### 建议
 
-- **使用默认配置**：反射路径已是最快路径，无需手动配置 ASM
-- ASM 作为跨 ClassLoader 场景的兼容方案保留
+- **使用默认配置**（AUTO provider）：JVM 上自动选择 ASM 路径，Android / Native Image 自动 fallback 到反射
+- 如果需要强制行为一致（比如性能测试对比），用 `writerCreatorType / readerCreatorType` 显式指定
 
 ## 平台差异
 
 | 平台 | 默认 Reader 策略 | 默认 Writer 策略 | 说明 |
 |------|------------------|------------------|------|
-| JDK 21+ | REFLECT | AUTO | Reader 反射最快；Writer AUTO 会尝试 ASM 再回退反射 |
-| Android | REFLECT | REFLECT | ASM 不可用，自动回退 |
-| Native Image | REFLECT | REFLECT | ASM 不可用，自动回退 |
+| JDK 21+ (JVM) | AUTO → ASM | AUTO → ASM | 简单 POJO 走 ASM，复杂类型自动回退反射 |
+| Android | REFLECT | REFLECT | ASM 不可用（DEX 不支持运行时字节码），自动回退 |
+| Native Image | REFLECT | REFLECT | ASM 不可用（需要构建时反射注册），自动回退 |
 
 ## 自定义 Provider
 

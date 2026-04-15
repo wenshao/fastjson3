@@ -360,9 +360,9 @@ public class ProdConfig {
 
     @Bean
     public ObjectMapper objectMapper() {
+        // AUTO provider 已是默认，JVM 上自动走 ASM 路径，
+        // Path B 完成后 Parse/Write 全面超过 fastjson2 2.0.61。
         return ObjectMapper.builder()
-            .readerCreator(ObjectReaderCreatorASM::createObjectReader)
-            .writerCreator(ObjectWriterCreatorASM::createObjectWriter)
             .enableWrite(WriteFeature.OptimizedForAscii)
             .build();
     }

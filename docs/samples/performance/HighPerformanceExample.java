@@ -46,8 +46,8 @@ public class HighPerformanceExample {
         // 2. 预编译 JSONPath
         useCompiledPath();
 
-        // 3. 默认反射路径（JIT 最优）
-        useDefaultReflect();
+        // 3. 默认 AUTO provider（JVM 上走 ASM）
+        useDefaultAuto();
 
         // 4. 使用类型化缓存
         useTypeTokenCaching();
@@ -102,16 +102,18 @@ public class HighPerformanceExample {
     }
 
     /**
-     * 3. 默认配置已是最优
+     * 3. 默认配置已是最优（JVM 上走 ASM，Android / Native Image 自动退回反射）
      */
-    private static void useDefaultReflect() {
-        System.out.println("3. 默认反射路径（JIT 最优）");
+    private static void useDefaultAuto() {
+        System.out.println("3. 默认 AUTO provider（JVM 上自动走 ASM）");
 
-        // 默认配置使用反射路径，JIT 深度内联后比 ASM 快 10-13%
+        // JVM 环境下默认的 AUTO provider 会自动为简单 POJO 生成 ASM Reader/Writer。
+        // Path B（PR #72–#81）之后，ASM 路径在 x86_64 和 aarch64 上 Parse/Write
+        // 全面超过 fastjson2 2.0.61，无需手动配置。
         ObjectMapper mapper = com.alibaba.fastjson3.ObjectMapper.shared();
 
-        System.out.println("  默认反射路径: 已启用");
-        System.out.println("  原因: JIT 对紧凑循环深度内联，比 ASM 展开代码快 10-13%");
+        System.out.println("  默认 AUTO → ASM: 已启用");
+        System.out.println("  原因: ASM 路径 Parse 115-119% of fj2, Write 110-144% of fj2 (Path B)");
         System.out.println("  建议: 无需手动配置，预热 1000+ 次调用让 JIT 充分优化");
         System.out.println();
     }

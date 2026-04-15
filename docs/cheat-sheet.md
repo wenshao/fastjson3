@@ -148,8 +148,8 @@ private static final ObjectMapper MAPPER = ObjectMapper.shared();
 byte[] json = JSON.toJSONBytes(obj);
 ```
 
-> **注意**: 默认配置经 JIT 深度内联后比 ASM 快 10-13%，无需额外配置。
-> ASM 仅作为跨 ClassLoader 等兼容性场景的后备方案。
+> **注意**: 默认 AUTO provider 在 JVM 上自动走 ASM 路径，Path B 后 Parse/Write 全面超过 fj2 2.0.61。
+> Android / Native Image 自动回退到反射路径，无需手动切换。
 
 ## 泛型处理
 

@@ -36,14 +36,18 @@ public class ObjectWriter_User_1 implements ObjectWriter<User> {
 
 **生成的字节码直接 `getfield`，JIT 可以完全内联。**
 
-## 性能对比
+## 性能对比（Path B 完成后，PR #72–#81）
 
-| 方法 | 相对性能 | 说明 |
-|------|----------|------|
-| 反射 Reader | 100% | 基准 |
-| ASM Reader | ~107% | **+7%** |
-| 反射 Writer | 100% | 基准（已高度优化） |
-| ASM Writer | ~100% | 持平 |
+按 fastjson2 2.0.61 归一，Eishay UTF8Bytes 场景：
+
+| 方法 | aarch64 | x86_64 |
+|------|--------:|-------:|
+| ASM Reader | **115.25%** | **118.79%** |
+| 反射 Reader | 73.05% | 79.56% |
+| ASM Writer | **110.57%** | **110.01%** |
+| 反射 Writer | 102.63% | 98.79% |
+
+ASM 路径 Parse 领先反射 ~40 pp，Write 领先 ~8–11 pp。数据来源：[`docs/benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md`](../../benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md)。
 
 ## 工作原理
 

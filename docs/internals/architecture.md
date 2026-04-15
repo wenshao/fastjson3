@@ -175,17 +175,23 @@ Function<Class<?>, ObjectWriter<?>> writerCreator
 
 ### 默认实现
 
-- **Reflection** - 使用反射，默认选择
-- **ASM** - 运行时生成字节码，可选
+- **ASM** - 运行时生成字节码，JVM 环境下的默认路径（通过 `AutoObjectReaderProvider` / `AutoObjectWriterProvider`）
+- **Reflection** - 反射路径，用于 native-image / Android / 复杂类型的自动 fallback
 
-### 反射 vs ASM 性能
+### ASM vs 反射性能
 
-| 操作 | 反射 | ASM | 差异 |
-|------|------|-----|------|
-| Read | **100%** | ~87% | 反射更快 |
-| Write | **100%** | ~87% | 反射更快 |
+Path B 完成后（PR #72–#81），ASM 路径在 x86_64 和 aarch64 上全面超过 fj2 2.0.61：
 
-**反射更快的原因：** 反射路径的 `readFieldsLoop` / `writeFields` 循环结构紧凑，JIT 能将整个 FieldWriter/FieldReader 调用链深度内联为一个编译单元。ASM 生成的方法体过大（所有字段展开），超出 JIT 内联预算（~325 bytes），关键方法（如 `writeNameString`、`readStringOff`）无法被内联，反而更慢。
+| 操作 | ASM / fj2 | 反射 / fj2 | 差异 |
+|------|---------:|----------:|------|
+| `EishayParseUTF8Bytes` (aarch64) | **115.25%** | 72.47% | ASM +42.8pp |
+| `EishayParseUTF8Bytes` (x86_64) | **118.79%** | 79.56% | ASM +39.2pp |
+| `EishayWriteUTF8Bytes` (aarch64) | **110.57%** | 102.63% | ASM +7.9pp |
+| `EishayWriteUTF8Bytes` (x86_64) | **110.01%** | 98.79% | ASM +11.2pp |
+
+数据来源：[`docs/benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md`](../benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md)（JDK 25 Zulu，`-f 3 -wi 3 -i 5 -w 2 -r 2 -t 1`）。
+
+**ASM 胜出的原因：** Path B Parse（PR #72–#77）引入了 Unsafe 字段访问、按字段展开的 name/value-match intrinsics、`readStringValueFast` SWAR 路径、嵌套 POJO 预解析等；Path B Write（PR #80–#81）则引入了 `writeName1L/2L` 按长度特化发射器，让 aarch64 C2 的 `OW_*.write` 落在 `FreqInlineSize=325` 预算内。两条路径都使用 Unsafe 直接操作 `byte[] buf` 和 `count`，跳过反射和边界检查，而反射路径的 tight loop 虽然便于 JIT 内联，但字段分派和类型检查的成本无法被优化掉。
 
 ---
 
