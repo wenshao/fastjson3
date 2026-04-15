@@ -906,11 +906,15 @@ public final class ObjectReaderCreatorASM {
         Class<?> fc = fr.fieldClass;
 
         if (fc == int.class) {
-            // JDKUtils.putInt(instance, foN, utf8.readIntDirect())
+            // JDKUtils.putInt(instance, foN, utf8.readInt32Value())
+            //   readInt32Value is Phase B6d's compact reader — no per-
+            //   iteration overflow check, no fallback to readNumber for the
+            //   common case. Falls back to readIntDirect for exponents,
+            //   BigInteger range, and non-plain inputs.
             mw.aload(4); // instance
             mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
             mw.aload(1); // utf8
-            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readIntDirect", "()I");
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readInt32Value", "()I");
             mw.invokestatic(TYPE_JDK_UTILS, "putInt", "(Ljava/lang/Object;JI)V");
         } else if (fc == long.class) {
             // JDKUtils.putLongField(instance, foN, utf8.readLongDirect())
@@ -942,28 +946,25 @@ public final class ObjectReaderCreatorASM {
             mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readBooleanDirect", "()Z");
             mw.invokestatic(TYPE_JDK_UTILS, "putBoolean", "(Ljava/lang/Object;JZ)V");
         } else if (fc == String.class) {
-            // peek = utf8.skipWSAndPeek()
+            // value = utf8.readStringValueFast()
+            //   — combines ws skip, null literal, quote check, scan, and
+            //     Latin1 String creation in one method (Phase B6b), replacing
+            //     the prior skipWSAndPeek + readNull + readStringDirect trio.
+            // if (value != null) putObject(instance, fo_i, value)
             mw.aload(1);
-            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "skipWSAndPeek", "()I");
-            mw.istore(5);
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readStringValueFast",
+                    "()Ljava/lang/String;");
+            mw.astore(5); // reuse slot 5 (previously peek, no longer needed here)
 
-            // if (peek == 'n' && utf8.readNull()) skip
-            Label readStr = new Label();
-            mw.iload(5);
-            mw.bipush('n');
-            mw.if_icmpne(readStr);
-            mw.aload(1);
-            mw.invokevirtual(TYPE_JSON_PARSER, "readNull", "()Z");
+            mw.aload(5);
             Label strEnd = new Label();
-            mw.ifne(strEnd);
+            mw.ifnull(strEnd);
 
-            // JDKUtils.putObject(instance, foN, utf8.readStringDirect())
-            mw.visitLabel(readStr);
             mw.aload(4); // instance
             mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
-            mw.aload(1); // utf8
-            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readStringDirect", "()Ljava/lang/String;");
-            mw.invokestatic(TYPE_JDK_UTILS, "putObject", "(Ljava/lang/Object;JLjava/lang/Object;)V");
+            mw.aload(5);
+            mw.invokestatic(TYPE_JDK_UTILS, "putObject",
+                    "(Ljava/lang/Object;JLjava/lang/Object;)V");
 
             mw.visitLabel(strEnd);
         } else if (fc.isEnum() && hasInlinableEnum(fr)) {

@@ -338,21 +338,29 @@ public final class ObjectMapper {
 
     /**
      * Check if a provider needs context propagation.
-     * Only custom ASM providers need context for recursive nested type generation.
-     * Default singleton providers don't need context.
+     *
+     * <p>The {@code ObjectReaderProvider.CONTEXT} ThreadLocal is only used by
+     * {@code openContext()} itself (to save the previous value for nesting).
+     * No parser or reader actually reads the context during a parse, so the
+     * per-parse ThreadLocal.get / set / remove overhead from
+     * {@code readerProvider.openContext()} is pure overhead — measured at
+     * roughly 20% of CPU time on Eishay-shape input via JFR profiling after
+     * PR #75 closed the structural gap. As of Phase B6 this method returns
+     * {@code false} for all built-in provider classes, including any custom
+     * instance of {@link ASMObjectReaderProvider} created by
+     * {@link Builder#readerCreatorType(ReaderCreatorType)}. External custom
+     * subclasses still get context for backwards compatibility.</p>
      */
     private static boolean needsContext(ObjectReaderProvider provider) {
         if (provider == null) {
             return false;
         }
-        // Check if it's a default singleton provider (no context needed)
-        if (provider == ReflectObjectReaderProvider.INSTANCE) {
+        Class<?> cls = provider.getClass();
+        if (cls == ReflectObjectReaderProvider.class
+                || cls == AutoObjectReaderProvider.class
+                || cls == ASMObjectReaderProvider.class) {
             return false;
         }
-        if (provider == AutoObjectReaderProvider.INSTANCE) {
-            return false;
-        }
-        // ASM provider and custom instances need context
         return true;
     }
 
