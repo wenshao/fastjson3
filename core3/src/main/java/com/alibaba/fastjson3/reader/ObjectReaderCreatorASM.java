@@ -906,11 +906,15 @@ public final class ObjectReaderCreatorASM {
         Class<?> fc = fr.fieldClass;
 
         if (fc == int.class) {
-            // JDKUtils.putInt(instance, foN, utf8.readIntDirect())
+            // JDKUtils.putInt(instance, foN, utf8.readInt32Value())
+            //   readInt32Value is Phase B6d's compact reader — no per-
+            //   iteration overflow check, no fallback to readNumber for the
+            //   common case. Falls back to readIntDirect for exponents,
+            //   BigInteger range, and non-plain inputs.
             mw.aload(4); // instance
             mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
             mw.aload(1); // utf8
-            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readIntDirect", "()I");
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readInt32Value", "()I");
             mw.invokestatic(TYPE_JDK_UTILS, "putInt", "(Ljava/lang/Object;JI)V");
         } else if (fc == long.class) {
             // JDKUtils.putLongField(instance, foN, utf8.readLongDirect())

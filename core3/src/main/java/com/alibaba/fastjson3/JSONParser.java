@@ -1902,6 +1902,83 @@ public abstract sealed class JSONParser implements Closeable
         }
 
         /**
+         * Compact int reader for ASM-generated bean int fields (Phase B6d).
+         *
+         * <p>Optimized for Eishay-shape input: expects {@code this.offset}
+         * already past the field-name match output (no leading whitespace),
+         * the value is a plain decimal integer that fits in {@code int32},
+         * and the post-value byte is one of {@code , } ]}. No fallback to
+         * {@link #readNumber()} — any overflow or non-plain input throws
+         * via {@link #readIntDirect()} as a last resort.</p>
+         *
+         * <p>The loop drops the per-iteration overflow check that
+         * {@code readIntDirect} carries: after the loop we verify length
+         * {@code ≤ 10} and confirm the post-value byte is a valid int
+         * terminator; anything else hands off to the generic
+         * {@code readIntDirect} which handles exponents, BigInteger
+         * fallback, etc.</p>
+         */
+        public final int readInt32Value() {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset;
+            // Tolerate a single leading ws char — Eishay compact has none,
+            // but other inputs may.
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            if (off >= e) {
+                this.offset = off;
+                return readIntDirect();
+            }
+            boolean neg = false;
+            int c = b[off];
+            if (c == '-') {
+                neg = true;
+                off++;
+                if (off >= e) {
+                    this.offset = off - 1;
+                    return readIntDirect();
+                }
+                c = b[off];
+            }
+            if (c < '0' || c > '9') {
+                this.offset = off - (neg ? 1 : 0);
+                return readIntDirect();
+            }
+            int start = off;
+            int value = c - '0';
+            off++;
+            // Unrolled digit loop — no overflow check per iteration.
+            // Max 9 more digits for a positive 10-digit int.
+            while (off < e) {
+                c = b[off];
+                if (c < '0' || c > '9') {
+                    break;
+                }
+                value = value * 10 + (c - '0');
+                off++;
+            }
+            int digits = off - start;
+            // Reject > 10 digits (overflow risk) or overflow at 10 digits.
+            if (digits > 10 || (digits == 10 && (value < 0 || (!neg && value > Integer.MAX_VALUE)
+                    || (neg && value > (long) Integer.MAX_VALUE + 1)))) {
+                this.offset = start - (neg ? 1 : 0);
+                return readIntDirect();
+            }
+            // Verify post-value byte is a valid terminator.
+            if (off < e) {
+                int nc = b[off] & 0xFF;
+                if (!INT_VALUE_END[nc]) {
+                    this.offset = start - (neg ? 1 : 0);
+                    return readIntDirect();
+                }
+            }
+            this.offset = off;
+            return neg ? -value : value;
+        }
+
+        /**
          * Read an integer value directly from byte[], no virtual calls.
          * Assumes whitespace already skipped.
          */
