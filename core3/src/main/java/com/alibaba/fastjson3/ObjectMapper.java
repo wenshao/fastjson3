@@ -249,7 +249,13 @@ public final class ObjectMapper {
                 } else if (readerCreator != null) {
                     reader = readerCreator.apply(type);
                 } else if (readerProvider != null && readerProvider.getClass() != com.alibaba.fastjson3.reader.AutoObjectReaderProvider.class) {
-                    // Only use custom providers (not AutoObjectReaderProvider, to preserve annotation support)
+                    // Custom (non-Auto) provider — delegate.
+                    // AUTO is intentionally bypassed here because the AUTO path
+                    // doesn't yet honor parse-time features like
+                    // AllowSingleQuotes / ErrorOnUnknown / @JSONField anySetter.
+                    // PR #78 made AUTO the default for new mappers; the cache
+                    // path stays on the annotation-aware ObjectReaderCreator
+                    // until AUTO has full feature parity with REFLECT.
                     reader = readerProvider.getObjectReader(type);
                 } else {
                     // Use ObjectReaderCreator for annotation support (including @JSONField(anySetter=true))
