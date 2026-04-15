@@ -116,6 +116,8 @@ Per-release reports are published under the top-level [`docs/benchmark/`](../doc
 
 | Date | Machines | Report |
 |------|----------|--------|
+| 2026-04-16 | aarch64 (Neoverse-N2) + x86_64 (EPYC 9T95), JDK 25 | [`benchmark_3.0.0-SNAPSHOT-66a5e2a.md`](../docs/benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md) — Path B Write complete (PR #80 + #81) |
+| 2026-04-15 | aarch64 (Neoverse-N2) + x86_64 (EPYC 9T95), JDK 25 | [`benchmark_3.0.0-SNAPSHOT-6d78ed8.md`](../docs/benchmark/benchmark_3.0.0-SNAPSHOT-6d78ed8.md) — Path B parse complete |
 | 2026-04-12 | aarch64 (Neoverse-N2) + x86_64 (EPYC 9T95), JDK 25 | [`benchmark_3.0.0-SNAPSHOT-4f2fdbf.md`](../docs/benchmark/benchmark_3.0.0-SNAPSHOT-4f2fdbf.md) |
 
 ## Manual Usage
