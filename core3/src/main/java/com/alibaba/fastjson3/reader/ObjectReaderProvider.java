@@ -172,24 +172,27 @@ public interface ObjectReaderProvider {
     }
 
     /**
-     * Get the default provider (uses REFLECT strategy).
+     * Get the default provider (uses AUTO strategy — try ASM first, fall back
+     * to reflection per type).
      * <p>
-     * Note: ASM strategy currently shows mixed performance results.
-     * For simple POJOs with only primitive fields, ASM can be ~16% faster.
-     * However, for objects with nested POJO fields, the current ASM implementation
-     * falls back to reflection for those fields, creating overhead that makes it
-     * ~10% slower than pure reflection.
+     * Path B (PRs #72–#77) brought the ASM generator ahead of the REFLECT
+     * path on the Eishay shape across both x86_64 (106.20% of fastjson2) and
+     * aarch64 (101.57% of fastjson2). The AUTO provider inherits those wins
+     * for every simple POJO while retaining REFLECT fallback for types the
+     * generator can't handle (records, sealed classes, interfaces,
+     * enum-typed containers, native-image, Android).
      * </p>
      * <p>
-     * To use ASM for specific use cases where it's beneficial:
+     * To force a specific strategy:
      * <pre>
      * ObjectMapper mapper = ObjectMapper.builder()
-     *         .readerCreatorType(ReaderCreatorType.ASM)
+     *         .readerCreatorType(ReaderCreatorType.ASM)     // always ASM
+     *         .readerCreatorType(ReaderCreatorType.REFLECT) // always REFLECT
      *         .build();
      * </pre>
      * </p>
      */
     static ObjectReaderProvider defaultProvider() {
-        return ReflectObjectReaderProvider.INSTANCE;
+        return AutoObjectReaderProvider.INSTANCE;
     }
 }

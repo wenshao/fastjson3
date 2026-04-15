@@ -25,7 +25,9 @@ class ObjectMapperProviderTest {
         ObjectMapper mapper = ObjectMapper.builder().build();
         ObjectReaderProvider provider = mapper.getReaderProvider();
         assertNotNull(provider);
-        assertEquals(ReaderCreatorType.REFLECT, provider.getCreatorType());
+        // Default switched REFLECT → AUTO after Path B closed the ASM
+        // performance gap on both x86_64 and aarch64 (PR #77).
+        assertEquals(ReaderCreatorType.AUTO, provider.getCreatorType());
     }
 
     @Test
@@ -39,7 +41,7 @@ class ObjectMapperProviderTest {
     @Test
     void testGetReaderCreatorType() {
         ObjectMapper mapper = ObjectMapper.builder().build();
-        assertEquals(ReaderCreatorType.REFLECT, mapper.getReaderCreatorType());
+        assertEquals(ReaderCreatorType.AUTO, mapper.getReaderCreatorType());
     }
 
     @Test
@@ -130,10 +132,11 @@ class ObjectMapperProviderTest {
     void testDefaultProviderTypes() {
         ObjectMapper mapper = ObjectMapper.builder().build();
 
-        // Default reader provider should be REFLECT
-        assertEquals(ReaderCreatorType.REFLECT, mapper.getReaderCreatorType());
+        // Default reader provider is AUTO as of PR #78 (Path B closed the
+        // ASM gap on both x86_64 and aarch64).
+        assertEquals(ReaderCreatorType.AUTO, mapper.getReaderCreatorType());
 
-        // Default writer provider should be AUTO
+        // Default writer provider is AUTO.
         assertEquals(WriterCreatorType.AUTO, mapper.getWriterCreatorType());
     }
 
