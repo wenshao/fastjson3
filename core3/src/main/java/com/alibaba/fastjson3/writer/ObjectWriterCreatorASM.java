@@ -290,7 +290,17 @@ public final class ObjectWriterCreatorASM {
                     continue;
                 }
                 try {
-                    nestedWriters[i] = createObjectWriter(target);
+                    // Check BuiltinCodecs first — types like Optional, URI,
+                    // Path, Year, Duration, Period, etc. live in named JDK
+                    // modules so canGenerate() rejects them, and a generic
+                    // REFLECT writer would mis-serialize them. The codec
+                    // returns the special writer that matches what the old
+                    // writeAny path would have called, preserving correctness.
+                    ObjectWriter<?> child = com.alibaba.fastjson3.BuiltinCodecs.getWriter(target);
+                    if (child == null) {
+                        child = createObjectWriter(target);
+                    }
+                    nestedWriters[i] = child;
                 } catch (Throwable ignored) {
                     // leave null → falls back to writeAny at runtime
                 }
@@ -1206,14 +1216,19 @@ public final class ObjectWriterCreatorASM {
             // so private fields work just as well as public ones, AND avoid
             // the cross-classloader `invokevirtual getter` problem entirely.
             // Falling back to the getter is only needed when no backing field
-            // exists (calculated property).
+            // exists (calculated property), or when the field is marked
+            // static / transient (which should be skipped per the public-field
+            // path's existing convention).
             //
             // The previous gate of `Modifier.isPublic(backingField)` silently
             // rejected every Eishay POJO and routed `EishayWriteUTF8Bytes.
             // fastjson3_asm` through ReflectObjectWriter — JFR profiling on
             // the post-Path-B run exposed it.
             Field backingField = findDeclaredField(beanType, propertyName);
-            if (backingField != null && !Modifier.isStatic(backingField.getModifiers())) {
+            boolean useField = backingField != null
+                    && !Modifier.isStatic(backingField.getModifiers())
+                    && !Modifier.isTransient(backingField.getModifiers());
+            if (useField) {
                 writerMap.put(propertyName, new FieldWriterInfo(
                         jsonName, ordinal, method.getReturnType(), backingField, null));
             } else {
