@@ -191,6 +191,48 @@ public final class ObjectReaderCreatorASM {
             if (fr.jsonSchema != null) {
                 return false;
             }
+            // The generator emits direct byte-level reads + Unsafe putObject.
+            // Anything that needs custom per-field interception (custom
+            // deserializer, format pattern, field-level features) must go
+            // through the REFLECT path. AUTO-as-default exposes these gaps,
+            // so canGenerate has to be exhaustive.
+            if (fr.deserializeUsingClass != null) {
+                return false;
+            }
+            if (fr.formatter != null) {
+                return false;
+            }
+            if (fr.fieldFeatures != 0) {
+                return false;
+            }
+            // List<E> field cases assume `new ArrayList(16)` at construction
+            // time. Rejecting concrete collection types (ImmutableList,
+            // LinkedList, Vector, etc.) preserves the declared collection
+            // identity for callers that depend on it (Guava, custom POJOs).
+            Class<?> fc = fr.fieldClass;
+            if (fc != null && java.util.List.class.isAssignableFrom(fc)
+                    && fc != java.util.List.class
+                    && fc != java.util.Collection.class
+                    && fc != java.util.ArrayList.class) {
+                return false;
+            }
+            // AtomicReference / AtomicLong / AtomicInteger / AtomicBoolean
+            // and similar wrappers need allocation + custom unwrapping that
+            // the inline generator doesn't model.
+            if (fc != null && java.util.concurrent.atomic.AtomicReference.class.isAssignableFrom(fc)) {
+                return false;
+            }
+            if (fc == java.util.concurrent.atomic.AtomicInteger.class
+                    || fc == java.util.concurrent.atomic.AtomicLong.class
+                    || fc == java.util.concurrent.atomic.AtomicBoolean.class) {
+                return false;
+            }
+            // Map fields: the inline path doesn't handle Maps at all (no
+            // generateMapFieldCase); fallback handles them via REFLECT,
+            // which is fine, but reject here for clarity.
+            if (fc != null && java.util.Map.class.isAssignableFrom(fc)) {
+                return false;
+            }
         }
         return true;
     }
