@@ -59,6 +59,23 @@ public interface ObjectReader<T> {
     }
 
     /**
+     * Resolve and return the element-type {@link ObjectReader} for a
+     * {@code List<E>}/{@code Collection<E>} field of this reader's bean.
+     * The generated ASM reader uses this (via its fallback REFLECT reader)
+     * to bypass the reflection fallback for List fields whose element type
+     * is a POJO: the element reader is fetched once per parse and then
+     * invoked directly in an inline loop.
+     *
+     * <p>Default returns {@code null} — subclasses that hold pre-resolved
+     * element readers override and return the entry at {@code fieldIndex}.
+     * A {@code null} return signals that no pre-resolved element reader is
+     * available and the caller must fall back to the generic path.</p>
+     */
+    default ObjectReader<?> getItemReader(int fieldIndex) {
+        return null;
+    }
+
+    /**
      * Return the target class this reader handles.
      */
     default Class<T> getObjectClass() {

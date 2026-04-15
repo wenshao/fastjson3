@@ -733,6 +733,16 @@ public final class ObjectReaderCreator {
             this.hasDefaultsOrRequired = hasDR;
         }
 
+        @Override
+        public ObjectReader<?> getItemReader(int fieldIndex) {
+            ensureFieldReaders();
+            ObjectReader<?>[] e = this.fieldElementReaders;
+            if (e == null || fieldIndex < 0 || fieldIndex >= e.length) {
+                return null;
+            }
+            return e[fieldIndex];
+        }
+
         private void ensureFieldReaders() {
             if (fieldReadersResolved) {
                 return;

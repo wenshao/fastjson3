@@ -745,7 +745,9 @@ public final class ObjectReaderCreatorASM {
         mw.invokespecial(TYPE_JSON_EXCEPTION, "<init>", "(Ljava/lang/String;)V");
         mw.athrow();
 
-        mw.visitMaxs(12, 13);
+        // Locals 13–14 reserved for Phase B3 list inline (itemReader, list);
+        // stack 12 covers the ArrayList.add(aload this, ...).
+        mw.visitMaxs(12, 15);
     }
 
     /**
@@ -902,6 +904,10 @@ public final class ObjectReaderCreatorASM {
             mw.visitLabel(strEnd);
         } else if (fc.isEnum() && hasInlinableEnum(fr)) {
             generateEnumFieldCase(mw, classInternalName, fr, fieldIndex);
+        } else if (java.util.List.class.isAssignableFrom(fc)
+                && fr.elementClass != null
+                && isInlinablePojoListElement(fr.elementClass)) {
+            generateListFieldCase(mw, classInternalName, fr, fieldIndex);
         } else {
             // Complex type (List, String[], long[], POJO, etc.):
             // delegate to fallback.readFieldUTF8(utf8, instance, fieldIndex, features)
@@ -914,6 +920,177 @@ public final class ObjectReaderCreatorASM {
             mw.invokeinterface(TYPE_OBJECT_READER, "readFieldUTF8",
                     "(Lcom/alibaba/fastjson3/JSONParser$UTF8;Ljava/lang/Object;IJ)V");
         }
+    }
+
+    /**
+     * Returns true if the element class of a {@code List<E>} field is
+     * suitable for Phase B3's inline POJO list loop: a concrete public
+     * non-primitive non-enum non-String type with an accessible no-arg or
+     * reader-resolvable constructor. The actual element {@code ObjectReader}
+     * is fetched at runtime via {@code fallback.getItemReader(i)}; if it
+     * comes back null the generated code falls back to the generic path.
+     */
+    private static boolean isInlinablePojoListElement(Class<?> elem) {
+        if (elem == null || elem.isPrimitive() || elem.isArray() || elem.isInterface()) {
+            return false;
+        }
+        if (elem == String.class || elem == Integer.class || elem == Long.class
+                || elem == Double.class || elem == Float.class || elem == Boolean.class
+                || elem == Object.class || elem.isEnum()) {
+            return false;
+        }
+        if (Modifier.isAbstract(elem.getModifiers())) {
+            return false;
+        }
+        return Modifier.isPublic(elem.getModifiers());
+    }
+
+    /**
+     * Emit inline bytecode for a {@code List<POJO>} field. Mirrors fj2's
+     * {@code genReadFieldValueList} but adapted to fj3's parser API:
+     *
+     * <pre>
+     *   peek = utf8.skipWSAndPeek();
+     *   if (peek == 'n' &amp;&amp; utf8.readNull()) {
+     *       putObject(instance, fo_i, null); goto end;
+     *   }
+     *   if (!utf8.nextIfArrayStart()) goto fallback;
+     *   itemReader = this.fallback.getItemReader(fieldIndex);
+     *   if (itemReader == null) {
+     *       // restore offset past the '[' consumption so fallback re-parses the array
+     *       utf8.setOffset(utf8.getOffset() - 1);
+     *       goto fallback;
+     *   }
+     *   list = new ArrayList(16);
+     * loop:
+     *   if (utf8.nextIfArrayEnd()) goto done;
+     *   list.add(itemReader.readObjectUTF8(utf8, features));
+     *   goto loop;
+     * done:
+     *   putObject(instance, fo_i, list);
+     *   goto end;
+     * fallback:
+     *   this.fallback.readFieldUTF8(utf8, instance, fieldIndex, features);
+     * end:
+     * </pre>
+     *
+     * <p>Key design decisions (and why Phase 3's helper-method approach
+     * regressed): the loop is emitted as INLINE bytecode inside the generated
+     * {@code readObjectUTF8}, not a helper call. This keeps the {@code list},
+     * {@code itemReader}, and features values in locals so JIT can lift
+     * invariants and hoist bounds checks on the array-separator test. The
+     * only virtual call in the hot loop is {@code itemReader.readObjectUTF8}
+     * — monomorphic per call site, so C2 devirtualizes it via the inline
+     * cache and often inlines the child reader too.</p>
+     */
+    private static void generateListFieldCase(
+            MethodWriter mw,
+            String classInternalName,
+            FieldReader fr,
+            int fieldIndex
+    ) {
+        // Local slots for this case:
+        //   5 = peek (int, already used elsewhere)
+        //   13 = itemReader (ObjectReader)
+        //   14 = list (ArrayList)
+        final int LOCAL_ITEM_READER = 13;
+        final int LOCAL_LIST = 14;
+
+        Label fallback = new Label();
+        Label end = new Label();
+        Label loopTop = new Label();
+        Label loopDone = new Label();
+
+        // peek = utf8.skipWSAndPeek()
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "skipWSAndPeek", "()I");
+        mw.istore(5);
+
+        // if (peek == 'n' && utf8.readNull()) { instance.fi = null; goto end; }
+        Label notNullList = new Label();
+        mw.iload(5);
+        mw.bipush('n');
+        mw.if_icmpne(notNullList);
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER, "readNull", "()Z");
+        Label nullSkip = new Label();
+        mw.ifeq(nullSkip);
+        // Leave the field at its default (null) — match fj3 REFLECT path
+        // which does not set the field on explicit null. Jump to end.
+        mw.goto_(end);
+        mw.visitLabel(nullSkip);
+        mw.visitLabel(notNullList);
+
+        // if (!utf8.nextIfArrayStart()) goto fallback
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfArrayStart", "()Z");
+        mw.ifeq(fallback);
+
+        // itemReader = this.fallback.getItemReader(fieldIndex)
+        mw.aload(0);
+        mw.getfield(classInternalName, "fallback", DESC_OBJECT_READER);
+        mw.bipush(fieldIndex);
+        mw.invokeinterface(TYPE_OBJECT_READER, "getItemReader",
+                "(I)Lcom/alibaba/fastjson3/ObjectReader;");
+        mw.astore(LOCAL_ITEM_READER);
+
+        mw.aload(LOCAL_ITEM_READER);
+        Label haveItemReader = new Label();
+        mw.ifnonnull(haveItemReader);
+        // Back up offset by 1 (to the '[') so fallback sees the array intact.
+        mw.aload(1);
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER, "getOffset", "()I");
+        mw.iconst_1();
+        mw.isub();
+        mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
+        mw.goto_(fallback);
+
+        mw.visitLabel(haveItemReader);
+        // list = new ArrayList(16)
+        mw.new_("java/util/ArrayList");
+        mw.dup();
+        mw.bipush(16);
+        mw.invokespecial("java/util/ArrayList", "<init>", "(I)V");
+        mw.astore(LOCAL_LIST);
+
+        // loop:
+        mw.visitLabel(loopTop);
+        // if (utf8.nextIfArrayEnd()) goto loopDone
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfArrayEnd", "()Z");
+        mw.ifne(loopDone);
+        // list.add(itemReader.readObjectUTF8(utf8, features))
+        mw.aload(LOCAL_LIST);
+        mw.aload(LOCAL_ITEM_READER);
+        mw.aload(1);
+        mw.lload(2);
+        mw.invokeinterface(TYPE_OBJECT_READER, "readObjectUTF8",
+                "(Lcom/alibaba/fastjson3/JSONParser$UTF8;J)Ljava/lang/Object;");
+        mw.invokevirtual("java/util/ArrayList", "add", "(Ljava/lang/Object;)Z");
+        mw.pop();
+        mw.goto_(loopTop);
+
+        mw.visitLabel(loopDone);
+        // putObject(instance, fo_i, list)
+        mw.aload(4);
+        mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
+        mw.aload(LOCAL_LIST);
+        mw.invokestatic(TYPE_JDK_UTILS, "putObject",
+                "(Ljava/lang/Object;JLjava/lang/Object;)V");
+        mw.goto_(end);
+
+        mw.visitLabel(fallback);
+        mw.aload(0);
+        mw.getfield(classInternalName, "fallback", DESC_OBJECT_READER);
+        mw.aload(1);
+        mw.aload(4);
+        mw.bipush(fieldIndex);
+        mw.lload(2);
+        mw.invokeinterface(TYPE_OBJECT_READER, "readFieldUTF8",
+                "(Lcom/alibaba/fastjson3/JSONParser$UTF8;Ljava/lang/Object;IJ)V");
+
+        mw.visitLabel(end);
     }
 
     /**
