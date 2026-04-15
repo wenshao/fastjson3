@@ -9,6 +9,12 @@ import com.alibaba.fastjson3.internal.asm.Opcodes;
 import com.alibaba.fastjson3.util.DynamicClassLoader;
 
 import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.DESC_FIELD_NAME_MATCHER;
@@ -739,7 +745,9 @@ public final class ObjectReaderCreatorASM {
         mw.invokespecial(TYPE_JSON_EXCEPTION, "<init>", "(Ljava/lang/String;)V");
         mw.athrow();
 
-        mw.visitMaxs(12, 13);
+        // Locals 13–14 reserved for Phase B3 list inline (itemReader, list);
+        // stack 12 covers the ArrayList.add(aload this, ...).
+        mw.visitMaxs(12, 15);
     }
 
     /**
@@ -894,6 +902,12 @@ public final class ObjectReaderCreatorASM {
             mw.invokestatic(TYPE_JDK_UTILS, "putObject", "(Ljava/lang/Object;JLjava/lang/Object;)V");
 
             mw.visitLabel(strEnd);
+        } else if (fc.isEnum() && hasInlinableEnum(fr)) {
+            generateEnumFieldCase(mw, classInternalName, fr, fieldIndex);
+        } else if (java.util.List.class.isAssignableFrom(fc)
+                && fr.elementClass != null
+                && isInlinablePojoListElement(fr.elementClass)) {
+            generateListFieldCase(mw, classInternalName, fr, fieldIndex);
         } else {
             // Complex type (List, String[], long[], POJO, etc.):
             // delegate to fallback.readFieldUTF8(utf8, instance, fieldIndex, features)
@@ -905,6 +919,457 @@ public final class ObjectReaderCreatorASM {
             mw.lload(2); // features
             mw.invokeinterface(TYPE_OBJECT_READER, "readFieldUTF8",
                     "(Lcom/alibaba/fastjson3/JSONParser$UTF8;Ljava/lang/Object;IJ)V");
+        }
+    }
+
+    /**
+     * Returns true if the element class of a {@code List<E>} field is
+     * suitable for Phase B3's inline POJO list loop: a concrete public
+     * non-primitive non-enum non-String type with an accessible no-arg or
+     * reader-resolvable constructor. The actual element {@code ObjectReader}
+     * is fetched at runtime via {@code fallback.getItemReader(i)}; if it
+     * comes back null the generated code falls back to the generic path.
+     */
+    private static boolean isInlinablePojoListElement(Class<?> elem) {
+        if (elem == null || elem.isPrimitive() || elem.isArray() || elem.isInterface()) {
+            return false;
+        }
+        if (elem == String.class || elem == Integer.class || elem == Long.class
+                || elem == Double.class || elem == Float.class || elem == Boolean.class
+                || elem == Object.class || elem.isEnum()) {
+            return false;
+        }
+        if (Modifier.isAbstract(elem.getModifiers())) {
+            return false;
+        }
+        return Modifier.isPublic(elem.getModifiers());
+    }
+
+    /**
+     * Emit inline bytecode for a {@code List<POJO>} field. Mirrors fj2's
+     * {@code genReadFieldValueList} but adapted to fj3's parser API:
+     *
+     * <pre>
+     *   peek = utf8.skipWSAndPeek();
+     *   if (peek == 'n' &amp;&amp; utf8.readNull()) {
+     *       putObject(instance, fo_i, null); goto end;
+     *   }
+     *   if (!utf8.nextIfArrayStart()) goto fallback;
+     *   itemReader = this.fallback.getItemReader(fieldIndex);
+     *   if (itemReader == null) {
+     *       // restore offset past the '[' consumption so fallback re-parses the array
+     *       utf8.setOffset(utf8.getOffset() - 1);
+     *       goto fallback;
+     *   }
+     *   list = new ArrayList(16);
+     * loop:
+     *   if (utf8.nextIfArrayEnd()) goto done;
+     *   list.add(itemReader.readObjectUTF8(utf8, features));
+     *   goto loop;
+     * done:
+     *   putObject(instance, fo_i, list);
+     *   goto end;
+     * fallback:
+     *   this.fallback.readFieldUTF8(utf8, instance, fieldIndex, features);
+     * end:
+     * </pre>
+     *
+     * <p>Key design decisions (and why Phase 3's helper-method approach
+     * regressed): the loop is emitted as INLINE bytecode inside the generated
+     * {@code readObjectUTF8}, not a helper call. This keeps the {@code list},
+     * {@code itemReader}, and features values in locals so JIT can lift
+     * invariants and hoist bounds checks on the array-separator test. The
+     * only virtual call in the hot loop is {@code itemReader.readObjectUTF8}
+     * — monomorphic per call site, so C2 devirtualizes it via the inline
+     * cache and often inlines the child reader too.</p>
+     */
+    private static void generateListFieldCase(
+            MethodWriter mw,
+            String classInternalName,
+            FieldReader fr,
+            int fieldIndex
+    ) {
+        // Local slots for this case:
+        //   5 = peek (int, already used elsewhere)
+        //   13 = itemReader (ObjectReader)
+        //   14 = list (ArrayList)
+        final int LOCAL_ITEM_READER = 13;
+        final int LOCAL_LIST = 14;
+
+        Label fallback = new Label();
+        Label end = new Label();
+        Label loopTop = new Label();
+        Label loopDone = new Label();
+
+        // peek = utf8.skipWSAndPeek()
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "skipWSAndPeek", "()I");
+        mw.istore(5);
+
+        // if (peek == 'n' && utf8.readNull()) { instance.fi = null; goto end; }
+        Label notNullList = new Label();
+        mw.iload(5);
+        mw.bipush('n');
+        mw.if_icmpne(notNullList);
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER, "readNull", "()Z");
+        Label nullSkip = new Label();
+        mw.ifeq(nullSkip);
+        // Leave the field at its default (null) — match fj3 REFLECT path
+        // which does not set the field on explicit null. Jump to end.
+        mw.goto_(end);
+        mw.visitLabel(nullSkip);
+        mw.visitLabel(notNullList);
+
+        // if (!utf8.nextIfArrayStart()) goto fallback
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfArrayStart", "()Z");
+        mw.ifeq(fallback);
+
+        // itemReader = this.fallback.getItemReader(fieldIndex)
+        mw.aload(0);
+        mw.getfield(classInternalName, "fallback", DESC_OBJECT_READER);
+        mw.bipush(fieldIndex);
+        mw.invokeinterface(TYPE_OBJECT_READER, "getItemReader",
+                "(I)Lcom/alibaba/fastjson3/ObjectReader;");
+        mw.astore(LOCAL_ITEM_READER);
+
+        mw.aload(LOCAL_ITEM_READER);
+        Label haveItemReader = new Label();
+        mw.ifnonnull(haveItemReader);
+        // Back up offset by 1 (to the '[') so fallback sees the array intact.
+        mw.aload(1);
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER, "getOffset", "()I");
+        mw.iconst_1();
+        mw.isub();
+        mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
+        mw.goto_(fallback);
+
+        mw.visitLabel(haveItemReader);
+        // list = new ArrayList(16)
+        mw.new_("java/util/ArrayList");
+        mw.dup();
+        mw.bipush(16);
+        mw.invokespecial("java/util/ArrayList", "<init>", "(I)V");
+        mw.astore(LOCAL_LIST);
+
+        // loop:
+        mw.visitLabel(loopTop);
+        // if (utf8.nextIfArrayEnd()) goto loopDone
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfArrayEnd", "()Z");
+        mw.ifne(loopDone);
+        // list.add(itemReader.readObjectUTF8(utf8, features))
+        mw.aload(LOCAL_LIST);
+        mw.aload(LOCAL_ITEM_READER);
+        mw.aload(1);
+        mw.lload(2);
+        mw.invokeinterface(TYPE_OBJECT_READER, "readObjectUTF8",
+                "(Lcom/alibaba/fastjson3/JSONParser$UTF8;J)Ljava/lang/Object;");
+        mw.invokevirtual("java/util/ArrayList", "add", "(Ljava/lang/Object;)Z");
+        mw.pop();
+        mw.goto_(loopTop);
+
+        mw.visitLabel(loopDone);
+        // putObject(instance, fo_i, list)
+        mw.aload(4);
+        mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
+        mw.aload(LOCAL_LIST);
+        mw.invokestatic(TYPE_JDK_UTILS, "putObject",
+                "(Ljava/lang/Object;JLjava/lang/Object;)V");
+        mw.goto_(end);
+
+        mw.visitLabel(fallback);
+        mw.aload(0);
+        mw.getfield(classInternalName, "fallback", DESC_OBJECT_READER);
+        mw.aload(1);
+        mw.aload(4);
+        mw.bipush(fieldIndex);
+        mw.lload(2);
+        mw.invokeinterface(TYPE_OBJECT_READER, "readFieldUTF8",
+                "(Lcom/alibaba/fastjson3/JSONParser$UTF8;Ljava/lang/Object;IJ)V");
+
+        mw.visitLabel(end);
+    }
+
+    /**
+     * Returns true if the enum field has at least one constant whose UTF-8
+     * name length is in [3, 11] — the range supported by the
+     * {@code nextIfValue4Match<N>} intrinsic family. Constants outside that
+     * range (len &lt; 3 or len &gt; 11) still fall through to the fallback
+     * on miss, so partial inlining is safe.
+     *
+     * <p>Also rejects enums whose name bytes are non-ASCII, which would not
+     * round-trip through the native-order int discriminator.</p>
+     */
+    private static boolean hasInlinableEnum(FieldReader fr) {
+        Object[] constants = fr.enumConstants;
+        if (constants == null || constants.length == 0) {
+            return false;
+        }
+        for (Object c : constants) {
+            byte[] name = ((Enum<?>) c).name().getBytes(StandardCharsets.UTF_8);
+            int len = name.length;
+            if (len < 3 || len > 11) {
+                continue;
+            }
+            boolean ascii = true;
+            for (byte b : name) {
+                if ((b & 0xff) > 127) {
+                    ascii = false;
+                    break;
+                }
+            }
+            if (ascii) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Emit inline enum matching for the direct (fast-path) field case.
+     *
+     * <p>Layout of generated bytecode (pseudocode):</p>
+     * <pre>
+     *   peek = utf8.skipWSAndPeek();
+     *   if (peek == 'n' &amp;&amp; utf8.readNull()) goto end;
+     *   if (!utf8.advanceAfterNameOpeningQuote()) goto fallback;
+     *   switch (utf8.getRawInt()) {
+     *     case PREFIX_FLASH:
+     *       if (utf8.nextIfValue4Match5('S', 'H')) {
+     *         instance.player = frArray[i].enumConstants[FLASH_ord];
+     *         goto end;
+     *       }
+     *       break;
+     *     case PREFIX_JAVA:
+     *       if (utf8.nextIfValue4Match4('A')) {
+     *         instance.player = frArray[i].enumConstants[JAVA_ord];
+     *         goto end;
+     *       }
+     *       break;
+     *   }
+     *   // all-miss: restore offset to just-before opening quote and fall back
+     *   utf8.setOffset(utf8.getOffset() - 1);
+     * fallback:
+     *   fallback.readFieldUTF8(utf8, instance, fieldIndex, features);
+     * end:
+     * </pre>
+     *
+     * <p>The {@code getRawInt}-based switch uses fj3's convention where the
+     * discriminator is read at {@code this.offset} (which is past the opening
+     * quote after {@code advanceAfterNameOpeningQuote}). For an enum of content
+     * length 3 the discriminator is {@code content[0..2] + '"'}; for length
+     * &ge;4 it is {@code content[0..3]}. After a switch match, the per-case
+     * {@code nextIfValue4Match<N>} call verifies any tail content bytes plus
+     * the closing quote and post-value separator.</p>
+     */
+    private static void generateEnumFieldCase(
+            MethodWriter mw,
+            String classInternalName,
+            FieldReader fr,
+            int fieldIndex
+    ) {
+        Object[] constants = fr.enumConstants;
+
+        // Group inlinable constants by their fj3-style 4-byte discriminator.
+        // Use TreeMap so lookupswitch keys are ascending (required by the JVM).
+        TreeMap<Integer, List<Integer>> byPrefix = new TreeMap<>();
+        for (int i = 0; i < constants.length; i++) {
+            byte[] name = ((Enum<?>) constants[i]).name().getBytes(StandardCharsets.UTF_8);
+            int len = name.length;
+            if (len < 3 || len > 11) {
+                continue;
+            }
+            boolean ascii = true;
+            for (byte b : name) {
+                if ((b & 0xff) > 127) {
+                    ascii = false;
+                    break;
+                }
+            }
+            if (!ascii) {
+                continue;
+            }
+            int prefix;
+            if (len == 3) {
+                prefix = encodeInt(name[0], name[1], name[2], (byte) '"');
+            } else {
+                prefix = encodeInt(name[0], name[1], name[2], name[3]);
+            }
+            byPrefix.computeIfAbsent(prefix, k -> new ArrayList<>()).add(i);
+        }
+
+        Label fallback = new Label();
+        Label end = new Label();
+
+        // peek = utf8.skipWSAndPeek()
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "skipWSAndPeek", "()I");
+        mw.istore(5);
+
+        // if (peek == 'n' && utf8.readNull()) skip (field left as null default)
+        Label notNullEnum = new Label();
+        mw.iload(5);
+        mw.bipush('n');
+        mw.if_icmpne(notNullEnum);
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER, "readNull", "()Z");
+        mw.ifne(end);
+        mw.visitLabel(notNullEnum);
+
+        // if (!utf8.advanceAfterNameOpeningQuote()) goto fallback
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "advanceAfterNameOpeningQuote", "()Z");
+        mw.ifeq(fallback);
+
+        // switch (utf8.getRawInt()) { ... }
+        int nCases = byPrefix.size();
+        int[] switchKeys = new int[nCases];
+        Label[] caseLabels = new Label[nCases];
+        Label switchDefault = new Label();
+        {
+            int idx = 0;
+            for (Integer k : byPrefix.keySet()) {
+                switchKeys[idx] = k;
+                caseLabels[idx] = new Label();
+                idx++;
+            }
+        }
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "getRawInt", "()I");
+        mw.visitLookupSwitchInsn(switchDefault, switchKeys, caseLabels);
+
+        // Per-case: try each constant in the bucket sequentially.
+        int caseIdx = 0;
+        for (Map.Entry<Integer, List<Integer>> entry : byPrefix.entrySet()) {
+            mw.visitLabel(caseLabels[caseIdx++]);
+            List<Integer> bucket = entry.getValue();
+            for (int ordinalIdx : bucket) {
+                byte[] name = ((Enum<?>) constants[ordinalIdx]).name()
+                        .getBytes(StandardCharsets.UTF_8);
+                int len = name.length;
+                Label nextTry = new Label();
+
+                mw.aload(1);
+                emitValueMatchCall(mw, name, len);
+                mw.ifeq(nextTry);
+
+                // putObject(instance, fo<i>, frArray[fieldIndex].enumConstants[ordinalIdx])
+                mw.aload(4); // instance
+                mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
+                mw.aload(11); // frArray
+                mw.bipush(fieldIndex);
+                mw.aaload();
+                mw.getfield(TYPE_FIELD_READER, "enumConstants", "[Ljava/lang/Object;");
+                if (ordinalIdx <= Byte.MAX_VALUE) {
+                    mw.bipush(ordinalIdx);
+                } else {
+                    mw.visitLdcInsn(ordinalIdx);
+                }
+                mw.aaload();
+                mw.invokestatic(TYPE_JDK_UTILS, "putObject",
+                        "(Ljava/lang/Object;JLjava/lang/Object;)V");
+                mw.goto_(end);
+
+                mw.visitLabel(nextTry);
+            }
+            // All attempts in this bucket failed. Jump to offset-restore path.
+            mw.goto_(switchDefault);
+        }
+
+        // Default (no prefix match) and per-bucket fall-through land here.
+        mw.visitLabel(switchDefault);
+
+        // Restore offset = current - 1 (back up past the opening quote so the
+        // fallback sees the same state it would have before we advanced).
+        mw.aload(1);
+        mw.aload(1);
+        mw.invokevirtual(TYPE_JSON_PARSER, "getOffset", "()I");
+        mw.iconst_1();
+        mw.isub();
+        mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
+
+        mw.visitLabel(fallback);
+        // fallback.readFieldUTF8(utf8, instance, fieldIndex, features)
+        mw.aload(0); // this
+        mw.getfield(classInternalName, "fallback", DESC_OBJECT_READER);
+        mw.aload(1); // utf8
+        mw.aload(4); // instance
+        mw.bipush(fieldIndex);
+        mw.lload(2); // features
+        mw.invokeinterface(TYPE_OBJECT_READER, "readFieldUTF8",
+                "(Lcom/alibaba/fastjson3/JSONParser$UTF8;Ljava/lang/Object;IJ)V");
+
+        mw.visitLabel(end);
+    }
+
+    /**
+     * Emit a {@code nextIfValue4Match<len>(tail-args)} call. Constants for the
+     * tail bytes are computed from the enum name's UTF-8 bytes using the same
+     * layout as the runtime helpers in {@link com.alibaba.fastjson3.JSONParser.UTF8}.
+     * {@code utf8} must be on the stack before this call.
+     */
+    private static void emitValueMatchCall(MethodWriter mw, byte[] name, int len) {
+        switch (len) {
+            case 3:
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfValue4Match3", "()Z");
+                break;
+            case 4:
+                mw.bipush(name[3]);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfValue4Match4", "(B)Z");
+                break;
+            case 5:
+                mw.bipush(name[3]);
+                mw.bipush(name[4]);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfValue4Match5", "(BB)Z");
+                break;
+            case 6: {
+                int name1 = encodeInt(name[3], name[4], name[5], (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfValue4Match6", "(I)Z");
+                break;
+            }
+            case 7: {
+                int name1 = encodeInt(name[3], name[4], name[5], name[6]);
+                mw.visitLdcInsn(name1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfValue4Match7", "(I)Z");
+                break;
+            }
+            case 8: {
+                int name1 = encodeInt(name[3], name[4], name[5], name[6]);
+                mw.visitLdcInsn(name1);
+                mw.bipush(name[7]);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfValue4Match8", "(IB)Z");
+                break;
+            }
+            case 9: {
+                int name1 = encodeInt(name[3], name[4], name[5], name[6]);
+                mw.visitLdcInsn(name1);
+                mw.bipush(name[7]);
+                mw.bipush(name[8]);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfValue4Match9", "(IBB)Z");
+                break;
+            }
+            case 10: {
+                long name1 = encodeLong(
+                        name[3], name[4], name[5], name[6],
+                        name[7], name[8], name[9], (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfValue4Match10", "(J)Z");
+                break;
+            }
+            case 11: {
+                long name1 = encodeLong(
+                        name[3], name[4], name[5], name[6],
+                        name[7], name[8], name[9], name[10]);
+                mw.visitLdcInsn(name1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfValue4Match11", "(J)Z");
+                break;
+            }
+            default:
+                throw new IllegalStateException("emitValueMatchCall: unsupported len " + len);
         }
     }
 
