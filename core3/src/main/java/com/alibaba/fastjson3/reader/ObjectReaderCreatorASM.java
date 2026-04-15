@@ -1177,14 +1177,19 @@ public final class ObjectReaderCreatorASM {
         mw.invokespecial("java/util/ArrayList", "<init>", "(I)V");
         mw.astore(LOCAL_LIST);
 
-        // loop: while (!nextIfArrayEnd()) list.add(readStringDirect())
+        // loop: while (!nextIfArrayEnd()) list.add(readStringValueFast())
+        //
+        // Uses readStringValueFast (Phase B6b) rather than readStringDirect
+        // — same ws skip + null + quote + scan + Latin1 create pipeline in
+        // a single tighter method. Null literals become null list elements,
+        // matching the REFLECT List<String> fallback semantics.
         mw.visitLabel(loopTop);
         mw.aload(1);
         mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfArrayEnd", "()Z");
         mw.ifne(loopDone);
         mw.aload(LOCAL_LIST);
         mw.aload(1);
-        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readStringDirect", "()Ljava/lang/String;");
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readStringValueFast", "()Ljava/lang/String;");
         mw.invokevirtual("java/util/ArrayList", "add", "(Ljava/lang/Object;)Z");
         mw.pop();
         mw.goto_(loopTop);

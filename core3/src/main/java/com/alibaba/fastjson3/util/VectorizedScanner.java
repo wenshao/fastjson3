@@ -17,7 +17,14 @@ import jdk.incubator.vector.VectorSpecies;
  * the first interesting byte position.</p>
  */
 public final class VectorizedScanner {
-    static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
+    // Use SPECIES_MAX so each scan iteration processes the widest vector the
+    // current CPU supports. AVX-512 → 64 bytes/iter on x86; NEON/SVE → full
+    // 128/256/... on aarch64. Measured: on the aarch64 test box,
+    // SPECIES_PREFERRED was resolving to a narrower species than SPECIES_MAX,
+    // and the extra iterations per call dominated scan cost for 10–40 byte
+    // Eishay strings. SPECIES_MAX is never smaller than SPECIES_PREFERRED, so
+    // the change is neutral-or-better on every platform.
+    static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_MAX;
     static final int VECTOR_SIZE = SPECIES.vectorByteSize();
 
     private static final ByteVector QUOTE_VEC = ByteVector.broadcast(SPECIES, (byte) '"');
