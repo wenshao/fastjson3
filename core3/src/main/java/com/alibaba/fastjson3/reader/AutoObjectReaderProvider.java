@@ -87,7 +87,8 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
         // tiered compilation cascade for the generated reader classes.
         if (ASM_AVAILABLE && isSimplePOJO(type)
                 && !hasAnySetter(type)
-                && !hasBuiltinCodecField(type)) {
+                && !hasBuiltinCodecField(type)
+                && countSerializableFields(type) <= 15) {
             try {
                 return ObjectReaderCreatorASM.createObjectReader(type);
             } catch (Throwable e) {
@@ -139,6 +140,27 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
             }
         }
         return false;
+    }
+
+    /**
+     * Count non-static, non-transient declared fields. POJOs with &gt; 15
+     * fields produce a readObjectUTF8 &gt; 2000 bytes — far over C2's
+     * FreqInlineSize=325 budget. On aarch64 the REFLECT reader's compact
+     * readFieldsLoop actually outperforms the huge ASM method because the
+     * REFLECT entry point (11 bytes) inlines while the ASM entry (2000+
+     * bytes) can't. Threshold of 15 keeps Eishay-class POJOs (≤ 13 fields)
+     * on the fast ASM path.
+     */
+    private static int countSerializableFields(Class<?> type) {
+        int count = 0;
+        for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                    || java.lang.reflect.Modifier.isTransient(field.getModifiers())) {
+                continue;
+            }
+            count++;
+        }
+        return count;
     }
 
     /**
