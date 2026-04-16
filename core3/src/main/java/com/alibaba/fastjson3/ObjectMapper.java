@@ -243,24 +243,18 @@ public final class ObjectMapper {
             // Auto-create POJO reader (ASM or reflection)
             try {
                 if (useJacksonAnnotation || !mixInCache.isEmpty()) {
-                    // When annotations/mixIns are needed, use ObjectReaderCreator directly
+                    // When annotations/mixIns are needed, use ObjectReaderCreator
+                    // directly because the ASM reader doesn't process mixIn
+                    // overlays or Jackson annotations.
                     Class<?> mixIn = mixInCache.get(type);
                     reader = ObjectReaderCreator.createObjectReader(type, mixIn, useJacksonAnnotation);
                 } else if (readerCreator != null) {
                     reader = readerCreator.apply(type);
-                } else if (readerProvider != null && readerProvider.getClass() != com.alibaba.fastjson3.reader.AutoObjectReaderProvider.class) {
-                    // Custom (non-Auto) provider — delegate.
-                    // AUTO is intentionally bypassed here because the AUTO path
-                    // doesn't yet honor parse-time features like
-                    // AllowSingleQuotes / ErrorOnUnknown / @JSONField anySetter.
-                    // PR #78 made AUTO the default for new mappers; the cache
-                    // path stays on the annotation-aware ObjectReaderCreator
-                    // until AUTO has full feature parity with REFLECT.
-                    reader = readerProvider.getObjectReader(type);
                 } else {
-                    // Use ObjectReaderCreator for annotation support (including @JSONField(anySetter=true))
-                    Class<?> mixIn = mixInCache.get(type);
-                    reader = ObjectReaderCreator.createObjectReader(type, mixIn, useJacksonAnnotation);
+                    // Delegate to provider (AUTO picks ASM for simple POJOs,
+                    // falls back to REFLECT for complex types / anySetter /
+                    // BuiltinCodecs fields, etc.)
+                    reader = readerProvider.getObjectReader(type);
                 }
                 if (reader != null) {
                     ReaderHolder holder = new ReaderHolder(reader, cacheVersion.get());

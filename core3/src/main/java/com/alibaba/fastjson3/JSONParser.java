@@ -1845,6 +1845,12 @@ public abstract sealed class JSONParser implements Closeable
                 throw new JSONException("expected null or string at offset " + off);
             }
             if (c != '"') {
+                // AllowSingleQuotes: delegate to the slower but quote-aware
+                // readString() path. The fast SWAR scan only handles '"'.
+                if (c == '\'' && isEnabled(ReadFeature.AllowSingleQuotes)) {
+                    this.offset = off;
+                    return readString();
+                }
                 throw new JSONException("expected '\"' at offset " + off);
             }
             off++;
