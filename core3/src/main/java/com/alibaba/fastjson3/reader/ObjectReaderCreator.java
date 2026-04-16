@@ -941,57 +941,75 @@ public final class ObjectReaderCreator {
 
                 if (reader != null) {
                     int fi = reader.index;
-                    int tt = reader.typeTag;
-                    // Inline primitive types — avoid heap sync (setOffset/getOffset)
-                    // Exception: if field has custom deserializeUsing, use the generic path
-                    if (tt == FieldReader.TAG_STRING && (fi < 0 || objReaders == null || objReaders[fi] == null)) {
-                        if (b[off] == '"') {
+                    // Switch dispatch: compiled to tableswitch (O(1) jump)
+                    // vs the previous if/else chain (O(N) worst case).
+                    // For 22-field POJOs with 8+ type tags, the tableswitch
+                    // is faster on average and more JIT-friendly.
+                    switch (reader.typeTag) {
+                    case FieldReader.TAG_STRING:
+                        if (fi >= 0 && objReaders != null && objReaders[fi] != null) {
+                            // custom deserializeUsing
+                            utf8.setOffset(off);
+                            readAndSetFieldUTF8Inline(utf8, instance, reader, fi, features, objReaders, elemReaders);
+                            off = utf8.getOffset();
+                        } else if (b[off] == '"') {
                             off = utf8.readStringOff(off, instance, reader);
                         } else if (off + 3 < end && b[off] == 'n' && b[off + 1] == 'u' && b[off + 2] == 'l' && b[off + 3] == 'l') {
                             off += 4;
                         } else if (b[off] == '-' || (b[off] >= '0' && b[off] <= '9')) {
-                            // Numeric value - read as String to preserve precision
                             utf8.setOffset(off);
-                            String numStr = readNumberString(utf8);
-                            reader.setObjectValue(instance, numStr);
+                            reader.setObjectValue(instance, readNumberString(utf8));
                             off = utf8.getOffset();
                         } else if (b[off] == 't' || b[off] == 'f') {
-                            // Boolean value - convert to String
                             utf8.setOffset(off);
-                            boolean val = utf8.readBoolean();
-                            reader.setObjectValue(instance, Boolean.toString(val));
+                            reader.setObjectValue(instance, Boolean.toString(utf8.readBoolean()));
                             off = utf8.getOffset();
                         } else {
                             utf8.setOffset(off);
                             reader.setObjectValue(instance, utf8.readStringDirect());
                             off = utf8.getOffset();
                         }
-                    } else if (tt == FieldReader.TAG_INT) {
+                        break;
+                    case FieldReader.TAG_INT:
                         off = utf8.readIntOff(off, instance, reader);
-                    } else if (tt == FieldReader.TAG_LONG) {
+                        break;
+                    case FieldReader.TAG_LONG:
                         off = utf8.readLongOff(off, instance, reader);
-                    } else if (tt == FieldReader.TAG_DOUBLE) {
+                        break;
+                    case FieldReader.TAG_DOUBLE:
                         off = utf8.readDoubleOff(off, instance, reader);
-                    } else if (tt == FieldReader.TAG_BOOLEAN) {
+                        break;
+                    case FieldReader.TAG_BOOLEAN:
                         off = utf8.readBooleanOff(off, instance, reader);
-                    } else if (tt == FieldReader.TAG_STRING_ARRAY && b[off] == '[') {
-                        utf8.setOffset(off);
-                        reader.setObjectValue(instance, utf8.readStringArrayInline());
-                        off = utf8.getOffset();
-                    } else if (tt == FieldReader.TAG_LONG_ARRAY && b[off] == '[') {
-                        utf8.setOffset(off);
-                        reader.setObjectValue(instance, utf8.readLongArrayInline());
-                        off = utf8.getOffset();
-                    } else if (tt == FieldReader.TAG_ENUM && b[off] == '"'
-                            && (fi < 0 || objReaders == null || objReaders[fi] == null)) {
-                        // Fast path for enum string values — readStringOff + setObjectValue does String→enum conversion
-                        off = utf8.readStringOff(off, instance, reader);
-                    } else {
-                        // Sync offset for complex types (POJO, LIST, ARRAY, etc.)
-                        // Also handles TAG_STRING with custom deserializeUsing
+                        break;
+                    case FieldReader.TAG_STRING_ARRAY:
+                        if (b[off] == '[') {
+                            utf8.setOffset(off);
+                            reader.setObjectValue(instance, utf8.readStringArrayInline());
+                            off = utf8.getOffset();
+                            break;
+                        }
+                        // fall through to default
+                    case FieldReader.TAG_LONG_ARRAY:
+                        if (reader.typeTag == FieldReader.TAG_LONG_ARRAY && b[off] == '[') {
+                            utf8.setOffset(off);
+                            reader.setObjectValue(instance, utf8.readLongArrayInline());
+                            off = utf8.getOffset();
+                            break;
+                        }
+                        // fall through to default
+                    case FieldReader.TAG_ENUM:
+                        if (reader.typeTag == FieldReader.TAG_ENUM && b[off] == '"'
+                                && (fi < 0 || objReaders == null || objReaders[fi] == null)) {
+                            off = utf8.readStringOff(off, instance, reader);
+                            break;
+                        }
+                        // fall through to default
+                    default:
                         utf8.setOffset(off);
                         readAndSetFieldUTF8Inline(utf8, instance, reader, fi, features, objReaders, elemReaders);
                         off = utf8.getOffset();
+                        break;
                     }
                     if (fi >= 0 && fi < 64) {
                         fieldSetMask |= (1L << fi);
