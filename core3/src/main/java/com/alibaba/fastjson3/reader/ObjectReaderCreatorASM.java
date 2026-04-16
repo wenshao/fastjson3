@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.DESC_FIELD_NAME_MATCHER;
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.DESC_FIELD_READER;
+import static com.alibaba.fastjson3.internal.asm.ASMUtils.DESC_JSON_PARSER_UTF8;
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.DESC_OBJECT_READER;
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.TYPE_FIELD_NAME_MATCHER;
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.TYPE_FIELD_READER;
@@ -92,7 +93,7 @@ public final class ObjectReaderCreatorASM {
         for (FieldReader fr : fieldReaders) {
             String name = fr.fieldName;
             int L = name.length();
-            if (L < 2 || L > 9) {
+            if (L < 2 || L > 23) {
                 return false;
             }
             for (int i = 0; i < L; i++) {
@@ -155,12 +156,11 @@ public final class ObjectReaderCreatorASM {
         if (fields.length == 0) {
             return false;
         }
-        // High-field-count POJOs produce readObjectUTF8 > 2000 bytes,
-        // far over C2's FreqInlineSize=325. On aarch64 the REFLECT
-        // reader's compact readFieldsLoop outperforms the bloated ASM
-        // method. Threshold 15 keeps Eishay-class POJOs (≤ 13 fields)
-        // on ASM while routing JJB Users (22 fields) to REFLECT.
-        if (fields.length > 15) {
+        // Platform-aware field count limit:
+        // x86/x64: method splitting keeps each batch under FreqInlineSize → ASM wins up to 32 fields.
+        // ARM: C2 handles REFLECT's compact loop better than large ASM bytecode → cap at 15.
+        int maxFields = com.alibaba.fastjson3.util.JDKUtils.PUTLONG_FAST ? 32 : 15;
+        if (fields.length > maxFields) {
             return false;
         }
 
@@ -285,6 +285,11 @@ public final class ObjectReaderCreatorASM {
         generateGetObjectClass(cw, classInternalName);
         generateReadObject(cw, classInternalName);
         generateReadObjectUTF8(cw, classInternalName, beanInternalName, fieldReaders);
+
+        // Generate batch methods for large POJOs (>8 fields, non-fastPath)
+        if (!canUseFastPath(fieldReaders) && fieldReaders.length > 8) {
+            generateReadFieldsBatches(cw, classInternalName, fieldReaders, 8);
+        }
 
         byte[] bytecode = cw.toByteArray();
         Class<?> readerClass = CLASS_LOADER.loadClass(className, bytecode, 0, bytecode.length);
@@ -714,34 +719,61 @@ public final class ObjectReaderCreatorASM {
             mw.istore(12);
 
             // ==================== Ordered Speculation (byte[] header) ====================
-            for (int i = 0; i < fieldReaders.length; i++) {
-                // off = utf8.tryMatchFieldHeaderOff(off, fieldReaders[i].fieldNameHeader)
-                mw.aload(1);  // utf8
-                mw.iload(12); // off
-                mw.aload(11); // frArray
-                mw.bipush(i);
-                mw.aaload();   // frArray[i]
-                mw.getfield(TYPE_FIELD_READER, "fieldNameHeader", "[B");
-                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "tryMatchFieldHeaderOff", "(I[B)I");
-                mw.istore(12);
-                mw.iload(12);
-                mw.iconst_m1();
-                mw.if_icmpeq(genericLoopTop); // -1 = mismatch -> fallback
+            // For >BATCH_SIZE fields, the speculation is split into batch methods
+            // so each stays under C2's FreqInlineSize budget.
+            int batchSize = 8;
+            int numBatches = (fieldReaders.length + batchSize - 1) / batchSize;
 
-                generateFieldCaseOff(mw, classInternalName, fieldReaders[i], i, readOffDesc);
-
-                // sep = utf8.readFieldSepOff(off) — positive=comma, negative='}'
+            if (numBatches <= 1) {
+                // Small POJO: inline all fields directly
+                for (int i = 0; i < fieldReaders.length; i++) {
+                    emitSpeculativeField(mw, classInternalName, fieldReaders, i, readOffDesc, genericLoopTop, returnInstance);
+                }
+            } else {
+                // Large POJO: stateful batch methods, this.offset carries state.
+                // Sync local 12 → this.offset once before first batch.
                 mw.aload(1);
                 mw.iload(12);
-                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readFieldSepOff", "(I)I");
-                mw.istore(9);
-                mw.iload(9);
-                mw.iconst_m1();
-                mw.if_icmple(returnInstance); // result <= -1 means '}', recover offset
-                // comma: off = result
-                mw.iload(9);
+                mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
+
+                String batchDesc = "(" + DESC_JSON_PARSER_UTF8 + "J" + "Ljava/lang/Object;"
+                        + "[" + DESC_FIELD_READER + ")I";
+                for (int batch = 0; batch < numBatches; batch++) {
+                    // status = this.readFieldsBatchN(utf8, features, instance, frArray)
+                    mw.aload(0);  // this
+                    mw.aload(1);  // utf8
+                    mw.lload(2);  // features
+                    mw.aload(4);  // instance
+                    mw.aload(11); // frArray
+                    mw.invokevirtual(classInternalName, "readFieldsBatch" + batch, batchDesc);
+                    mw.istore(9);  // reuse slot 9 for status
+
+                    // -1 = mismatch → generic loop (this.offset already at pre-name)
+                    mw.iload(9);
+                    mw.iconst_m1();
+                    // Pull offset before genericLoopTop sync
+                    Label notMismatch = new Label();
+                    mw.if_icmpne(notMismatch);
+                    mw.aload(1);
+                    mw.invokevirtual(TYPE_JSON_PARSER, "getOffset", "()I");
+                    mw.istore(12);
+                    mw.goto_(genericLoopTop);
+                    mw.visitLabel(notMismatch);
+
+                    // 1 = end-of-object → return instance (this.offset past '}')
+                    mw.iload(9);
+                    mw.iconst_1();
+                    Label notEnd = new Label();
+                    mw.if_icmpne(notEnd);
+                    mw.aload(4);
+                    mw.areturn();
+                    mw.visitLabel(notEnd);
+                    // 0 = continue to next batch (this.offset past last comma)
+                }
+                // All batches consumed all fields, JSON has more fields
+                mw.aload(1);
+                mw.invokevirtual(TYPE_JSON_PARSER, "getOffset", "()I");
                 mw.istore(12);
-                // fall through to next field
             }
 
             // All fields matched but JSON has more fields
@@ -750,7 +782,7 @@ public final class ObjectReaderCreatorASM {
             mw.invokevirtual(TYPE_JSON_PARSER, "setOffset", "(I)V");
             mw.goto_(genericLoopTop);
 
-            // --- Return instance (off-as-local path only) ---
+            // --- Return instance (off-as-local path only, for inline small POJO) ---
             mw.visitLabel(returnInstance);
             mw.iload(9);
             mw.ineg();
@@ -938,6 +970,222 @@ public final class ObjectReaderCreatorASM {
                         (byte) ':');
                 mw.visitLdcInsn(name1);
                 mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match9", "(J)Z");
+                break;
+            }
+            // Lengths 10-23: name1 long always covers chars[3..10] (8 bytes).
+            // Trailing bytes packed into name2/name3 depending on length.
+            case 10: {
+                // name1 = chars[3..9] + '"'  (closing quote at position 10)
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match10", "(J)Z");
+                break;
+            }
+            case 11: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                mw.visitLdcInsn(name1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match11", "(J)Z");
+                break;
+            }
+            case 12: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                mw.visitLdcInsn(name1);
+                mw.bipush((byte) name.charAt(11));
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match12", "(JB)Z");
+                break;
+            }
+            case 13: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                int name2 = encodeInt(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) '"', (byte) ':');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match13", "(JI)Z");
+                break;
+            }
+            case 14: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                int name2 = encodeInt(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) name.charAt(13), (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match14", "(JI)Z");
+                break;
+            }
+            case 15: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                int name2 = encodeInt(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) name.charAt(13), (byte) name.charAt(14));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match15", "(JI)Z");
+                break;
+            }
+            case 16: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                int name2 = encodeInt(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) name.charAt(13), (byte) name.charAt(14));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.bipush((byte) name.charAt(15));
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match16", "(JIB)Z");
+                break;
+            }
+            case 17: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) name.charAt(13), (byte) name.charAt(14),
+                        (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) '"', (byte) ':');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match17", "(JJ)Z");
+                break;
+            }
+            case 18: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) name.charAt(13), (byte) name.charAt(14),
+                        (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match18", "(JJ)Z");
+                break;
+            }
+            case 19: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) name.charAt(13), (byte) name.charAt(14),
+                        (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match19", "(JJ)Z");
+                break;
+            }
+            case 20: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) name.charAt(13), (byte) name.charAt(14),
+                        (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.bipush((byte) name.charAt(19));
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match20", "(JJB)Z");
+                break;
+            }
+            case 21: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) name.charAt(13), (byte) name.charAt(14),
+                        (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                int name3 = encodeInt(
+                        (byte) name.charAt(19), (byte) name.charAt(20),
+                        (byte) '"', (byte) ':');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match21", "(JJI)Z");
+                break;
+            }
+            case 22: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) name.charAt(13), (byte) name.charAt(14),
+                        (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                int name3 = encodeInt(
+                        (byte) name.charAt(19), (byte) name.charAt(20),
+                        (byte) name.charAt(21), (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match22", "(JJI)Z");
+                break;
+            }
+            case 23: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4),
+                        (byte) name.charAt(5), (byte) name.charAt(6),
+                        (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12),
+                        (byte) name.charAt(13), (byte) name.charAt(14),
+                        (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                int name3 = encodeInt(
+                        (byte) name.charAt(19), (byte) name.charAt(20),
+                        (byte) name.charAt(21), (byte) name.charAt(22));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match23", "(JJI)Z");
                 break;
             }
             default:
@@ -1772,6 +2020,178 @@ public final class ObjectReaderCreatorASM {
             mw.aload(1);
             mw.invokevirtual(TYPE_JSON_PARSER, "getOffset", "()I");
             mw.istore(12);
+        }
+    }
+
+    /**
+     * Emit bytecode for one speculative field read (inline in the main method).
+     * Used for small POJOs (≤ 8 fields).
+     */
+    private static void emitSpeculativeField(
+            MethodWriter mw, String classInternalName,
+            FieldReader[] fieldReaders, int i, String readOffDesc,
+            Label genericLoopTop, Label returnInstance
+    ) {
+        mw.aload(1);  // utf8
+        mw.iload(12); // off
+        mw.aload(11); // frArray
+        mw.bipush(i);
+        mw.aaload();   // frArray[i]
+        mw.getfield(TYPE_FIELD_READER, "fieldNameHeader", "[B");
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "tryMatchFieldHeaderOff", "(I[B)I");
+        mw.istore(12);
+        mw.iload(12);
+        mw.iconst_m1();
+        mw.if_icmpeq(genericLoopTop);
+
+        generateFieldCaseOff(mw, classInternalName, fieldReaders[i], i, readOffDesc);
+
+        mw.aload(1);
+        mw.iload(12);
+        mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readFieldSepOff", "(I)I");
+        mw.istore(9);
+        mw.iload(9);
+        mw.iconst_m1();
+        mw.if_icmple(returnInstance);
+        mw.iload(9);
+        mw.istore(12);
+    }
+
+    /**
+     * Generate batch methods for large POJOs. Each batch handles up to 8 fields
+     * and stays within C2's FreqInlineSize budget.
+     *
+     * Signature: int readFieldsBatchN(UTF8 utf8, long features, Object instance,
+     *                                  FieldReader[] frArray, int off)
+     * Returns:  positive = new offset after last comma (continue to next batch)
+     *           -1 = field name mismatch (fall to generic loop)
+     *           -(off+2) where off>0 = '}' found, caller recovers offset
+     */
+    private static void generateReadFieldsBatches(
+            ClassWriter cw, String classInternalName,
+            FieldReader[] fieldReaders, int batchSize
+    ) {
+        int numBatches = (fieldReaders.length + batchSize - 1) / batchSize;
+        // Batch method — fully stateful (uses this.offset, no local off):
+        // returns 0 = continue, 1 = end-of-object, -1 = mismatch
+        String desc = "(" + DESC_JSON_PARSER_UTF8 + "J" + "Ljava/lang/Object;"
+                + "[" + DESC_FIELD_READER + ")I";
+
+        for (int batch = 0; batch < numBatches; batch++) {
+            MethodWriter mw = cw.visitMethod(
+                    0x0002, "readFieldsBatch" + batch, desc, 32);
+            // Locals: 0=this, 1=utf8, 2-3=features, 4=instance, 5=frArray, 7=tmp (String)
+
+            int start = batch * batchSize;
+            int end = Math.min(start + batchSize, fieldReaders.length);
+
+            Label mismatch = new Label();
+
+            for (int i = start; i < end; i++) {
+                // if (!utf8.tryMatchFieldHeader(frArray[i].fieldNameHeader)) goto mismatch
+                mw.aload(1);  // utf8
+                mw.aload(5);  // frArray
+                mw.bipush(i);
+                mw.aaload();   // frArray[i]
+                mw.getfield(TYPE_FIELD_READER, "fieldNameHeader", "[B");
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "tryMatchFieldHeader", "([B)Z");
+                mw.ifeq(mismatch);
+
+                // Read field value directly (stateful, reuses this.offset)
+                emitFieldReadStateful(mw, classInternalName, fieldReaders[i], i);
+
+                // sep = utf8.readFieldSeparator()  → 0=comma, 1='}' end
+                mw.aload(1);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readFieldSeparator", "()I");
+                Label nextField = new Label();
+                mw.ifeq(nextField);
+                // Non-zero → end of object (or error); return 1
+                mw.iconst_1();
+                mw.ireturn();
+                mw.visitLabel(nextField);
+            }
+
+            // All fields in batch matched and consumed
+            mw.iconst_0();
+            mw.ireturn();
+
+            // Mismatch: this.offset was set by tryMatchFieldHeader on false
+            mw.visitLabel(mismatch);
+            mw.iconst_m1();
+            mw.ireturn();
+        }
+    }
+
+    /**
+     * Emit field read bytecode — fully stateful, reuses this.offset.
+     * Matches generateFieldCase (small-POJO path) exactly:
+     * - Primitives: readXxxValue() + putXxx() direct
+     * - String: readStringValueFast() + putObject() direct
+     *
+     * Locals: 0=this, 1=utf8, 2-3=features, 4=instance, 5=frArray, 7=tmp
+     */
+    private static void emitFieldReadStateful(
+            MethodWriter mw, String classInternalName,
+            FieldReader fr, int fieldIndex
+    ) {
+        Class<?> fc = fr.fieldClass;
+
+        if (fc == int.class) {
+            mw.aload(4); // instance
+            mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
+            mw.aload(1);
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readInt32Value", "()I");
+            mw.invokestatic(TYPE_JDK_UTILS, "putInt", "(Ljava/lang/Object;JI)V");
+        } else if (fc == long.class) {
+            mw.aload(4);
+            mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
+            mw.aload(1);
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readLongDirect", "()J");
+            mw.invokestatic(TYPE_JDK_UTILS, "putLongField", "(Ljava/lang/Object;JJ)V");
+        } else if (fc == double.class) {
+            mw.aload(4);
+            mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
+            mw.aload(1);
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readDoubleDirect", "()D");
+            mw.invokestatic(TYPE_JDK_UTILS, "putDouble", "(Ljava/lang/Object;JD)V");
+        } else if (fc == float.class) {
+            mw.aload(4);
+            mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
+            mw.aload(1);
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readDoubleDirect", "()D");
+            mw.d2f();
+            mw.invokestatic(TYPE_JDK_UTILS, "putFloat", "(Ljava/lang/Object;JF)V");
+        } else if (fc == boolean.class) {
+            mw.aload(4);
+            mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
+            mw.aload(1);
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readBooleanDirect", "()Z");
+            mw.invokestatic(TYPE_JDK_UTILS, "putBoolean", "(Ljava/lang/Object;JZ)V");
+        } else if (fc == String.class) {
+            // value = utf8.readStringValueFast(); if (value != null) putObject(instance, foN, value)
+            mw.aload(1);
+            mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "readStringValueFast",
+                    "()Ljava/lang/String;");
+            mw.astore(7); // reuse slot 7
+            mw.aload(7);
+            Label strEnd = new Label();
+            mw.ifnull(strEnd);
+            mw.aload(4);
+            mw.getstatic(classInternalName, "fo" + fieldIndex, "J");
+            mw.aload(7);
+            mw.invokestatic(TYPE_JDK_UTILS, "putObject",
+                    "(Ljava/lang/Object;JLjava/lang/Object;)V");
+            mw.visitLabel(strEnd);
+        } else {
+            // Complex: delegate to fallback
+            mw.aload(0);
+            mw.getfield(classInternalName, "fallback", DESC_OBJECT_READER);
+            mw.aload(1);
+            mw.aload(4);
+            mw.bipush(fieldIndex);
+            mw.lload(2);
+            mw.invokeinterface(TYPE_OBJECT_READER, "readFieldUTF8",
+                    "(Lcom/alibaba/fastjson3/JSONParser$UTF8;Ljava/lang/Object;IJ)V");
         }
     }
 }
