@@ -362,6 +362,32 @@ public class JSONValidatorTest {
         assertFalse(JSON.isValid("01"));
     }
 
+    /**
+     * Regression: JSON.isValid(String) has a Latin1 fast path that reuses
+     * the String's internal {@code byte[]} storage without the ASCII scan
+     * {@code JSONParser.of(String)} does. Latin1 bytes 0x80–0xFF inside
+     * string values must parse correctly — they are handled as opaque
+     * bytes by {@code skipStringContent} (no UTF-8 decoding happens in
+     * the skipValue path).
+     */
+    @Test
+    public void testJsonIsValidLatin1NonAscii() {
+        // é (0xE9 in Latin1) inside a string value and field name
+        assertTrue(JSON.isValid("\"café\""));
+        assertTrue(JSON.isValid("{\"café\":42}"));
+        assertTrue(JSON.isValid("{\"name\":\"café\"}"));
+        // Full Latin1 supplement range
+        assertTrue(JSON.isValid("\"\u00A0\u00FF\u0080\""));
+        // Mixed with escapes
+        assertTrue(JSON.isValid("\"a\\u00e9b\""));
+        assertTrue(JSON.isValid("{\"k\":\"\\\"é\\\"\"}"));
+        // Nested structure with Latin1
+        assertTrue(JSON.isValid("{\"a\":[{\"b\":\"résumé\"}]}"));
+        // Still invalid after the fast path
+        assertFalse(JSON.isValid("{\"a\":é"));
+        assertFalse(JSON.isValid("\"unterminated é"));
+    }
+
     @Test
     public void testJsonIsValidBytes() {
         assertTrue(JSON.isValid("{}".getBytes(StandardCharsets.UTF_8)));

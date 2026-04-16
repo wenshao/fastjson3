@@ -956,6 +956,26 @@ public final class JSON {
         if (expectedFirstChar != null && firstNonWhitespace(json) != expectedFirstChar) {
             return false;
         }
+        // Fast path: Latin1 String's internal byte[] is directly parseable
+        // by the LATIN1 parser. skipValue() only inspects structural bytes
+        // (all ASCII) and opaquely scans string contents for '"' / '\\', so
+        // non-ASCII Latin1 bytes 0x80–0xFF inside string values are handled
+        // correctly — no UTF-8 decode happens on this path. This skips
+        // JSONParser.of(String)'s ~N-byte ASCII scan that it otherwise has
+        // to do to protect the ASM-generated reader paths (which DO use
+        // readStringUTF8 for high-bit bytes). isValid doesn't touch those
+        // paths, so the scan is pure overhead here.
+        if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json) == 0) {
+            byte[] latin1 = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
+            if (latin1 != null) {
+                try (JSONParser parser = new JSONParser.LATIN1(latin1, 0, latin1.length, 0)) {
+                    parser.skipValue();
+                    return parser.isEnd();
+                } catch (JSONException | ArrayIndexOutOfBoundsException e) {
+                    return false;
+                }
+            }
+        }
         try (JSONParser parser = JSONParser.of(json)) {
             parser.skipValue();
             return parser.isEnd();
