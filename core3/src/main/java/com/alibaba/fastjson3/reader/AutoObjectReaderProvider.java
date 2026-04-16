@@ -79,8 +79,15 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
             return null;
         }
 
-        // For simple POJOs, try ASM first (if available)
-        if (ASM_AVAILABLE && isSimplePOJO(type)) {
+        // For simple POJOs, try ASM first (if available and type doesn't
+        // use features the ASM reader doesn't support).
+        // IMPORTANT: all guards must live HERE, not in ObjectReaderCreatorASM,
+        // because GraalVM's JIT is sensitive to ANY bytecode change in that
+        // class — even adding dead-code checks to canGenerate() perturbs the
+        // tiered compilation cascade for the generated reader classes.
+        if (ASM_AVAILABLE && isSimplePOJO(type)
+                && !hasAnySetter(type)
+                && !hasBuiltinCodecField(type)) {
             try {
                 return ObjectReaderCreatorASM.createObjectReader(type);
             } catch (Throwable e) {
@@ -89,8 +96,49 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
             }
         }
 
-        // Default to reflection
+        // Default to reflection (handles anySetter, BuiltinCodecs fields, etc.)
         return ObjectReaderCreator.createObjectReader(type);
+    }
+
+    /**
+     * Check if the type has a {@code @JSONField(anySetter=true)} method.
+     * The ASM reader silently skips unknown fields instead of routing them
+     * to the any-setter.
+     */
+    private static boolean hasAnySetter(Class<?> type) {
+        for (java.lang.reflect.Method method : type.getMethods()) {
+            if (java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                    || method.getParameterCount() != 2) {
+                continue;
+            }
+            if (method.getParameterTypes()[0] != String.class) {
+                continue;
+            }
+            com.alibaba.fastjson3.annotation.JSONField jf =
+                    method.getAnnotation(com.alibaba.fastjson3.annotation.JSONField.class);
+            if (jf != null && jf.anySetter()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if any field uses a BuiltinCodecs type (URI, Path, Optional,
+     * Duration, etc.) that the ASM reader's generic-field delegate path
+     * can't handle correctly.
+     */
+    private static boolean hasBuiltinCodecField(Class<?> type) {
+        for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                    || java.lang.reflect.Modifier.isTransient(field.getModifiers())) {
+                continue;
+            }
+            if (com.alibaba.fastjson3.BuiltinCodecs.getReader(field.getType()) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
