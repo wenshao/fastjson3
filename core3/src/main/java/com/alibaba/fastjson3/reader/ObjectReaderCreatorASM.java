@@ -155,6 +155,14 @@ public final class ObjectReaderCreatorASM {
         if (fields.length == 0) {
             return false;
         }
+        // High-field-count POJOs produce readObjectUTF8 > 2000 bytes,
+        // far over C2's FreqInlineSize=325. On aarch64 the REFLECT
+        // reader's compact readFieldsLoop outperforms the bloated ASM
+        // method. Threshold 15 keeps Eishay-class POJOs (≤ 13 fields)
+        // on ASM while routing JJB Users (22 fields) to REFLECT.
+        if (fields.length > 15) {
+            return false;
+        }
 
         // Check if class is accessible for ASM field access
         // 1. Public classes are always accessible
