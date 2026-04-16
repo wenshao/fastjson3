@@ -2893,30 +2893,55 @@ public abstract sealed class JSONParser implements Closeable
          */
         public boolean tryMatchFieldHeader(byte[] header) {
             final byte[] b = this.bytes;
+            final int e = this.end;
             int off = this.offset;
-            // Skip leading whitespace
-            while (off < end && b[off] <= ' ') {
+            while (off < e && b[off] <= ' ') {
                 off++;
             }
             int len = header.length;
-            // Compare header bytes
-            if (off >= end || b[off] != '"') {
+            if (off + len > e) {
                 this.offset = off;
                 return false;
             }
-            if (off + len > end) {
-                this.offset = off;
-                return false;
-            }
-            for (int i = 1; i < len; i++) {
-                if (b[off + i] != header[i]) {
+            // SWAR comparison — single long compare for ≤8 byte headers,
+            // two for 9-16 byte headers, byte loop for longer.
+            if (len <= 8 && off + 8 <= b.length) {
+                long w = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
+                long hWord = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(header, 0);
+                long mask = (len == 8) ? -1L : (1L << (len << 3)) - 1;
+                if ((w & mask) != (hWord & mask)) {
                     this.offset = off;
                     return false;
                 }
+            } else if (len <= 16 && off + 16 <= b.length) {
+                long w0 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
+                long h0 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(header, 0);
+                if (w0 != h0) {
+                    this.offset = off;
+                    return false;
+                }
+                long w1 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off + 8);
+                long h1 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(header, 8);
+                int tail = len - 8;
+                long mask = (tail == 8) ? -1L : (1L << (tail << 3)) - 1;
+                if ((w1 & mask) != (h1 & mask)) {
+                    this.offset = off;
+                    return false;
+                }
+            } else {
+                if (b[off] != '"') {
+                    this.offset = off;
+                    return false;
+                }
+                for (int i = 1; i < len; i++) {
+                    if (b[off + i] != header[i]) {
+                        this.offset = off;
+                        return false;
+                    }
+                }
             }
-            // Match! Advance past header and skip trailing whitespace
             off += len;
-            while (off < end && b[off] <= ' ') {
+            while (off < e && b[off] <= ' ') {
                 off++;
             }
             this.offset = off;
@@ -2936,14 +2961,45 @@ public abstract sealed class JSONParser implements Closeable
                 off++;
             }
             int len = header.length;
-            if (off >= e || b[off] != '"' || off + len > e) {
+            if (off + len > e) {
                 this.offset = off;
                 return -1;
             }
-            for (int i = 1; i < len; i++) {
-                if (b[off + i] != header[i]) {
+            // SWAR comparison — one long compare for ≤8 byte headers,
+            // two long compares for 9-16 byte headers, byte loop for longer.
+            if (len <= 8 && off + 8 <= b.length) {
+                long w = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
+                long hWord = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(header, 0);
+                long mask = (len == 8) ? -1L : (1L << (len << 3)) - 1;
+                if ((w & mask) != (hWord & mask)) {
                     this.offset = off;
                     return -1;
+                }
+            } else if (len <= 16 && off + 16 <= b.length) {
+                long w0 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
+                long h0 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(header, 0);
+                if (w0 != h0) {
+                    this.offset = off;
+                    return -1;
+                }
+                long w1 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off + 8);
+                long h1 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(header, 8);
+                int tail = len - 8;
+                long mask = (tail == 8) ? -1L : (1L << (tail << 3)) - 1;
+                if ((w1 & mask) != (h1 & mask)) {
+                    this.offset = off;
+                    return -1;
+                }
+            } else {
+                if (b[off] != '"') {
+                    this.offset = off;
+                    return -1;
+                }
+                for (int i = 1; i < len; i++) {
+                    if (b[off + i] != header[i]) {
+                        this.offset = off;
+                        return -1;
+                    }
                 }
             }
             off += len;
