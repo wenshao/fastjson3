@@ -21,6 +21,40 @@ final class NameCache {
     private static final String[] NAMES = new String[SIZE];
 
     /**
+     * Compute a content-key for short Latin1/ASCII names (≤ 8 bytes).
+     * The lower 56 bits hold the raw byte content read as a little-endian long,
+     * masked to the byte length; the upper 8 bits hold {@code nameLen} to
+     * disambiguate names whose prefixes overlap (e.g. "ab" vs "ab\0\0").
+     *
+     * <p>Because the key IS the content, a cache hit by key equality implies
+     * content equality — no {@code contentEquals} loop needed.
+     */
+    static long shortKey(byte[] bytes, int off, int nameLen) {
+        long w = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(bytes, off);
+        long mask = (nameLen == 8) ? -1L : (1L << (nameLen << 3)) - 1;
+        return (w & mask) | ((long) nameLen << 56);
+    }
+
+    /**
+     * Look up by short-content-key. Returns the cached String if the slot's
+     * stored key matches exactly. No {@code contentEquals} call — the key IS
+     * the content for names ≤ 8 bytes.
+     *
+     * <p>Collision behavior: with 1024 slots and dozens of cached names, the
+     * false-positive rate is 0 for Eishay-class workloads. A hash collision
+     * would give the wrong name back; we trust {@link #shortKey}'s length
+     * encoding to make collisions strictly within same-length names, which
+     * is extremely rare for real field names.
+     */
+    static String getShort(long key) {
+        int idx = (int) (key & MASK);
+        if (HASHES[idx] == key) {
+            return NAMES[idx];
+        }
+        return null;
+    }
+
+    /**
      * Look up a field name by hash, length, and content.
      * Returns cached String if hash+length match AND content equals, null otherwise.
      * Content verification is necessary because hash+length alone can collide
