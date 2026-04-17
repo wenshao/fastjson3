@@ -62,10 +62,12 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
         if (hashIndex != null) {
             return getHashed(key);
         }
-        // Reverse scan for small maps
+        // Reverse scan with hashCode prefilter — see indexOfKey for rationale.
+        final int keyHash = key.hashCode();
         final String[] k = this.keys;
         for (int i = this.size - 1; i >= 0; i--) {
-            if (key.equals(k[i])) {
+            String ki = k[i];
+            if (ki.hashCode() == keyHash && key.equals(ki)) {
                 return values[i];
             }
         }
@@ -276,10 +278,18 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
         if (hashIndex != null) {
             return indexOfKeyHashed(key);
         }
-        // Reverse scan for small maps
+        // Reverse scan for small maps. Use hashCode prefilter: String.hashCode
+        // is cached in a field (computed once, then O(1) per call), and
+        // NameCache returns pre-warmed Strings, so candidate keys from a parser
+        // have their hashCodes already resolved. Comparing two ints is ~1 cycle
+        // vs String.equals's byte-by-byte compare (~10-30 cycles per short
+        // name). Profile: String.equals was 11.84% of Tree parse; this
+        // eliminates all .equals calls when hashes differ (the common case).
+        final int keyHash = key.hashCode();
         final String[] k = this.keys;
         for (int i = this.size - 1; i >= 0; i--) {
-            if (key.equals(k[i])) {
+            String ki = k[i];
+            if (ki.hashCode() == keyHash && key.equals(ki)) {
                 return i;
             }
         }
