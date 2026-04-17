@@ -31,7 +31,7 @@ for arg in "$@"; do
     fi
     if $PAST_SEPARATOR; then
         BENCH_ARGS+=("$arg")
-    elif [[ "$arg" == *@* ]]; then
+    elif [[ "$arg" == *@* ]] || ssh -G "$arg" 2>/dev/null | grep -q "^hostname"; then
         HOSTS+=("$arg")
     else
         BENCH_ARGS+=("$arg")
