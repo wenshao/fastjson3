@@ -246,8 +246,18 @@ run_with_jdk() {
     local java_cmd
 
     if [[ "$jdk_name" == "default" ]]; then
-        java_cmd="java"
-        jdk_name="jdk$(java -version 2>&1 | head -1 | sed 's/.*"\([0-9]*\).*/\1/')"
+        # Try /root/Install/jdk* (highest version), then PATH
+        java_cmd=""
+        for v in 25 24 23 22 21; do
+            if [[ -x "/root/Install/jdk${v}/bin/java" ]]; then
+                java_cmd="/root/Install/jdk${v}/bin/java"
+                break
+            fi
+        done
+        if [[ -z "$java_cmd" ]]; then
+            java_cmd="java"
+        fi
+        jdk_name="jdk$($java_cmd -version 2>&1 | head -1 | sed 's/.*"\([0-9]*\).*/\1/')"
     else
         java_cmd=$(find_java "$jdk_name")
         if [[ -z "$java_cmd" ]]; then
