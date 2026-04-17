@@ -131,11 +131,31 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
     }
 
     /**
-     * Fast append without duplicate check. Only for internal use where caller
-     * manages uniqueness. Note: JSON parsing uses put() instead to handle
-     * duplicate keys correctly.
+     * Parser-path put: identity-check dedup only, no {@code .equals} fallback.
+     *
+     * <p>Contract: caller guarantees that the same logical key is always passed
+     * as the SAME {@link String} instance. The parser (LATIN1/Str/UTF8) uses
+     * {@code NameCache}, which returns the same interned String for any given
+     * byte sequence, so duplicate field names within one object arrive as
+     * {@code key == existingKey}. Non-duplicate names are different instances.
+     *
+     * <p>Identity check is ~1 cycle per comparison vs ~10-30 cycles for
+     * {@code String.equals} even with hash prefilter. For a 9-field object
+     * without duplicates, this is 45 pointer compares (super cheap) vs 36
+     * full equals calls.
+     *
+     * <p>For programmatic callers outside the parser, use {@link #put} instead.
      */
-    void putDirect(String key, Object value) {
+    void putParser(String key, Object value) {
+        final String[] k = this.keys;
+        // Reverse scan — most recent insert most likely to collide.
+        for (int i = this.size - 1; i >= 0; i--) {
+            if (k[i] == key) {
+                values[i] = value;
+                return;
+            }
+        }
+        // Append
         if (size >= keys.length) {
             grow();
         }
@@ -144,7 +164,21 @@ final class JSONObjectMap extends AbstractMap<String, Object> {
         size++;
         if (hashIndex != null) {
             addToHash(key, size - 1);
+            if (size > hashIndex.length * 3 / 4) {
+                rebuildHashIndex();
+            }
+        } else if (size > HASH_THRESHOLD) {
+            buildHashIndex();
         }
+    }
+
+    /**
+     * @deprecated use {@link #putParser} instead (identity-check dedup is safer
+     *     than unconditional append for malformed JSON with duplicate keys).
+     */
+    @Deprecated
+    void putDirect(String key, Object value) {
+        putParser(key, value);
     }
 
     @Override
