@@ -118,8 +118,18 @@ public final class ObjectMapper {
      * Quick ASCII check for byte[]. Android-safe: no Unsafe dependency, uses simple byte loop.
      */
     private static boolean isAscii(byte[] bytes) {
-        for (int i = 0; i < bytes.length; i++) {
-            if (bytes[i] < 0) return false;
+        final int len = bytes.length;
+        int off = 0;
+        // SWAR: 8-byte batch check for high-bit (non-ASCII marker).
+        final int swarLimit = len - 7;
+        while (off < swarLimit) {
+            long w = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(bytes, off);
+            if ((w & 0x8080808080808080L) != 0) return false;
+            off += 8;
+        }
+        while (off < len) {
+            if (bytes[off] < 0) return false;
+            off++;
         }
         return true;
     }

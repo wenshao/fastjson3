@@ -211,14 +211,35 @@ public abstract sealed class JSONParser implements Closeable
     private static byte[] getAsciiLatin1Bytes(String json) {
         if (com.alibaba.fastjson3.util.JDKUtils.getStringCoder(json) == 0) {
             byte[] value = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(json);
-            if (value != null) {
-                for (byte b : value) {
-                    if (b < 0) return null;
-                }
+            if (value != null && isAsciiSwar(value)) {
                 return value;
             }
         }
         return null;
+    }
+
+    /**
+     * SWAR scan for non-ASCII bytes (high bit set). Processes 8 bytes per
+     * iteration using a single long compare — ~8x faster than the byte loop
+     * for typical ASCII JSON. Eishay tree parse spent 10.4% in this check;
+     * profile captured at commit 7736951.
+     */
+    private static boolean isAsciiSwar(byte[] b) {
+        final int len = b.length;
+        int off = 0;
+        final int swarLimit = len - 7;
+        while (off < swarLimit) {
+            long w = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
+            if ((w & 0x8080808080808080L) != 0) {
+                return false;
+            }
+            off += 8;
+        }
+        while (off < len) {
+            if (b[off] < 0) return false;
+            off++;
+        }
+        return true;
     }
 
     public static JSONParser of(byte[] jsonBytes) {
