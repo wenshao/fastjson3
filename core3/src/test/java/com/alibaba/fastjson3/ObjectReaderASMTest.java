@@ -146,4 +146,53 @@ public class ObjectReaderASMTest {
         ObjectReader<SimpleBean> reader = ObjectReaderCreatorASM.createObjectReader(SimpleBean.class);
         assertEquals(SimpleBean.class, reader.getObjectClass());
     }
+
+    /**
+     * POJO with long field names — exercises the extended fast-path ASM
+     * emitter (Match24..43). Each field name has a distinct first 4 chars
+     * so canUseFastPath returns true and generateFieldCase emits the
+     * nextIfName4Match<N> call for its length.
+     */
+    public static class LongFieldNames {
+        public int aField_exactly_24_chars_;        // 24
+        public int bField_exactly_25_chars__;       // 25
+        public int cField_that_is_26_chars_long;    // 26 (26)
+        public int dField_that_is_27_chars_longg;   // 27
+        public int eField_that_is_28_chars_long___; // 28 (29 actually)
+        public int fField_that_is_30_chars_long___;  // 30
+        public int gField_that_has_exactly_32_chars; // 31
+        public int hField_that_has_exactly_36_chars_long; // 36
+        public int iField_that_has_exactly_40_chars_long_ooo; // 40
+        public int jField_with_43_chars_long_name_exactly_xyzab; // 43
+    }
+
+    @Test
+    public void testLongFieldNameParsesViaFastPath() {
+        // Verify ASM wiring by round-tripping a POJO with field names spanning
+        // representative lengths in the 24-43 range. Intrinsic-level coverage
+        // of every length is in NameMatchIntrinsicsTest.match24to43_roundTripEachLength.
+        java.lang.reflect.Field[] fields = LongFieldNames.class.getDeclaredFields();
+        StringBuilder json = new StringBuilder("{");
+        int val = 100;
+        for (int i = 0; i < fields.length; i++) {
+            if (i > 0) json.append(",");
+            json.append("\"").append(fields[i].getName()).append("\":").append(val + i);
+        }
+        json.append("}");
+
+        LongFieldNames bean = JSON.parseObject(
+                json.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), LongFieldNames.class);
+        assertNotNull(bean);
+        for (int i = 0; i < fields.length; i++) {
+            fields[i].setAccessible(true);
+            try {
+                int got = fields[i].getInt(bean);
+                assertEquals(val + i, got,
+                        "field '" + fields[i].getName() + "' (len=" + fields[i].getName().length()
+                                + ") should parse to " + (val + i) + " but got " + got);
+            } catch (IllegalAccessException e) {
+                fail(e);
+            }
+        }
+    }
 }

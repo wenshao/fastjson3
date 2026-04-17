@@ -3597,6 +3597,424 @@ public abstract sealed class JSONParser implements Closeable
             return true;
         }
 
+        // ---------- Match24..32: two longs + int + optional byte tail, or three longs ----------
+
+        /** Match a 24-char name. 2 longs + int + byte(name4=char[23]) + `"` + `:`. */
+        public final boolean nextIfName4Match24(long name1, long name2, int name3, byte name4) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 26;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 23) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 15) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 7) != name3
+                    || b[off - 3] != name4
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 25-char name. 3 longs (name3 packs 6 chars + `"` + `:`). */
+        public final boolean nextIfName4Match25(long name1, long name2, long name3) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 27;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 24) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 16) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 8) != name3) {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 26-char name. 3 longs (name3 packs 7 chars + `"`) + `:`. */
+        public final boolean nextIfName4Match26(long name1, long name2, long name3) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 28;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 25) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 17) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 9) != name3
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 27-char name. 3 longs + `"` + `:`. */
+        public final boolean nextIfName4Match27(long name1, long name2, long name3) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 29;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 26) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 18) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 10) != name3
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 28-char name. 3 longs + byte(name4=char[27]) + `"` + `:`. */
+        public final boolean nextIfName4Match28(long name1, long name2, long name3, byte name4) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 30;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 27) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 19) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 11) != name3
+                    || b[off - 3] != name4
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 29-char name. 3 longs + int(name4 packs 2 chars + `"` + `:`). */
+        public final boolean nextIfName4Match29(long name1, long name2, long name3, int name4) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 31;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 28) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 20) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 12) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 4) != name4) {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 30-char name. 3 longs + int(name4 packs 3 chars + `"`) + `:`. */
+        public final boolean nextIfName4Match30(long name1, long name2, long name3, int name4) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 32;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 29) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 21) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 13) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 5) != name4
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 31-char name. 3 longs + int + `"` + `:`. */
+        public final boolean nextIfName4Match31(long name1, long name2, long name3, int name4) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 33;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 30) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 22) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 14) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 6) != name4
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 32-char name. 3 longs + int + byte(name5=char[31]) + `"` + `:`. */
+        public final boolean nextIfName4Match32(long name1, long name2, long name3, int name4, byte name5) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 34;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 31) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 23) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 15) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 7) != name4
+                    || b[off - 3] != name5
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        // ---------- Match33..40: four longs + optional int/byte tail ----------
+
+        /** Match a 33-char name. 4 longs (name4 packs 6 chars + `"` + `:`). */
+        public final boolean nextIfName4Match33(long name1, long name2, long name3, long name4) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 35;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 32) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 24) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 16) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 8) != name4) {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 34-char name. 4 longs (name4 packs 7 chars + `"`) + `:`. */
+        public final boolean nextIfName4Match34(long name1, long name2, long name3, long name4) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 36;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 33) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 25) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 17) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 9) != name4
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 35-char name. 4 longs + `"` + `:`. */
+        public final boolean nextIfName4Match35(long name1, long name2, long name3, long name4) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 37;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 34) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 26) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 18) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 10) != name4
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 36-char name. 4 longs + byte(name5=char[35]) + `"` + `:`. */
+        public final boolean nextIfName4Match36(long name1, long name2, long name3, long name4, byte name5) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 38;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 35) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 27) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 19) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 11) != name4
+                    || b[off - 3] != name5
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 37-char name. 4 longs + int(name5 packs 2 chars + `"` + `:`). */
+        public final boolean nextIfName4Match37(long name1, long name2, long name3, long name4, int name5) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 39;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 36) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 28) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 20) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 12) != name4
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 4) != name5) {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 38-char name. 4 longs + int(name5 packs 3 chars + `"`) + `:`. */
+        public final boolean nextIfName4Match38(long name1, long name2, long name3, long name4, int name5) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 40;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 37) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 29) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 21) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 13) != name4
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 5) != name5
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 39-char name. 4 longs + int + `"` + `:`. */
+        public final boolean nextIfName4Match39(long name1, long name2, long name3, long name4, int name5) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 41;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 38) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 30) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 22) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 14) != name4
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 6) != name5
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 40-char name. 4 longs + int + byte(name6=char[39]) + `"` + `:`. */
+        public final boolean nextIfName4Match40(long name1, long name2, long name3, long name4, int name5, byte name6) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 42;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 39) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 31) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 23) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 15) != name4
+                    || com.alibaba.fastjson3.util.JDKUtils.getIntDirect(b, off - 7) != name5
+                    || b[off - 3] != name6
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        // ---------- Match41..43: five longs ----------
+
+        /** Match a 41-char name. 5 longs (name5 packs 6 chars + `"` + `:`). */
+        public final boolean nextIfName4Match41(long name1, long name2, long name3, long name4, long name5) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 43;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 40) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 32) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 24) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 16) != name4
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 8) != name5) {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 42-char name. 5 longs (name5 packs 7 chars + `"`) + `:`. */
+        public final boolean nextIfName4Match42(long name1, long name2, long name3, long name4, long name5) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 44;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 41) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 33) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 25) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 17) != name4
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 9) != name5
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
+        /** Match a 43-char name. 5 longs + `"` + `:`. */
+        public final boolean nextIfName4Match43(long name1, long name2, long name3, long name4, long name5) {
+            final byte[] b = this.bytes;
+            final int e = this.end;
+            int off = this.offset + 45;
+            if (off > e
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 42) != name1
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 34) != name2
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 26) != name3
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 18) != name4
+                    || com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off - 10) != name5
+                    || b[off - 2] != '"'
+                    || b[off - 1] != ':') {
+                return false;
+            }
+            while (off < e && b[off] <= ' ') {
+                off++;
+            }
+            this.offset = off;
+            return true;
+        }
+
         // ====================================================================
         // nextIfValue4Match — value-side counterpart to nextIfName4Match.
         //
