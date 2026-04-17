@@ -59,11 +59,42 @@ final class NameCache {
 
     /**
      * Compare cached String content against raw bytes (ASCII/Latin1).
+     *
+     * <p>Fast path: on JDK 9+ with COMPACT_STRINGS, a Latin1 String's internal
+     * value[] is a byte[] with the same bytes we're comparing against. Read
+     * it via Unsafe and do direct byte-to-byte compare, using long-word
+     * batching for bodies ≥ 8 bytes. Much faster than {@code s.charAt(i)}
+     * which unpacks each byte to a char.
+     *
+     * <p>Profile (x64 Tree parse): StringLatin1.charAt was 5.66% of CPU,
+     * contentEquals itself 9.88%. Together roughly 15% of parse time spent
+     * in this one check.
      */
     private static boolean contentEquals(String s, byte[] bytes, int off, int len) {
         if (s.length() != len) {
             return false;
         }
+        if (com.alibaba.fastjson3.util.JDKUtils.UNSAFE_AVAILABLE
+                && com.alibaba.fastjson3.util.JDKUtils.getStringCoder(s) == 0) {
+            byte[] sv = (byte[]) com.alibaba.fastjson3.util.JDKUtils.getStringValue(s);
+            if (sv != null) {
+                // SWAR long-compare for ≥ 8 byte bodies.
+                int i = 0;
+                int swarLimit = len - 7;
+                while (i < swarLimit) {
+                    long a = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(sv, i);
+                    long b = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(bytes, off + i);
+                    if (a != b) return false;
+                    i += 8;
+                }
+                while (i < len) {
+                    if (sv[i] != bytes[off + i]) return false;
+                    i++;
+                }
+                return true;
+            }
+        }
+        // Fallback: char-based compare for UTF16 Strings or pre-JDK 9.
         for (int i = 0; i < len; i++) {
             if (s.charAt(i) != (bytes[off + i] & 0xFF)) {
                 return false;
