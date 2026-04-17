@@ -5052,6 +5052,26 @@ public abstract sealed class JSONParser implements Closeable
                     if (off >= e || b[off] != ':') throw new JSONException("expected ':' at offset " + off);
                     this.offset = off + 1;
 
+                    // Fast path: names ≤ 8 bytes use content-as-key. The
+                    // cache key IS the raw bytes (masked to length), so
+                    // hit-by-key-equality implies content equality — no
+                    // `contentEquals` loop needed.
+                    if (nameLen <= 8 && nameStart + 8 <= b.length) {
+                        long shortKey = NameCache.shortKey(b, nameStart, nameLen);
+                        String cached = NameCache.getShort(shortKey);
+                        if (cached != null) return cached;
+
+                        String name;
+                        if (com.alibaba.fastjson3.util.JDKUtils.FAST_STRING_CREATION) {
+                            name = com.alibaba.fastjson3.util.JDKUtils.createLatin1String(b, nameStart, nameLen);
+                        } else {
+                            name = new String(b, nameStart, nameLen, StandardCharsets.ISO_8859_1);
+                        }
+                        NameCache.put(shortKey, name);
+                        return name;
+                    }
+
+                    // Longer names: fall back to hash+contentEquals path
                     String cached = NameCache.get(hash, nameLen, b, nameStart);
                     if (cached != null) return cached;
 
