@@ -156,10 +156,19 @@ public final class ObjectReaderCreatorASM {
         if (fields.length == 0) {
             return false;
         }
-        // Platform-aware field count limit:
-        // x86/x64: method splitting keeps each batch under FreqInlineSize → ASM wins up to 32 fields.
-        // ARM: C2 handles REFLECT's compact loop better than large ASM bytecode → cap at 15.
-        int maxFields = com.alibaba.fastjson3.util.JDKUtils.PUTLONG_FAST ? 32 : 15;
+        // Field count limit depends on whether the POJO qualifies for fast path:
+        // - Fast path (lookupswitch on getRawInt + nextIfName4MatchN): hot path per
+        //   iteration is a single case (~30 bytes), JIT-friendly on both x64 and ARM.
+        //   Allow up to 32 fields (the number of unique 4-byte prefixes we can fit).
+        // - Non-fast-path (linear ordered speculation with method splitting):
+        //   x64 wins up to 32 fields; ARM REFLECT path beats large ASM bytecode
+        //   past 15, so cap there.
+        int maxFields;
+        if (canUseFastPath(fields)) {
+            maxFields = 32;
+        } else {
+            maxFields = com.alibaba.fastjson3.util.JDKUtils.PUTLONG_FAST ? 32 : 15;
+        }
         if (fields.length > maxFields) {
             return false;
         }
