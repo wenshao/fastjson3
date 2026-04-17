@@ -301,6 +301,17 @@ public final class ObjectReaderCreatorASM {
         }
 
         byte[] bytecode = cw.toByteArray();
+        // Optional: dump generated class to disk for bytecode-level analysis.
+        // Enable via -Dfastjson3.asm.dump=/tmp/asm-dump
+        String dumpDir = System.getProperty("fastjson3.asm.dump");
+        if (dumpDir != null) {
+            try {
+                java.nio.file.Path p = java.nio.file.Paths.get(dumpDir, className + ".class");
+                java.nio.file.Files.createDirectories(p.getParent());
+                java.nio.file.Files.write(p, bytecode);
+            } catch (Exception ignored) {
+            }
+        }
         Class<?> readerClass = CLASS_LOADER.loadClass(className, bytecode, 0, bytecode.length);
 
         // Resolve auxiliary ObjectReaders for two field-case categories, by
