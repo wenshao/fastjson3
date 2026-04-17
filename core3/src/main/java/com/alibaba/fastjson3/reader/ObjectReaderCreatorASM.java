@@ -93,7 +93,7 @@ public final class ObjectReaderCreatorASM {
         for (FieldReader fr : fieldReaders) {
             String name = fr.fieldName;
             int L = name.length();
-            if (L < 2 || L > 23) {
+            if (L < 2 || L > 43) {
                 return false;
             }
             for (int i = 0; i < L; i++) {
@@ -1206,6 +1206,495 @@ public final class ObjectReaderCreatorASM {
                 mw.visitLdcInsn(name2);
                 mw.visitLdcInsn(name3);
                 mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match23", "(JJI)Z");
+                break;
+            }
+            // Lengths 24-32: two longs + int + optional tail, or three longs
+            case 24: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                int name3 = encodeInt(
+                        (byte) name.charAt(19), (byte) name.charAt(20),
+                        (byte) name.charAt(21), (byte) name.charAt(22));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.bipush((byte) name.charAt(23));
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match24", "(JJIB)Z");
+                break;
+            }
+            case 25: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) '"', (byte) ':');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match25", "(JJJ)Z");
+                break;
+            }
+            case 26: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match26", "(JJJ)Z");
+                break;
+            }
+            case 27: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match27", "(JJJ)Z");
+                break;
+            }
+            case 28: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.bipush((byte) name.charAt(27));
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match28", "(JJJB)Z");
+                break;
+            }
+            case 29: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                int name4 = encodeInt(
+                        (byte) name.charAt(27), (byte) name.charAt(28),
+                        (byte) '"', (byte) ':');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match29", "(JJJI)Z");
+                break;
+            }
+            case 30: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                int name4 = encodeInt(
+                        (byte) name.charAt(27), (byte) name.charAt(28),
+                        (byte) name.charAt(29), (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match30", "(JJJI)Z");
+                break;
+            }
+            case 31: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                int name4 = encodeInt(
+                        (byte) name.charAt(27), (byte) name.charAt(28),
+                        (byte) name.charAt(29), (byte) name.charAt(30));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match31", "(JJJI)Z");
+                break;
+            }
+            case 32: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                int name4 = encodeInt(
+                        (byte) name.charAt(27), (byte) name.charAt(28),
+                        (byte) name.charAt(29), (byte) name.charAt(30));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.bipush((byte) name.charAt(31));
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match32", "(JJJIB)Z");
+                break;
+            }
+            // Lengths 33-40: four longs + optional int/byte tail
+            case 33: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) '"', (byte) ':');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match33", "(JJJJ)Z");
+                break;
+            }
+            case 34: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) name.charAt(33), (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match34", "(JJJJ)Z");
+                break;
+            }
+            case 35: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) name.charAt(33), (byte) name.charAt(34));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match35", "(JJJJ)Z");
+                break;
+            }
+            case 36: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) name.charAt(33), (byte) name.charAt(34));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.bipush((byte) name.charAt(35));
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match36", "(JJJJB)Z");
+                break;
+            }
+            case 37: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) name.charAt(33), (byte) name.charAt(34));
+                int name5 = encodeInt(
+                        (byte) name.charAt(35), (byte) name.charAt(36),
+                        (byte) '"', (byte) ':');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.visitLdcInsn(name5);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match37", "(JJJJI)Z");
+                break;
+            }
+            case 38: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) name.charAt(33), (byte) name.charAt(34));
+                int name5 = encodeInt(
+                        (byte) name.charAt(35), (byte) name.charAt(36),
+                        (byte) name.charAt(37), (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.visitLdcInsn(name5);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match38", "(JJJJI)Z");
+                break;
+            }
+            case 39: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) name.charAt(33), (byte) name.charAt(34));
+                int name5 = encodeInt(
+                        (byte) name.charAt(35), (byte) name.charAt(36),
+                        (byte) name.charAt(37), (byte) name.charAt(38));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.visitLdcInsn(name5);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match39", "(JJJJI)Z");
+                break;
+            }
+            case 40: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) name.charAt(33), (byte) name.charAt(34));
+                int name5 = encodeInt(
+                        (byte) name.charAt(35), (byte) name.charAt(36),
+                        (byte) name.charAt(37), (byte) name.charAt(38));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.visitLdcInsn(name5);
+                mw.bipush((byte) name.charAt(39));
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match40", "(JJJJIB)Z");
+                break;
+            }
+            // Lengths 41-43: five longs
+            case 41: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) name.charAt(33), (byte) name.charAt(34));
+                long name5 = encodeLong(
+                        (byte) name.charAt(35), (byte) name.charAt(36), (byte) name.charAt(37),
+                        (byte) name.charAt(38), (byte) name.charAt(39), (byte) name.charAt(40),
+                        (byte) '"', (byte) ':');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.visitLdcInsn(name5);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match41", "(JJJJJ)Z");
+                break;
+            }
+            case 42: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) name.charAt(33), (byte) name.charAt(34));
+                long name5 = encodeLong(
+                        (byte) name.charAt(35), (byte) name.charAt(36), (byte) name.charAt(37),
+                        (byte) name.charAt(38), (byte) name.charAt(39), (byte) name.charAt(40),
+                        (byte) name.charAt(41), (byte) '"');
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.visitLdcInsn(name5);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match42", "(JJJJJ)Z");
+                break;
+            }
+            case 43: {
+                long name1 = encodeLong(
+                        (byte) name.charAt(3), (byte) name.charAt(4), (byte) name.charAt(5),
+                        (byte) name.charAt(6), (byte) name.charAt(7), (byte) name.charAt(8),
+                        (byte) name.charAt(9), (byte) name.charAt(10));
+                long name2 = encodeLong(
+                        (byte) name.charAt(11), (byte) name.charAt(12), (byte) name.charAt(13),
+                        (byte) name.charAt(14), (byte) name.charAt(15), (byte) name.charAt(16),
+                        (byte) name.charAt(17), (byte) name.charAt(18));
+                long name3 = encodeLong(
+                        (byte) name.charAt(19), (byte) name.charAt(20), (byte) name.charAt(21),
+                        (byte) name.charAt(22), (byte) name.charAt(23), (byte) name.charAt(24),
+                        (byte) name.charAt(25), (byte) name.charAt(26));
+                long name4 = encodeLong(
+                        (byte) name.charAt(27), (byte) name.charAt(28), (byte) name.charAt(29),
+                        (byte) name.charAt(30), (byte) name.charAt(31), (byte) name.charAt(32),
+                        (byte) name.charAt(33), (byte) name.charAt(34));
+                long name5 = encodeLong(
+                        (byte) name.charAt(35), (byte) name.charAt(36), (byte) name.charAt(37),
+                        (byte) name.charAt(38), (byte) name.charAt(39), (byte) name.charAt(40),
+                        (byte) name.charAt(41), (byte) name.charAt(42));
+                mw.visitLdcInsn(name1);
+                mw.visitLdcInsn(name2);
+                mw.visitLdcInsn(name3);
+                mw.visitLdcInsn(name4);
+                mw.visitLdcInsn(name5);
+                mw.invokevirtual(TYPE_JSON_PARSER_UTF8, "nextIfName4Match43", "(JJJJJ)Z");
                 break;
             }
             default:

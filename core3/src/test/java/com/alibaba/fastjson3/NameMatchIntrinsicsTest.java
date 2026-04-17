@@ -377,6 +377,214 @@ class NameMatchIntrinsicsTest {
         assertEquals(1, getOffset(p));
     }
 
+    // ---------- Match24..43: long names ----------
+
+    /** Drive every long-name intrinsic with a field of the exact length. */
+    @Test
+    void match24to43_roundTripEachLength() throws Exception {
+        for (int len = 24; len <= 43; len++) {
+            StringBuilder sb = new StringBuilder(len);
+            // Use a mix of ascii chars to avoid packing collisions across lengths.
+            for (int i = 0; i < len; i++) {
+                sb.append((char) ('a' + (i % 26)));
+            }
+            String name = sb.toString();
+            byte[] b = ("\"" + name + "\":42").getBytes(StandardCharsets.UTF_8);
+            JSONParser.UTF8 p = parser(b);
+            seekToName(p, b, name);
+            boolean ok = invokeMatchN(p, name);
+            assertTrue(ok, "Match" + len + " should succeed for '" + name + "'");
+            assertEquals((byte) '4', b[getOffset(p)],
+                    "offset after Match" + len + " should land on value byte");
+        }
+    }
+
+    /** Mismatch handling: the last char is off — must return false and not advance. */
+    @Test
+    void match24to43_mismatchReturnsFalse() throws Exception {
+        for (int len = 24; len <= 43; len++) {
+            StringBuilder declared = new StringBuilder(len);
+            StringBuilder stored = new StringBuilder(len);
+            for (int i = 0; i < len; i++) {
+                declared.append((char) ('a' + (i % 26)));
+                stored.append((char) ('a' + (i % 26)));
+            }
+            // Store in JSON uses declared name, but the intrinsic is called with a different last char
+            stored.setCharAt(len - 1, 'Z');  // flip last char in JSON
+            byte[] b = ("\"" + stored + "\":42").getBytes(StandardCharsets.UTF_8);
+            JSONParser.UTF8 p = parser(b);
+            seekToName(p, b, stored.toString());
+            boolean ok = invokeMatchN(p, declared.toString());
+            assertFalse(ok, "Match" + len + " should mismatch when last char differs");
+        }
+    }
+
+    /**
+     * Invoke {@code nextIfName4Match<len>} with encoded parameters derived from
+     * {@code name}. Layout matches {@link com.alibaba.fastjson3.reader.ObjectReaderCreatorASM#emitMatchCall}.
+     */
+    private static boolean invokeMatchN(JSONParser.UTF8 p, String name) throws Exception {
+        int len = name.length();
+        Class<?> c = JSONParser.UTF8.class;
+        // Byte-layout:
+        //   chars[0..2] already verified by getRawInt (not re-checked).
+        //   From char[3] onwards, pack into longs/ints/bytes matching fj3 emitter.
+        byte[] bs = new byte[len + 2];
+        for (int i = 0; i < len; i++) {
+            bs[i] = (byte) name.charAt(i);
+        }
+        bs[len] = '"';
+        bs[len + 1] = ':';
+
+        // Helper to encode a long from consecutive bytes starting at offset s, padding tail with given bytes.
+        // Uses native order matching JDKUtils.getLongDirect.
+        long n1, n2, n3, n4, n5;
+        int i4, i5;
+        byte by;
+
+        switch (len) {
+            case 24:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); i4 = packInt(name, 19);
+                return (boolean) c.getMethod("nextIfName4Match24", long.class, long.class, int.class, byte.class)
+                        .invoke(p, n1, n2, i4, (byte) name.charAt(23));
+            case 25:
+                n1 = packLong(name, 3); n2 = packLong(name, 11);
+                n3 = packLongWithQuoteColon(name, 19, 6);
+                return (boolean) c.getMethod("nextIfName4Match25", long.class, long.class, long.class)
+                        .invoke(p, n1, n2, n3);
+            case 26:
+                n1 = packLong(name, 3); n2 = packLong(name, 11);
+                n3 = packLongWithTail(name, 19, 7, (byte) '"');
+                return (boolean) c.getMethod("nextIfName4Match26", long.class, long.class, long.class)
+                        .invoke(p, n1, n2, n3);
+            case 27:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19);
+                return (boolean) c.getMethod("nextIfName4Match27", long.class, long.class, long.class)
+                        .invoke(p, n1, n2, n3);
+            case 28:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19);
+                return (boolean) c.getMethod("nextIfName4Match28", long.class, long.class, long.class, byte.class)
+                        .invoke(p, n1, n2, n3, (byte) name.charAt(27));
+            case 29:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19);
+                i4 = packIntWithQuoteColon(name, 27, 2);
+                return (boolean) c.getMethod("nextIfName4Match29", long.class, long.class, long.class, int.class)
+                        .invoke(p, n1, n2, n3, i4);
+            case 30:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19);
+                i4 = packIntWithTail(name, 27, 3, (byte) '"');
+                return (boolean) c.getMethod("nextIfName4Match30", long.class, long.class, long.class, int.class)
+                        .invoke(p, n1, n2, n3, i4);
+            case 31:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19);
+                i4 = packInt(name, 27);
+                return (boolean) c.getMethod("nextIfName4Match31", long.class, long.class, long.class, int.class)
+                        .invoke(p, n1, n2, n3, i4);
+            case 32:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19);
+                i4 = packInt(name, 27);
+                return (boolean) c.getMethod("nextIfName4Match32", long.class, long.class, long.class, int.class, byte.class)
+                        .invoke(p, n1, n2, n3, i4, (byte) name.charAt(31));
+            case 33:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19);
+                n4 = packLongWithQuoteColon(name, 27, 6);
+                return (boolean) c.getMethod("nextIfName4Match33", long.class, long.class, long.class, long.class)
+                        .invoke(p, n1, n2, n3, n4);
+            case 34:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19);
+                n4 = packLongWithTail(name, 27, 7, (byte) '"');
+                return (boolean) c.getMethod("nextIfName4Match34", long.class, long.class, long.class, long.class)
+                        .invoke(p, n1, n2, n3, n4);
+            case 35:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19); n4 = packLong(name, 27);
+                return (boolean) c.getMethod("nextIfName4Match35", long.class, long.class, long.class, long.class)
+                        .invoke(p, n1, n2, n3, n4);
+            case 36:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19); n4 = packLong(name, 27);
+                return (boolean) c.getMethod("nextIfName4Match36", long.class, long.class, long.class, long.class, byte.class)
+                        .invoke(p, n1, n2, n3, n4, (byte) name.charAt(35));
+            case 37:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19); n4 = packLong(name, 27);
+                i5 = packIntWithQuoteColon(name, 35, 2);
+                return (boolean) c.getMethod("nextIfName4Match37", long.class, long.class, long.class, long.class, int.class)
+                        .invoke(p, n1, n2, n3, n4, i5);
+            case 38:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19); n4 = packLong(name, 27);
+                i5 = packIntWithTail(name, 35, 3, (byte) '"');
+                return (boolean) c.getMethod("nextIfName4Match38", long.class, long.class, long.class, long.class, int.class)
+                        .invoke(p, n1, n2, n3, n4, i5);
+            case 39:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19); n4 = packLong(name, 27);
+                i5 = packInt(name, 35);
+                return (boolean) c.getMethod("nextIfName4Match39", long.class, long.class, long.class, long.class, int.class)
+                        .invoke(p, n1, n2, n3, n4, i5);
+            case 40:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19); n4 = packLong(name, 27);
+                i5 = packInt(name, 35);
+                return (boolean) c.getMethod("nextIfName4Match40", long.class, long.class, long.class, long.class, int.class, byte.class)
+                        .invoke(p, n1, n2, n3, n4, i5, (byte) name.charAt(39));
+            case 41:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19); n4 = packLong(name, 27);
+                n5 = packLongWithQuoteColon(name, 35, 6);
+                return (boolean) c.getMethod("nextIfName4Match41", long.class, long.class, long.class, long.class, long.class)
+                        .invoke(p, n1, n2, n3, n4, n5);
+            case 42:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19); n4 = packLong(name, 27);
+                n5 = packLongWithTail(name, 35, 7, (byte) '"');
+                return (boolean) c.getMethod("nextIfName4Match42", long.class, long.class, long.class, long.class, long.class)
+                        .invoke(p, n1, n2, n3, n4, n5);
+            case 43:
+                n1 = packLong(name, 3); n2 = packLong(name, 11); n3 = packLong(name, 19); n4 = packLong(name, 27);
+                n5 = packLong(name, 35);
+                return (boolean) c.getMethod("nextIfName4Match43", long.class, long.class, long.class, long.class, long.class)
+                        .invoke(p, n1, n2, n3, n4, n5);
+            default:
+                throw new IllegalArgumentException("unsupported len " + len);
+        }
+    }
+
+    private static long packLong(String name, int start) {
+        byte[] buf = new byte[8];
+        for (int i = 0; i < 8; i++) buf[i] = (byte) name.charAt(start + i);
+        return com.alibaba.fastjson3.util.JDKUtils.getLongDirect(buf, 0);
+    }
+
+    private static long packLongWithQuoteColon(String name, int start, int count) {
+        byte[] buf = new byte[8];
+        for (int i = 0; i < count; i++) buf[i] = (byte) name.charAt(start + i);
+        buf[count] = '"';
+        buf[count + 1] = ':';
+        return com.alibaba.fastjson3.util.JDKUtils.getLongDirect(buf, 0);
+    }
+
+    private static long packLongWithTail(String name, int start, int count, byte tail) {
+        byte[] buf = new byte[8];
+        for (int i = 0; i < count; i++) buf[i] = (byte) name.charAt(start + i);
+        buf[count] = tail;
+        return com.alibaba.fastjson3.util.JDKUtils.getLongDirect(buf, 0);
+    }
+
+    private static int packInt(String name, int start) {
+        byte[] buf = new byte[4];
+        for (int i = 0; i < 4; i++) buf[i] = (byte) name.charAt(start + i);
+        return com.alibaba.fastjson3.util.JDKUtils.getIntDirect(buf, 0);
+    }
+
+    private static int packIntWithQuoteColon(String name, int start, int count) {
+        byte[] buf = new byte[4];
+        for (int i = 0; i < count; i++) buf[i] = (byte) name.charAt(start + i);
+        buf[count] = '"';
+        buf[count + 1] = ':';
+        return com.alibaba.fastjson3.util.JDKUtils.getIntDirect(buf, 0);
+    }
+
+    private static int packIntWithTail(String name, int start, int count, byte tail) {
+        byte[] buf = new byte[4];
+        for (int i = 0; i < count; i++) buf[i] = (byte) name.charAt(start + i);
+        buf[count] = tail;
+        return com.alibaba.fastjson3.util.JDKUtils.getIntDirect(buf, 0);
+    }
+
     @Test
     void advanceAcceptsWhenExactly4BytesRemain() throws Exception {
         // 6 bytes: {"x":1 — 4 bytes (x":1) after the opening quote.
