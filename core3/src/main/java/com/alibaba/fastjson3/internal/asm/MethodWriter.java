@@ -163,6 +163,21 @@ public final class MethodWriter {
     // Implementation of the MethodVisitor abstract class
     // -----------------------------------------------------------------------------------------------
 
+    /**
+     * No-op chain opener. Use as the first token in a chained emit sequence so
+     * every emit line starts with {@code .method(…)} at the same indent:
+     * <pre>
+     * mw.chain()
+     *         .aload(0)
+     *         .invokespecial(…)
+     *         .return_();
+     * </pre>
+     * Purely a formatting aid — emits no bytecode. JIT inlines the dispatch.
+     */
+    public MethodWriter chain() {
+        return this;
+    }
+
     public MethodWriter return_() {
         visitInsn(Opcodes.RETURN);
         return this;
