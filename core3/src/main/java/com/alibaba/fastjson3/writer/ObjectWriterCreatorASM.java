@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.DESC_JSON_GENERATOR;
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.TYPE_JSON_GENERATOR;
+import static com.alibaba.fastjson3.internal.asm.ASMUtils.TYPE_FIELD_WRITER;
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.TYPE_JDK_UTILS;
 import static com.alibaba.fastjson3.internal.asm.ASMUtils.TYPE_OBJECT_WRITER;
 
@@ -406,10 +407,10 @@ public final class ObjectWriterCreatorASM {
             mw.putstatic(classInternalName, "nb" + i, "[B");
 
             // nameByteLongs: call FieldWriter.encodeByteLongs(nameBytes)
-            mw.getstatic(classInternalName, "nb" + i, "[B");
-            mw.invokestatic("com/alibaba/fastjson3/writer/FieldWriter",
-                    "encodeByteLongs", "([B)[J");
-            mw.putstatic(classInternalName, "nl" + i, "[J");
+            mw.chain()
+                    .getstatic(classInternalName, "nb" + i, "[B")
+                    .invokestatic(TYPE_FIELD_WRITER, "encodeByteLongs", "([B)[J")
+                    .putstatic(classInternalName, "nl" + i, "[J");
 
             // nameBytesLen: nameBytes.length
             mw.chain()
