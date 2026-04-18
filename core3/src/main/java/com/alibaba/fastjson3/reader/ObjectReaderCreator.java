@@ -2082,6 +2082,23 @@ public final class ObjectReaderCreator {
 
         @SuppressWarnings("unchecked")
         private T constructRecord(Object[] values) {
+            // Canonical-constructor invocation unboxes primitive parameters via
+            // the JDK's MethodHandle adapter chain. If a slot is null for a
+            // primitive component, that adapter throws a NullPointerException
+            // from sun.invoke.util.ValueConversions.primitiveConversion with
+            // zero user-facing context. Catch it at the source and report the
+            // missing field name.
+            Class<?>[] paramTypes = constructor.getParameterTypes();
+            for (int slot = 0; slot < values.length; slot++) {
+                if (values[slot] == null && paramTypes[slot].isPrimitive()) {
+                    String fieldName = findFieldNameForSlot(slot);
+                    throw new JSONException(
+                            "cannot construct record " + objectClass.getName()
+                                    + ": required " + paramTypes[slot].getName()
+                                    + " field '" + fieldName + "' is missing or null"
+                    );
+                }
+            }
             try {
                 return constructor.newInstance(values);
             } catch (Exception e) {
@@ -2089,6 +2106,16 @@ public final class ObjectReaderCreator {
                         "cannot construct record " + objectClass.getName() + ": " + e.getMessage(), e
                 );
             }
+        }
+
+        /** Reverse the paramMapping[fieldReaderIndex] → slot map to recover the field name. */
+        private String findFieldNameForSlot(int slot) {
+            for (int i = 0; i < fieldReaders.length; i++) {
+                if (paramMapping[i] == slot) {
+                    return fieldReaders[i].fieldName;
+                }
+            }
+            return "component[" + slot + "]";
         }
 
         @Override
