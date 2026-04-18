@@ -5,11 +5,15 @@ import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.JSONObject;
 import com.alibaba.fastjson3.schema.JSONSchema;
 import com.alibaba.fastjson3.util.JDKUtils;
+import com.alibaba.fastjson3.util.TypeUtils;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.Collection;
+import java.util.Map;
+import java.util.Set;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -49,8 +53,18 @@ public final class FieldReader implements Comparable<FieldReader> {
     public final String defaultValue;
     public final boolean required;
 
-    // Element class for List<X> fields
+    // Element class for List<X>/Set<X> fields (erasure of elementType).
+    // Kept for fast-path dispatch (e.g., elementClass == String.class).
     public final Class<?> elementClass;
+
+    // Full element type for Collection<E> fields. May be a Class, ParameterizedType,
+    // or (normalized) WildcardType upper bound. Null for non-collection fields.
+    public final Type elementType;
+
+    // Map<K, V> field key/value types. Null for non-Map fields.
+    public final Type keyType;
+    public final Type valueType;
+    public final Class<?> valueClass;
 
     // Exactly one of these is non-null
     private final Field field;
@@ -103,6 +117,8 @@ public final class FieldReader implements Comparable<FieldReader> {
     public static final int TAG_STRING_ARRAY = 13;
     public static final int TAG_LONG_ARRAY = 14;
     public static final int TAG_ENUM = 15;
+    public static final int TAG_MAP = 16;
+    public static final int TAG_SET = 17;
     public static final int TAG_GENERIC = 0;
 
     public int typeTag;
@@ -208,8 +224,29 @@ public final class FieldReader implements Comparable<FieldReader> {
             setter.setAccessible(true);
         }
 
-        // Extract element class for List<X>
-        this.elementClass = resolveElementClass(fieldType, fieldClass);
+        // Extract generic parameters for collection / map fields. A length-1
+        // array carries {E} for List<E>/Set<E>; length-2 carries {K, V} for Map.
+        Type[] genericParams = resolveGenericParams(fieldType, fieldClass);
+        if (genericParams != null && genericParams.length == 2) {
+            this.elementType = null;
+            this.elementClass = null;
+            this.keyType = genericParams[0];
+            this.valueType = genericParams[1];
+            this.valueClass = TypeUtils.getRawClass(genericParams[1]);
+        } else if (genericParams != null && genericParams.length == 1) {
+            Type et = genericParams[0];
+            this.elementType = et;
+            this.elementClass = (et == Object.class) ? null : TypeUtils.getRawClass(et);
+            this.keyType = null;
+            this.valueType = null;
+            this.valueClass = null;
+        } else {
+            this.elementType = null;
+            this.elementClass = null;
+            this.keyType = null;
+            this.valueType = null;
+            this.valueClass = null;
+        }
 
         // Cache enum constants for enum fields
         this.enumConstants = fieldClass.isEnum() ? fieldClass.getEnumConstants() : null;
@@ -218,8 +255,10 @@ public final class FieldReader implements Comparable<FieldReader> {
         // Resolve Unsafe field offset (look up corresponding field if we only have a setter)
         this.fieldOffset = resolveFieldOffset(field, setter, fieldName, fieldClass);
 
-        // Pre-compute type tag
-        this.typeTag = resolveTypeTag(fieldClass);
+        // Pre-compute type tag. Resolves against generic info so that fields
+        // like Set<E> / Map<K,V> take the dedicated fast path when the element
+        // or value type is known.
+        this.typeTag = resolveTypeTag(fieldClass, this.elementType, this.valueType);
 
         // Pre-encode '"fieldName":' as UTF-8 bytes for fast ordered matching
         {
@@ -248,7 +287,7 @@ public final class FieldReader implements Comparable<FieldReader> {
         }
     }
 
-    private static int resolveTypeTag(Class<?> fc) {
+    private static int resolveTypeTag(Class<?> fc, Type elementType, Type valueType) {
         if (fc == String.class) {
             return TAG_STRING;
         } else if (fc == int.class) {
@@ -277,18 +316,53 @@ public final class FieldReader implements Comparable<FieldReader> {
             return TAG_LONG_ARRAY;
         } else if (fc.isEnum()) {
             return TAG_ENUM;
+        } else if (elementType != null && Set.class.isAssignableFrom(fc)
+                && fc.isAssignableFrom(java.util.LinkedHashSet.class)) {
+            return TAG_SET;
+        } else if (valueType != null && Map.class.isAssignableFrom(fc)
+                && fc.isAssignableFrom(java.util.LinkedHashMap.class)) {
+            return TAG_MAP;
         }
         return TAG_GENERIC;
     }
 
-    private static Class<?> resolveElementClass(Type fieldType, Class<?> fieldClass) {
-        if (List.class.isAssignableFrom(fieldClass) && fieldType instanceof ParameterizedType pt) {
-            Type[] args = pt.getActualTypeArguments();
-            if (args.length == 1 && args[0] instanceof Class<?> c) {
-                return c;
-            }
+    /**
+     * Extract generic type parameters for Collection/Map field types.
+     * Returns {@code null} for non-parameterized or unsupported fields, a
+     * single-element {@code [E]} for {@code List<E>}/{@code Set<E>}, or a
+     * two-element {@code [K, V]} for {@code Map<K, V>}. Callers branch on the
+     * array length to distinguish.
+     */
+    private static Type[] resolveGenericParams(Type fieldType, Class<?> fieldClass) {
+        if (!(fieldType instanceof ParameterizedType pt)) {
+            return null;
+        }
+        Type[] args = pt.getActualTypeArguments();
+        if (args.length == 1 && Collection.class.isAssignableFrom(fieldClass)) {
+            return new Type[] {normalizeGenericArg(args[0])};
+        }
+        if (args.length == 2 && Map.class.isAssignableFrom(fieldClass)) {
+            return new Type[] {normalizeGenericArg(args[0]), normalizeGenericArg(args[1])};
         }
         return null;
+    }
+
+    /**
+     * Normalize a generic type argument for use as an element/key/value type:
+     * collapse {@code ? extends T} to its upper bound, {@code ?} to {@link Object},
+     * and unresolved {@link java.lang.reflect.TypeVariable} to {@link Object}
+     * (the declaring class will have been supplied upstream; an unresolved
+     * variable here means the field was created without a binding context).
+     */
+    private static Type normalizeGenericArg(Type t) {
+        if (t instanceof java.lang.reflect.WildcardType wt) {
+            Type[] upper = wt.getUpperBounds();
+            return upper.length > 0 ? normalizeGenericArg(upper[0]) : Object.class;
+        }
+        if (t instanceof java.lang.reflect.TypeVariable<?>) {
+            return Object.class;
+        }
+        return t;
     }
 
     private static long resolveFieldOffset(Field field, Method setter, String fieldName, Class<?> declaringClassUnused) {
@@ -433,8 +507,17 @@ public final class FieldReader implements Comparable<FieldReader> {
             return null;
         }
 
+        // Use the resolved fieldType for the fast-path / Map→POJO check when it
+        // is a concrete Class more specific than the erased fieldClass. This
+        // happens for records / setters whose declared type is a TypeVariable
+        // bound by a parameterized parent (e.g., {@code T payload} with
+        // {@code RecordBox<Bean>}) — without this, an {@code Object.isInstance}
+        // check would short-circuit and leave the value as a raw Map.
+        Class<?> targetClass = (fieldType instanceof Class<?> fc && fc != fieldClass && fc != Object.class)
+                ? fc : fieldClass;
+
         // Fast path: already the right type
-        if (fieldClass.isInstance(value)) {
+        if (targetClass.isInstance(value)) {
             return value;
         }
 
@@ -580,11 +663,13 @@ public final class FieldReader implements Comparable<FieldReader> {
             return OptionalDouble.of(n.doubleValue());
         }
 
-        // Map → POJO/Record conversion (for nested objects parsed via readAny())
-        if (value instanceof java.util.Map<?, ?> map && !fieldClass.isInterface()
-                && !java.util.Map.class.isAssignableFrom(fieldClass)) {
+        // Map → POJO/Record conversion (for nested objects parsed via readAny()).
+        if (value instanceof java.util.Map<?, ?> map
+                && !targetClass.isInterface()
+                && !java.util.Map.class.isAssignableFrom(targetClass)
+                && targetClass != Object.class) {
             String json = com.alibaba.fastjson3.JSON.toJSONString(value);
-            return com.alibaba.fastjson3.JSON.parseObject(json, fieldClass);
+            return com.alibaba.fastjson3.JSON.parseObject(json, targetClass);
         }
 
         // No conversion found; return as-is

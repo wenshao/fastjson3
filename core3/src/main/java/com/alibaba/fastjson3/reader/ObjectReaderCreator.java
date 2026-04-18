@@ -9,6 +9,7 @@ import com.alibaba.fastjson3.ReadFeature;
 import com.alibaba.fastjson3.annotation.*;
 import com.alibaba.fastjson3.schema.JSONSchema;
 import com.alibaba.fastjson3.util.JDKUtils;
+import com.alibaba.fastjson3.util.TypeUtils;
 
 import java.lang.reflect.*;
 import java.util.*;
@@ -29,6 +30,34 @@ public final class ObjectReaderCreator {
     }
 
     public static <T> ObjectReader<T> createObjectReader(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        return createObjectReader(type, type, mixIn, useJacksonAnnotation);
+    }
+
+    /**
+     * Create an {@link ObjectReader} for a parameterized POJO type such as
+     * {@code Parent<Bean>}. Field resolution uses {@code pt}'s actual type
+     * arguments so {@code T} fields read as their concrete type rather than
+     * erased {@link Object}. The returned reader is specific to this
+     * parameterization and should be cached by the {@link ParameterizedType}
+     * key, not the raw class.
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> ObjectReader<T> createObjectReader(ParameterizedType pt, Class<?> mixIn, boolean useJacksonAnnotation) {
+        if (!(pt.getRawType() instanceof Class<?> raw)) {
+            return null;
+        }
+        return (ObjectReader<T>) createObjectReader((Class<Object>) raw, (java.lang.reflect.Type) pt,
+                mixIn, useJacksonAnnotation);
+    }
+
+    /**
+     * Internal entry used by both the {@link Class}-typed and
+     * {@link ParameterizedType}-typed public entries. {@code contextType}
+     * governs field-type resolution — for a parameterized context, its actual
+     * type arguments bind the raw class's {@link TypeVariable}s.
+     */
+    private static <T> ObjectReader<T> createObjectReader(
+            Class<T> type, java.lang.reflect.Type contextType, Class<?> mixIn, boolean useJacksonAnnotation) {
         // java.time types (LocalDate, LocalDateTime, etc.) are records in Java 17+
         // but should be handled by built-in date codecs, not RecordObjectReader
         if (type.getPackage() != null && type.getPackage().getName().equals("java.time")) {
@@ -42,7 +71,7 @@ public final class ObjectReaderCreator {
         }
 
         if (JDKUtils.isRecord(type)) {
-            return createRecordReader(type, mixIn, useJacksonAnnotation);
+            return createRecordReader(type, contextType, mixIn, useJacksonAnnotation);
         }
 
         // Sealed class/interface: auto-discover subtypes for polymorphic deserialization
@@ -64,12 +93,12 @@ public final class ObjectReaderCreator {
         // If constructor has parameters, use constructor-based reader (like Records)
         // This handles: Kotlin data classes, Java immutable classes, @JSONCreator with params
         if (constructor.getParameterCount() > 0) {
-            return createConstructorReader(type, constructor, mixIn, useJacksonAnnotation);
+            return createConstructorReader(type, contextType, constructor, mixIn, useJacksonAnnotation);
         }
 
         boolean useUnsafeAlloc = JDKUtils.UNSAFE_AVAILABLE;
 
-        FieldReaderCollection collection = collectFieldReaders(type, mixIn, useJacksonAnnotation);
+        FieldReaderCollection collection = collectFieldReaders(type, contextType, mixIn, useJacksonAnnotation);
 
         // Scan for @JSONField(anySetter=true) or Jackson @JsonAnySetter
         Method anySetter = findAnySetterMethod(type, mixIn, useJacksonAnnotation);
@@ -82,7 +111,7 @@ public final class ObjectReaderCreator {
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> ObjectReader<T> createRecordReader(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+    private static <T> ObjectReader<T> createRecordReader(Class<T> type, java.lang.reflect.Type contextType, Class<?> mixIn, boolean useJacksonAnnotation) {
         String[] componentNames = JDKUtils.getRecordComponentNames(type);
         Class<?>[] componentTypes = JDKUtils.getRecordComponentTypes(type);
         java.lang.reflect.Type[] genericTypes = JDKUtils.getRecordComponentGenericTypes(type);
@@ -164,7 +193,7 @@ public final class ObjectReaderCreator {
 
             fieldReaderList.add(new FieldReader(
                     jsonName, alternateNames,
-                    genericTypes[i], componentTypes[i],
+                    TypeUtils.resolve(genericTypes[i], contextType), componentTypes[i],
                     ordinal, defaultValue, required,
                     field, null, null, null, schema
             ));
@@ -214,7 +243,7 @@ public final class ObjectReaderCreator {
      */
     @SuppressWarnings("unchecked")
     private static <T> ObjectReader<T> createConstructorReader(
-            Class<T> type, Constructor<T> constructor, Class<?> mixIn, boolean useJacksonAnnotation
+            Class<T> type, java.lang.reflect.Type contextType, Constructor<T> constructor, Class<?> mixIn, boolean useJacksonAnnotation
     ) {
         Class<?>[] paramTypes = constructor.getParameterTypes();
         java.lang.reflect.Type[] genericParamTypes = constructor.getGenericParameterTypes();
@@ -296,7 +325,7 @@ public final class ObjectReaderCreator {
 
             fieldReaderList.add(new FieldReader(
                     jsonName, alternateNames,
-                    genericParamTypes[i], paramTypes[i],
+                    TypeUtils.resolve(genericParamTypes[i], contextType), paramTypes[i],
                     ordinal, defaultValue, required,
                     field, null, format, deserializeUsingClass, schema
             ));
@@ -359,14 +388,19 @@ public final class ObjectReaderCreator {
      * Package-private so ObjectReaderCreatorASM can reuse this logic.
      */
     static FieldReaderCollection collectFieldReaders(Class<?> type) {
-        return collectFieldReaders(type, null, false);
+        return collectFieldReaders(type, type, null, false);
     }
 
     static FieldReaderCollection collectFieldReaders(Class<?> type, Class<?> mixIn) {
-        return collectFieldReaders(type, mixIn, false);
+        return collectFieldReaders(type, type, mixIn, false);
     }
 
     static FieldReaderCollection collectFieldReaders(Class<?> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        return collectFieldReaders(type, type, mixIn, useJacksonAnnotation);
+    }
+
+    static FieldReaderCollection collectFieldReaders(Class<?> type, java.lang.reflect.Type contextType,
+                                                     Class<?> mixIn, boolean useJacksonAnnotation) {
         JSONType jsonType = type.getAnnotation(JSONType.class);
         NamingStrategy naming = jsonType != null ? jsonType.naming() : NamingStrategy.NoneStrategy;
         Set<String> includes = jsonType != null && jsonType.includes().length > 0
@@ -461,7 +495,7 @@ public final class ObjectReaderCreator {
 
             fieldReaderList.add(new FieldReader(
                     jsonName, alternateNames,
-                    field.getGenericType(), field.getType(),
+                    TypeUtils.resolve(field.getGenericType(), contextType), field.getType(),
                     ordinal, defaultValue, required,
                     field, null, format, deserializeUsingClass, schema
             ));
@@ -546,7 +580,7 @@ public final class ObjectReaderCreator {
             Parameter param = method.getParameters()[0];
             fieldReaderList.add(new FieldReader(
                     jsonName, alternateNames,
-                    param.getParameterizedType(), param.getType(),
+                    TypeUtils.resolve(param.getParameterizedType(), contextType), param.getType(),
                     ordinal, defaultValue, required,
                     null, method, null, null, schema
             ));
@@ -771,27 +805,39 @@ public final class ObjectReaderCreator {
                         // Skip BuiltinCodecs so FieldReader.convertValue() uses the formatter
                         objReaders[i] = null;
                     } else if (fr.typeTag == FieldReader.TAG_GENERIC) {
-                        // For POJO fields (not basic types), get ObjectReader
-                        // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
-                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fc);
+                        // For POJO fields (not basic types), get ObjectReader.
+                        // Prefer the resolved fieldType over the erased fieldClass so
+                        // inherited TypeVariables read as their concrete type — e.g.,
+                        // `class Child extends Parent<Bean>` with `T value` field has
+                        // fieldClass=Object but fieldType=Bean after resolution.
+                        Class<?> target = (fr.fieldType instanceof Class<?> resolved)
+                                ? resolved : fc;
+                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(target);
                         if (r == null) {
                             // Skip interfaces, abstract classes, and enums - they don't have constructors
-                            if (!fc.isInterface() && !fc.isEnum()
-                                    && !java.lang.reflect.Modifier.isAbstract(fc.getModifiers())) {
-                                r = createObjectReader(fc);
+                            if (!target.isInterface() && !target.isEnum()
+                                    && !java.lang.reflect.Modifier.isAbstract(target.getModifiers())) {
+                                r = createObjectReader(target);
                             }
                         }
                         if (r != null) {
                             objReaders[i] = r;
                         }
                     }
-                    // For List fields, get element ObjectReader
-                    if (fr.elementClass != null && fr.elementClass != String.class) {
-                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.elementClass);
+                    // For Collection<E> fields where E is a plain Class: cache an
+                    // element ObjectReader for the fast path. Nested generics
+                    // (List<List<X>>, List<Map<K,V>>, List<? extends X>) go through
+                    // parser.read(fieldType) at parse time instead — caching a
+                    // class-keyed reader for a non-Class elementType wouldn't make
+                    // sense. Skip Object.class (from raw List / List<?>) because
+                    // auto-creating a reader for Object produces a useless empty
+                    // reader that fails on non-object elements.
+                    if (fr.elementType instanceof Class<?> elemC
+                            && elemC != String.class && elemC != Object.class) {
+                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(elemC);
                         if (r == null) {
-                            // Skip interfaces and abstract classes - they don't have constructors
-                            if (!fr.elementClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.elementClass.getModifiers())) {
-                                r = createObjectReader(fr.elementClass);
+                            if (!elemC.isInterface() && !java.lang.reflect.Modifier.isAbstract(elemC.getModifiers())) {
+                                r = createObjectReader(elemC);
                             }
                         }
                         if (r != null) {
@@ -1181,7 +1227,26 @@ public final class ObjectReaderCreator {
                     if (peek == 'n' && utf8.readNull()) {
                         return;
                     }
-                    reader.setObjectValue(instance, readListUTF8Inline(utf8, reader, fieldIndex, features, elemReaders));
+                    // Nested generic element (List<List<X>>, List<Map<K,V>>, List<? extends X>):
+                    // the inline fast path only handles Class element types, so delegate to
+                    // the generic-aware JSONParser entry for anything else.
+                    if (reader.elementType != null && !(reader.elementType instanceof Class<?>)) {
+                        reader.setObjectValue(instance, utf8.read(reader.fieldType));
+                    } else {
+                        reader.setObjectValue(instance, readListUTF8Inline(utf8, reader, fieldIndex, features, elemReaders));
+                    }
+                }
+                case FieldReader.TAG_SET -> {
+                    if (peek == 'n' && utf8.readNull()) {
+                        return;
+                    }
+                    reader.setObjectValue(instance, utf8.read(reader.fieldType));
+                }
+                case FieldReader.TAG_MAP -> {
+                    if (peek == 'n' && utf8.readNull()) {
+                        return;
+                    }
+                    reader.setObjectValue(instance, utf8.read(reader.fieldType));
                 }
                 case FieldReader.TAG_STRING_ARRAY -> {
                     if (peek == 'n' && utf8.readNull()) {
@@ -1302,8 +1367,18 @@ public final class ObjectReaderCreator {
                     reader.setFieldValue(instance, reader.convertValue(value));
                 }
                 case FieldReader.TAG_LIST -> {
-                    Object value = readListGeneric(parser, reader, fi, features);
-                    reader.setObjectValue(instance, value);
+                    if (reader.elementType != null && !(reader.elementType instanceof Class<?>)) {
+                        reader.setObjectValue(instance, parser.read(reader.fieldType));
+                    } else {
+                        Object value = readListGeneric(parser, reader, fi, features);
+                        reader.setObjectValue(instance, value);
+                    }
+                }
+                case FieldReader.TAG_SET -> {
+                    reader.setObjectValue(instance, parser.read(reader.fieldType));
+                }
+                case FieldReader.TAG_MAP -> {
+                    reader.setObjectValue(instance, parser.read(reader.fieldType));
                 }
                 default -> {
                     // Check for registered ObjectReader (e.g., Guava ImmutableList, custom POJO)
@@ -1905,13 +1980,15 @@ public final class ObjectReaderCreator {
                     if (fr.formatter != null) {
                         // objReaders[i] remains null, will fall through to convertValue path
                     } else if (fr.typeTag == FieldReader.TAG_GENERIC) {
-                        // For POJO fields (not basic types), get ObjectReader
-                        // Check BuiltinCodecs first (UUID, Path, Duration, etc.)
-                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.fieldClass);
+                        // For POJO fields (not basic types), get ObjectReader.
+                        // Prefer resolved fieldType (see non-record branch above).
+                        Class<?> target = (fr.fieldType instanceof Class<?> resolved)
+                                ? resolved : fr.fieldClass;
+                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(target);
                         if (r == null) {
                             // Skip interfaces and abstract classes - they don't have constructors
-                            if (!fr.fieldClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.fieldClass.getModifiers())) {
-                                r = createObjectReader(fr.fieldClass);
+                            if (!target.isInterface() && !java.lang.reflect.Modifier.isAbstract(target.getModifiers())) {
+                                r = createObjectReader(target);
                             }
                         }
                         if (r != null) {
@@ -1919,12 +1996,12 @@ public final class ObjectReaderCreator {
                             // Don't modify fr.typeTag - it may be shared across readers
                         }
                     }
-                    if (fr.elementClass != null && fr.elementClass != String.class) {
-                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(fr.elementClass);
+                    if (fr.elementType instanceof Class<?> elemC
+                            && elemC != String.class && elemC != Object.class) {
+                        ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(elemC);
                         if (r == null) {
-                            // Skip interfaces and abstract classes - they don't have constructors
-                            if (!fr.elementClass.isInterface() && !java.lang.reflect.Modifier.isAbstract(fr.elementClass.getModifiers())) {
-                                r = createObjectReader(fr.elementClass);
+                            if (!elemC.isInterface() && !java.lang.reflect.Modifier.isAbstract(elemC.getModifiers())) {
+                                r = createObjectReader(elemC);
                             }
                         }
                         if (r != null) {
@@ -2029,9 +2106,20 @@ public final class ObjectReaderCreator {
                 }
 
                 if (reader != null) {
-                    // Read value and store in values array at the correct constructor param index
+                    // Read value and store in values array at the correct constructor param index.
+                    // Fields with resolved generic collection/map types route through parser.read
+                    // so nested generics (List<List<X>>, Map<K, List<V>>) and plain POJO element
+                    // types are fully resolved — readAny() alone would leave them as raw
+                    // ArrayList/LinkedHashMap.
                     utf8.setOffset(off);
-                    Object value = utf8.readAny();
+                    Object value;
+                    int tag = reader.typeTag;
+                    if (tag == FieldReader.TAG_LIST || tag == FieldReader.TAG_SET
+                            || tag == FieldReader.TAG_MAP) {
+                        value = utf8.read(reader.fieldType);
+                    } else {
+                        value = utf8.readAny();
+                    }
                     off = utf8.getOffset();
                     int paramIdx = paramMapping[reader.index];
                     values[paramIdx] = reader.convertValue(value);
@@ -2072,6 +2160,15 @@ public final class ObjectReaderCreator {
                 for (FieldReader fr : fieldReaders) {
                     Object value = map.get(fr.fieldName);
                     if (value != null) {
+                        // Re-parse the raw value through the generic-aware path when
+                        // the record component is a resolved collection/map type so
+                        // elements arrive as the declared type, not raw LinkedHashMap.
+                        int tag = fr.typeTag;
+                        if (tag == FieldReader.TAG_LIST || tag == FieldReader.TAG_SET
+                                || tag == FieldReader.TAG_MAP) {
+                            value = com.alibaba.fastjson3.JSON.parseObject(
+                                    com.alibaba.fastjson3.JSON.toJSONString(value), fr.fieldType);
+                        }
                         values[paramMapping[fr.index]] = fr.convertValue(value);
                     }
                 }

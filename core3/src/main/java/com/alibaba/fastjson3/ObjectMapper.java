@@ -1498,8 +1498,29 @@ public final class ObjectMapper {
                 return (ObjectReader<T>) reader;
             }
         }
-        // Generic type readers are not auto-created (would need element type resolution)
-        // Users can register custom readers for specific generic types via modules
+
+        // Auto-create a parameterized POJO reader. {@code TypeReference<Parent<Bean>>}
+        // and {@code List<Parent<Bean>>} element-level reads land here when no module
+        // handles the raw type. {@link ObjectReaderCreator#createObjectReader(ParameterizedType,
+        // Class, boolean)} builds field readers with {@code T → Bean} substituted so
+        // {@code T value} fields parse as the concrete type rather than {@code Object}.
+        if (type instanceof java.lang.reflect.ParameterizedType pt
+                && pt.getRawType() instanceof Class<?> raw
+                && !raw.isInterface()
+                && !java.util.Collection.class.isAssignableFrom(raw)
+                && !java.util.Map.class.isAssignableFrom(raw)) {
+            try {
+                Class<?> mixIn = mixInCache.get(raw);
+                ObjectReader<?> pojoReader = com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(pt, mixIn, useJacksonAnnotation);
+                if (pojoReader != null) {
+                    readerCache.putIfAbsent(type, pojoReader);
+                    return (ObjectReader<T>) pojoReader;
+                }
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
 
         return null;
     }
