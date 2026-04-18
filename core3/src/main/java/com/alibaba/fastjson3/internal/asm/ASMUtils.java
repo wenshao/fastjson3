@@ -1,11 +1,35 @@
 package com.alibaba.fastjson3.internal.asm;
 
+import com.alibaba.fastjson3.JSONArray;
+import com.alibaba.fastjson3.JSONException;
+import com.alibaba.fastjson3.JSONGenerator;
+import com.alibaba.fastjson3.JSONObject;
+import com.alibaba.fastjson3.JSONParser;
+import com.alibaba.fastjson3.ObjectMapper;
+import com.alibaba.fastjson3.ObjectReader;
+import com.alibaba.fastjson3.ObjectWriter;
+import com.alibaba.fastjson3.reader.FieldNameMatcher;
+import com.alibaba.fastjson3.reader.FieldReader;
+import com.alibaba.fastjson3.util.JDKUtils;
+import com.alibaba.fastjson3.writer.FieldWriter;
+
 /**
  * ASM utility constants and helpers for fastjson3 bytecode generation.
+ *
+ * <p>All class-name / descriptor constants below are derived from {@code Class}
+ * literals via {@code .getName().replace('.', '/')} rather than hardcoded
+ * strings. This is load-bearing for {@code maven-shade-plugin} users: shade
+ * rewrites class references in compiled bytecode but does NOT rewrite the
+ * content of arbitrary String literals. A hardcoded {@code "com/alibaba/fastjson3/…"}
+ * string would survive relocation unchanged, the generator would emit bytecode
+ * referencing a class that no longer exists in the shaded jar, and the first
+ * parse/write would fail with {@link NoClassDefFoundError}. Routing through a
+ * class literal makes the emitted class name match the shaded class name at
+ * runtime.</p>
  */
 @com.alibaba.fastjson3.annotation.JVMOnly
 public final class ASMUtils {
-    // Internal class names
+    // JDK internal class names — outside shade's relocation scope; safe to hardcode.
     public static final String TYPE_OBJECT = "java/lang/Object";
     public static final String TYPE_STRING = "java/lang/String";
     public static final String TYPE_INTEGER = "java/lang/Integer";
@@ -20,35 +44,36 @@ public final class ASMUtils {
     public static final String TYPE_MAP = "java/util/Map";
     public static final String TYPE_COLLECTION = "java/util/Collection";
 
-    // core3 internal class names
-    public static final String TYPE_JSON_PARSER = "com/alibaba/fastjson3/JSONParser";
-    public static final String TYPE_JSON_PARSER_UTF8 = "com/alibaba/fastjson3/JSONParser$UTF8";
-    public static final String TYPE_JSON_GENERATOR = "com/alibaba/fastjson3/JSONGenerator";
-    public static final String TYPE_JSON_GENERATOR_UTF8 = "com/alibaba/fastjson3/JSONGenerator$UTF8";
-    public static final String TYPE_JSON_GENERATOR_CHAR = "com/alibaba/fastjson3/JSONGenerator$Char";
-    public static final String TYPE_OBJECT_READER = "com/alibaba/fastjson3/ObjectReader";
-    public static final String TYPE_OBJECT_WRITER = "com/alibaba/fastjson3/ObjectWriter";
-    public static final String TYPE_OBJECT_MAPPER = "com/alibaba/fastjson3/ObjectMapper";
-    public static final String TYPE_JSON_OBJECT = "com/alibaba/fastjson3/JSONObject";
-    public static final String TYPE_JSON_ARRAY = "com/alibaba/fastjson3/JSONArray";
-    public static final String TYPE_JSON_EXCEPTION = "com/alibaba/fastjson3/JSONException";
-    public static final String TYPE_FIELD_READER = "com/alibaba/fastjson3/reader/FieldReader";
-    public static final String TYPE_FIELD_NAME_MATCHER = "com/alibaba/fastjson3/reader/FieldNameMatcher";
-    public static final String TYPE_FIELD_WRITER = "com/alibaba/fastjson3/writer/FieldWriter";
-    public static final String TYPE_JDK_UTILS = "com/alibaba/fastjson3/util/JDKUtils";
+    // core3 internal class names — derive from Class literals so shade rewrites them.
+    public static final String TYPE_JSON_PARSER = type(JSONParser.class);
+    public static final String TYPE_JSON_PARSER_UTF8 = type(JSONParser.UTF8.class);
+    public static final String TYPE_JSON_GENERATOR = type(JSONGenerator.class);
+    public static final String TYPE_JSON_GENERATOR_UTF8 = type(JSONGenerator.UTF8.class);
+    public static final String TYPE_JSON_GENERATOR_CHAR = type(JSONGenerator.Char.class);
+    public static final String TYPE_OBJECT_READER = type(ObjectReader.class);
+    public static final String TYPE_OBJECT_WRITER = type(ObjectWriter.class);
+    public static final String TYPE_OBJECT_MAPPER = type(ObjectMapper.class);
+    public static final String TYPE_JSON_OBJECT = type(JSONObject.class);
+    public static final String TYPE_JSON_ARRAY = type(JSONArray.class);
+    public static final String TYPE_JSON_EXCEPTION = type(JSONException.class);
+    public static final String TYPE_FIELD_READER = type(FieldReader.class);
+    public static final String TYPE_FIELD_NAME_MATCHER = type(FieldNameMatcher.class);
+    public static final String TYPE_FIELD_WRITER = type(FieldWriter.class);
+    public static final String TYPE_JDK_UTILS = type(JDKUtils.class);
 
-    // Descriptors
+    // Descriptors — derived from the TYPE_* constants above so they inherit
+    // the shade-rewriting behaviour.
     public static final String DESC_OBJECT = "Ljava/lang/Object;";
     public static final String DESC_STRING = "Ljava/lang/String;";
-    public static final String DESC_JSON_PARSER = "Lcom/alibaba/fastjson3/JSONParser;";
-    public static final String DESC_JSON_PARSER_UTF8 = "Lcom/alibaba/fastjson3/JSONParser$UTF8;";
-    public static final String DESC_JSON_GENERATOR = "Lcom/alibaba/fastjson3/JSONGenerator;";
-    public static final String DESC_OBJECT_READER = "Lcom/alibaba/fastjson3/ObjectReader;";
-    public static final String DESC_OBJECT_WRITER = "Lcom/alibaba/fastjson3/ObjectWriter;";
-    public static final String DESC_OBJECT_MAPPER = "Lcom/alibaba/fastjson3/ObjectMapper;";
-    public static final String DESC_FIELD_READER = "Lcom/alibaba/fastjson3/reader/FieldReader;";
-    public static final String DESC_FIELD_NAME_MATCHER = "Lcom/alibaba/fastjson3/reader/FieldNameMatcher;";
-    public static final String DESC_FIELD_WRITER = "Lcom/alibaba/fastjson3/writer/FieldWriter;";
+    public static final String DESC_JSON_PARSER = "L" + TYPE_JSON_PARSER + ";";
+    public static final String DESC_JSON_PARSER_UTF8 = "L" + TYPE_JSON_PARSER_UTF8 + ";";
+    public static final String DESC_JSON_GENERATOR = "L" + TYPE_JSON_GENERATOR + ";";
+    public static final String DESC_OBJECT_READER = "L" + TYPE_OBJECT_READER + ";";
+    public static final String DESC_OBJECT_WRITER = "L" + TYPE_OBJECT_WRITER + ";";
+    public static final String DESC_OBJECT_MAPPER = "L" + TYPE_OBJECT_MAPPER + ";";
+    public static final String DESC_FIELD_READER = "L" + TYPE_FIELD_READER + ";";
+    public static final String DESC_FIELD_NAME_MATCHER = "L" + TYPE_FIELD_NAME_MATCHER + ";";
+    public static final String DESC_FIELD_WRITER = "L" + TYPE_FIELD_WRITER + ";";
 
     // Method descriptors for ObjectWriter.write
     public static final String METHOD_DESC_WRITE =

@@ -2,11 +2,13 @@ package com.alibaba.fastjson3.reader;
 
 import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.ObjectReader;
+import com.alibaba.fastjson3.internal.asm.ASMUtils;
 import com.alibaba.fastjson3.internal.asm.ClassWriter;
 import com.alibaba.fastjson3.internal.asm.Label;
 import com.alibaba.fastjson3.internal.asm.MethodWriter;
 import com.alibaba.fastjson3.internal.asm.Opcodes;
 import com.alibaba.fastjson3.util.DynamicClassLoader;
+import com.alibaba.fastjson3.util.UnsafeAllocator;
 
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
@@ -45,8 +47,9 @@ public final class ObjectReaderCreatorASM {
 
     private static final String[] INTERFACES = {TYPE_OBJECT_READER};
 
-    // UnsafeAllocator type
-    private static final String TYPE_UNSAFE_ALLOC = "com/alibaba/fastjson3/util/UnsafeAllocator";
+    // UnsafeAllocator type — derived from the Class literal so maven-shade
+    // relocation rewrites it correctly (see ASMUtils top-of-file note).
+    private static final String TYPE_UNSAFE_ALLOC = ASMUtils.type(UnsafeAllocator.class);
 
     private ObjectReaderCreatorASM() {
     }
