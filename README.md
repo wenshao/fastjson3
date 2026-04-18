@@ -11,9 +11,9 @@ fastjson3 adopts a [Jackson 3](https://github.com/FasterXML/jackson-core) style 
 
 | Metric | Value |
 |--------|-------|
-| Source files | 102 |
-| Lines of code | 35,000+ |
-| Test cases | 1,422 |
+| Source files (core3 main) | 112 |
+| Lines of code (core3 main) | 46,000+ |
+| Test cases | 2,068 (1,985 JVM + 83 Android) |
 | Test pass rate | 100% |
 | Hand-written code | 0 lines |
 
@@ -302,12 +302,32 @@ Key optimizations:
 
 ### Benchmark Reports
 
-Per-release benchmark reports following the [fastjson2 convention](https://github.com/alibaba/fastjson2/tree/main/docs/benchmark) — Eishay + JJB scenarios, multi-architecture, multi-JDK, with raw JMH output and error bars:
+Per-release benchmark reports following the [fastjson2 convention](https://github.com/alibaba/fastjson2/tree/main/docs/benchmark) — Eishay + JJB scenarios, 5 machines × 3 architectures (x86_64, aarch64, riscv64), with raw JMH output and error bars:
 
 - [`docs/benchmark/`](docs/benchmark/) — all release reports
-- Latest: [`benchmark_3.0.0-SNAPSHOT-66a5e2a.md`](docs/benchmark/benchmark_3.0.0-SNAPSHOT-66a5e2a.md) — post Path B Write; fastjson3 ASM path now **beats fastjson2 2.0.61 on every instrumented Parse + Write scenario** on both aarch64 and x86_64.
+- Latest: [`benchmark_3.0.0-SNAPSHOT-94414d5.md`](docs/benchmark/benchmark_3.0.0-SNAPSHOT-94414d5.md) — **39 of 40** benchmark × machine cells ≥ 100% of fastjson2 2.0.61 (the 40th is x86_64 `UsersParseUTF8Bytes` at 93.9%, within noise), every cell beats wast. Tree-mode parse 107-128% across all 5 machines.
 
-Methodology: JMH throughput mode (`ops/s`), 3 warmup × 2 s, 5 measurement × 2 s, 3 forks, single-threaded — matching the cross-platform runner [`scripts/bench-eishay-cross-platform.sh`](scripts/bench-eishay-cross-platform.sh) used to generate each report. The runner ships a single `benchmark3.jar` to each host and runs JMH in parallel. Reports compare fastjson3 against the latest fastjson2 release, plus jackson-databind, gson, and wast.
+Methodology: JMH throughput mode (`ops/s`), `-wi 2 -i 3 -f 2 -t $threads`, 10s per iteration — runs in parallel across all 5 hosts via [`benchmark3/run-remote.sh`](benchmark3/run-remote.sh). Reports compare fastjson3 against the latest fastjson2 release plus wast.
+
+## GraalVM Native Image
+
+fastjson3 ships reachability metadata so `native-image` picks up its reflection hooks automatically. At runtime `JDKUtils.NATIVE_IMAGE == true` is detected and the library falls back to the REFLECT creator path (ASM bytecode generation is not available under SubstrateVM). The library's own `String` / `Unsafe` fast paths degrade cleanly to the JDK-standard APIs.
+
+You register your own POJOs (or run the GraalVM `native-image-agent` on a JVM workload to record usage). Smoke-test the setup end-to-end with the bundled script:
+
+```bash
+./scripts/test-native-image.sh
+```
+
+It builds a native binary of the sample `NativeImageTest` main class and prints JVM-vs-native cold-start. Reference measurement on GraalVM CE 25.0.2 / x86_64:
+
+| Metric | JVM | Native |
+|---|---:|---:|
+| Cold start | 114 ms | **2-3 ms** (~45×) |
+| Binary size | — | 19.3 MB |
+| Build time | — | ~19 s |
+
+See [`docs/advanced/graalvm.md`](docs/advanced/graalvm.md) for configuration details.
 
 ## Project Structure
 
