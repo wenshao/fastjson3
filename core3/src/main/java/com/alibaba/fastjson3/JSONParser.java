@@ -274,6 +274,45 @@ public abstract sealed class JSONParser implements Closeable
         return (features & feature.mask) != 0;
     }
 
+    // ==================== Error-location formatting ====================
+
+    /**
+     * Format a user-facing location string for an offset: {@code "offset 172 (line 3, col 12)"}.
+     *
+     * <p>Line and column are 1-based. Counting walks from input start up to
+     * the given offset, so error-path cost is O(offset). That's fine because
+     * this is only called when constructing an exception message.</p>
+     *
+     * <p>Newline handling: any {@code '\n'} increments the line counter;
+     * {@code '\r\n'} is collapsed so a CRLF line feed is a single line
+     * boundary. Bare {@code '\r'} (old Mac) also counts as one line boundary.</p>
+     */
+    protected String locationAt(int off) {
+        final int limit = Math.min(off, end());
+        int line = 1;
+        int col = 1;
+        int i = 0;
+        while (i < limit) {
+            int c = ch(i);
+            if (c == '\n') {
+                line++;
+                col = 1;
+                i++;
+            } else if (c == '\r') {
+                line++;
+                col = 1;
+                i++;
+                if (i < limit && ch(i) == '\n') {
+                    i++;
+                }
+            } else {
+                col++;
+                i++;
+            }
+        }
+        return "offset " + off + " (line " + line + ", col " + col + ")";
+    }
+
     // ==================== Abstract char-access primitives ====================
 
     /** Return char/byte value at position i. For UTF-8, returns byte & 0xFF (ASCII-safe). */
@@ -326,7 +365,7 @@ public abstract sealed class JSONParser implements Closeable
             case '\'' -> {
                 // Single quote only allowed when AllowSingleQuotes feature is enabled
                 if (!isEnabled(ReadFeature.AllowSingleQuotes)) {
-                    throw new JSONException("unexpected character ''' at offset " + offset);
+                    throw new JSONException("unexpected character ''' at " + locationAt(offset));
                 }
                 yield readString();
             }
@@ -339,7 +378,7 @@ public abstract sealed class JSONParser implements Closeable
                 if (c == '-' || (c >= '0' && c <= '9')) {
                     yield readNumber();
                 }
-                throw new JSONException("unexpected character '" + (char) c + "' at offset " + offset);
+                throw new JSONException("unexpected character '" + (char) c + "' at " + locationAt(offset));
             }
         };
     }
@@ -347,7 +386,7 @@ public abstract sealed class JSONParser implements Closeable
     public JSONObject readObject() {
         skipWhitespace();
         if (offset >= end() || ch(offset) != '{') {
-            throw new JSONException("expected '{' at offset " + offset);
+            throw new JSONException("expected '{' at " + locationAt(offset));
         }
         if (++depth > MAX_NESTING_DEPTH) {
             throw new JSONException("nesting depth " + depth + " exceeds maximum " + MAX_NESTING_DEPTH);
@@ -382,14 +421,14 @@ public abstract sealed class JSONParser implements Closeable
                 depth--;
                 return obj;
             }
-            throw new JSONException("expected ',' or '}' at offset " + offset);
+            throw new JSONException("expected ',' or '}' at " + locationAt(offset));
         }
     }
 
     public JSONArray readArray() {
         skipWhitespace();
         if (offset >= end() || ch(offset) != '[') {
-            throw new JSONException("expected '[' at offset " + offset);
+            throw new JSONException("expected '[' at " + locationAt(offset));
         }
         if (++depth > MAX_NESTING_DEPTH) {
             throw new JSONException("nesting depth " + depth + " exceeds maximum " + MAX_NESTING_DEPTH);
@@ -423,14 +462,14 @@ public abstract sealed class JSONParser implements Closeable
                 depth--;
                 return arr;
             }
-            throw new JSONException("expected ',' or ']' at offset " + offset);
+            throw new JSONException("expected ',' or ']' at " + locationAt(offset));
         }
     }
 
     public String readString() {
         skipWhitespace();
         if (offset >= end()) {
-            throw new JSONException("expected quote at offset " + offset);
+            throw new JSONException("expected quote at " + locationAt(offset));
         }
         int quote = ch(offset);
         if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
@@ -438,11 +477,11 @@ public abstract sealed class JSONParser implements Closeable
             String result = readStringContentWithQuote(quote);
             if (result != null && result.length() > MAX_STRING_LENGTH) {
                 throw new JSONException("string length " + result.length() + " exceeds maximum "
-                        + MAX_STRING_LENGTH + " at offset " + offset);
+                        + MAX_STRING_LENGTH + " at " + locationAt(offset));
             }
             return result;
         }
-        throw new JSONException("expected quote at offset " + offset);
+        throw new JSONException("expected quote at " + locationAt(offset));
     }
 
     /**
@@ -467,7 +506,7 @@ public abstract sealed class JSONParser implements Closeable
         }
 
         if (c < '0' || c > '9') {
-            throw new JSONException("expected digit at offset " + offset);
+            throw new JSONException("expected digit at " + locationAt(offset));
         }
 
         int value = c - '0';
@@ -517,7 +556,7 @@ public abstract sealed class JSONParser implements Closeable
         }
 
         if (c < '0' || c > '9') {
-            throw new JSONException("expected digit at offset " + offset);
+            throw new JSONException("expected digit at " + locationAt(offset));
         }
 
         long value = c - '0';
@@ -589,7 +628,7 @@ public abstract sealed class JSONParser implements Closeable
             offset += 5;
             return false;
         }
-        throw new JSONException("expected 'true' or 'false' at offset " + offset);
+        throw new JSONException("expected 'true' or 'false' at " + locationAt(offset));
     }
 
     public boolean readNull() {
@@ -607,7 +646,7 @@ public abstract sealed class JSONParser implements Closeable
         skipWhitespace();
         int e = end();
         if (offset >= e) {
-            throw new JSONException("expected quote for field name at offset " + offset);
+            throw new JSONException("expected quote for field name at " + locationAt(offset));
         }
         int quote = ch(offset);
         if (quote == '"') {
@@ -623,7 +662,7 @@ public abstract sealed class JSONParser implements Closeable
                     offset++;
                     skipWhitespace();
                     if (offset >= e || ch(offset) != ':') {
-                        throw new JSONException("expected ':' at offset " + offset);
+                        throw new JSONException("expected ':' at " + locationAt(offset));
                     }
                     offset++;
                     String name = extractString(start, start + nameLen);
@@ -639,7 +678,7 @@ public abstract sealed class JSONParser implements Closeable
                     String name = readStringContentWithQuote('"');
                     skipWhitespace();
                     if (offset >= e || ch(offset) != ':') {
-                        throw new JSONException("expected ':' at offset " + offset);
+                        throw new JSONException("expected ':' at " + locationAt(offset));
                     }
                     offset++;
                     return name;
@@ -654,12 +693,12 @@ public abstract sealed class JSONParser implements Closeable
             String name = readStringContentWithQuote(quote);
             skipWhitespace();
             if (offset >= e || ch(offset) != ':') {
-                throw new JSONException("expected ':' at offset " + offset);
+                throw new JSONException("expected ':' at " + locationAt(offset));
             }
             offset++;
             return name;
         }
-        throw new JSONException("expected quote for field name at offset " + offset);
+        throw new JSONException("expected quote for field name at " + locationAt(offset));
     }
 
 
@@ -678,7 +717,7 @@ public abstract sealed class JSONParser implements Closeable
         skipWhitespace();
         int quote = ch(offset);
         if (offset >= end() || (quote != '"' && quote != '\'')) {
-            throw new JSONException("expected quote for field name at offset " + offset);
+            throw new JSONException("expected quote for field name at " + locationAt(offset));
         }
         offset++;
 
@@ -692,7 +731,7 @@ public abstract sealed class JSONParser implements Closeable
                 offset++;
                 skipWhitespace();
                 if (offset >= e || ch(offset) != ':') {
-                    throw new JSONException("expected ':' at offset " + offset);
+                    throw new JSONException("expected ':' at " + locationAt(offset));
                 }
                 offset++;
                 return hash;
@@ -703,7 +742,7 @@ public abstract sealed class JSONParser implements Closeable
                 String name = readStringContentWithQuote(quote);
                 skipWhitespace();
                 if (offset >= e || ch(offset) != ':') {
-                    throw new JSONException("expected ':' at offset " + offset);
+                    throw new JSONException("expected ':' at " + locationAt(offset));
                 }
                 offset++;
                 return matcher.hash(name);
@@ -781,7 +820,7 @@ public abstract sealed class JSONParser implements Closeable
                         || ch(offset + 1) != 'r'
                         || ch(offset + 2) != 'u'
                         || ch(offset + 3) != 'e') {
-                    throw new JSONException("invalid value at offset " + offset);
+                    throw new JSONException("invalid value at " + locationAt(offset));
                 }
                 offset += 4;
             }
@@ -791,7 +830,7 @@ public abstract sealed class JSONParser implements Closeable
                         || ch(offset + 2) != 'l'
                         || ch(offset + 3) != 's'
                         || ch(offset + 4) != 'e') {
-                    throw new JSONException("invalid value at offset " + offset);
+                    throw new JSONException("invalid value at " + locationAt(offset));
                 }
                 offset += 5;
             }
@@ -800,7 +839,7 @@ public abstract sealed class JSONParser implements Closeable
                         || ch(offset + 1) != 'u'
                         || ch(offset + 2) != 'l'
                         || ch(offset + 3) != 'l') {
-                    throw new JSONException("invalid value at offset " + offset);
+                    throw new JSONException("invalid value at " + locationAt(offset));
                 }
                 offset += 4;
             }
@@ -808,7 +847,7 @@ public abstract sealed class JSONParser implements Closeable
                 if (c == '-' || (c >= '0' && c <= '9')) {
                     skipNumber();
                 } else {
-                    throw new JSONException("unexpected character '" + (char) c + "' at offset " + offset);
+                    throw new JSONException("unexpected character '" + (char) c + "' at " + locationAt(offset));
                 }
             }
         }
@@ -945,7 +984,7 @@ public abstract sealed class JSONParser implements Closeable
         }
         skipWhitespace();
         if (offset >= end() || ch(offset) != '[') {
-            throw new JSONException("expected '[' at offset " + offset);
+            throw new JSONException("expected '[' at " + locationAt(offset));
         }
         offset++;
         skipWhitespace();
@@ -970,7 +1009,7 @@ public abstract sealed class JSONParser implements Closeable
                 offset++;
                 return list;
             }
-            throw new JSONException("expected ',' or ']' at offset " + offset);
+            throw new JSONException("expected ',' or ']' at " + locationAt(offset));
         }
     }
 
@@ -991,7 +1030,7 @@ public abstract sealed class JSONParser implements Closeable
         }
         skipWhitespace();
         if (offset >= end() || ch(offset) != '{') {
-            throw new JSONException("expected '{' at offset " + offset);
+            throw new JSONException("expected '{' at " + locationAt(offset));
         }
         offset++;
         skipWhitespace();
@@ -1019,7 +1058,7 @@ public abstract sealed class JSONParser implements Closeable
                 offset++;
                 return map;
             }
-            throw new JSONException("expected ',' or '}' at offset " + offset);
+            throw new JSONException("expected ',' or '}' at " + locationAt(offset));
         }
     }
 
@@ -1058,7 +1097,7 @@ public abstract sealed class JSONParser implements Closeable
         int numLen = offset - start;
         if (numLen > MAX_NUMBER_LENGTH) {
             throw new JSONException("number length " + numLen + " exceeds maximum " + MAX_NUMBER_LENGTH
-                    + " at offset " + start);
+                    + " at " + locationAt(start));
         }
         String numStr = extractString(start, offset);
 
@@ -1114,7 +1153,7 @@ public abstract sealed class JSONParser implements Closeable
                 offset++;
             }
         } else {
-            throw new JSONException("invalid number at offset " + offset);
+            throw new JSONException("invalid number at " + locationAt(offset));
         }
 
         // Fraction
@@ -1159,13 +1198,13 @@ public abstract sealed class JSONParser implements Closeable
         for (;;) {
             skipWhitespace();
             if (offset >= end() || ch(offset) != '"') {
-                throw new JSONException("expected '\"' at offset " + offset);
+                throw new JSONException("expected '\"' at " + locationAt(offset));
             }
             offset++;
             skipStringContent();
             skipWhitespace();
             if (offset >= end() || ch(offset) != ':') {
-                throw new JSONException("expected ':' at offset " + offset);
+                throw new JSONException("expected ':' at " + locationAt(offset));
             }
             offset++;
             skipValue();
@@ -1181,7 +1220,7 @@ public abstract sealed class JSONParser implements Closeable
                 offset++;
                 return;
             }
-            throw new JSONException("expected ',' or '}' at offset " + offset);
+            throw new JSONException("expected ',' or '}' at " + locationAt(offset));
         }
     }
 
@@ -1206,7 +1245,7 @@ public abstract sealed class JSONParser implements Closeable
                 offset++;
                 return;
             }
-            throw new JSONException("expected ',' or ']' at offset " + offset);
+            throw new JSONException("expected ',' or ']' at " + locationAt(offset));
         }
     }
 
@@ -1237,7 +1276,7 @@ public abstract sealed class JSONParser implements Closeable
             offset++;
         }
         if (offset >= e || ch(offset) < '0' || ch(offset) > '9') {
-            throw new JSONException("invalid number at offset " + offset);
+            throw new JSONException("invalid number at " + locationAt(offset));
         }
         if (ch(offset) == '0') {
             offset++;
@@ -1275,7 +1314,7 @@ public abstract sealed class JSONParser implements Closeable
         if (offset + 4 > end()
                 || ch(offset) != 'n' || ch(offset + 1) != 'u'
                 || ch(offset + 2) != 'l' || ch(offset + 3) != 'l') {
-            throw new JSONException("expected 'null' at offset " + offset);
+            throw new JSONException("expected 'null' at " + locationAt(offset));
         }
         offset += 4;
     }
@@ -1521,7 +1560,7 @@ public abstract sealed class JSONParser implements Closeable
                 off++;
             }
             if (off >= e || b[off] != '"') {
-                throw new JSONException("expected '\"' for field name at offset " + off);
+                throw new JSONException("expected '\"' for field name at " + locationAt(off));
             }
             off++; // skip opening quote
 
@@ -1544,7 +1583,7 @@ public abstract sealed class JSONParser implements Closeable
                                     off++;
                                 }
                                 if (off >= e || b[off] != ':') {
-                                    throw new JSONException("expected ':' at offset " + off);
+                                    throw new JSONException("expected ':' at " + locationAt(off));
                                 }
                                 this.offset = off + 1;
                                 return c.reader;
@@ -1564,7 +1603,7 @@ public abstract sealed class JSONParser implements Closeable
                         off++;
                     }
                     if (off >= e || b[off] != ':') {
-                        throw new JSONException("expected ':' at offset " + off);
+                        throw new JSONException("expected ':' at " + locationAt(off));
                     }
                     this.offset = off + 1;
                     return null;
@@ -1575,7 +1614,7 @@ public abstract sealed class JSONParser implements Closeable
                     String name = readStringContent();
                     skipWhitespace();
                     if (this.offset >= e || b[this.offset] != ':') {
-                        throw new JSONException("expected ':' at offset " + this.offset);
+                        throw new JSONException("expected ':' at " + locationAt(this.offset));
                     }
                     this.offset++;
                     long hash = matcher.hash(name);
@@ -1606,14 +1645,14 @@ public abstract sealed class JSONParser implements Closeable
             }
             // Boundary check BEFORE accessing b[off]
             if (off >= end) {
-                throw new JSONException("expected quote for field name at offset " + off);
+                throw new JSONException("expected quote for field name at " + locationAt(off));
             }
             final byte quote = b[off];
             // Single quote only allowed when AllowSingleQuotes feature is enabled
             if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
                 // valid quote
             } else {
-                throw new JSONException("expected quote for field name at offset " + off);
+                throw new JSONException("expected quote for field name at " + locationAt(off));
             }
             off++;
 
@@ -1667,7 +1706,7 @@ public abstract sealed class JSONParser implements Closeable
             final int e = this.end;
             skipWhitespace();
             if (this.offset >= e || b[this.offset] != ':') {
-                throw new JSONException("expected ':' at offset " + this.offset);
+                throw new JSONException("expected ':' at " + locationAt(this.offset));
             }
             this.offset++;
             skipWhitespace(); // skip WS after ':'
@@ -1696,12 +1735,12 @@ public abstract sealed class JSONParser implements Closeable
             }
             // Boundary check BEFORE accessing b[off]
             if (off >= e) {
-                throw new JSONException("expected quote for field name at offset " + off);
+                throw new JSONException("expected quote for field name at " + locationAt(off));
             }
             final byte quote = b[off];
             // Single quote only allowed when AllowSingleQuotes feature is enabled
             if (quote != '"' && !(quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
-                throw new JSONException("expected quote for field name at offset " + off);
+                throw new JSONException("expected quote for field name at " + locationAt(off));
             }
             off++;
 
@@ -1717,7 +1756,7 @@ public abstract sealed class JSONParser implements Closeable
                         off++;
                     }
                     if (off >= e || b[off] != ':') {
-                        throw new JSONException("expected ':' at offset " + off);
+                        throw new JSONException("expected ':' at " + locationAt(off));
                     }
                     off++; // skip ':'
                     while (off < e && b[off] <= ' ') {
@@ -1731,7 +1770,7 @@ public abstract sealed class JSONParser implements Closeable
                     String name = readStringContentWithQuote(quote);
                     skipWhitespace();
                     if (this.offset >= e || b[this.offset] != ':') {
-                        throw new JSONException("expected ':' at offset " + this.offset);
+                        throw new JSONException("expected ':' at " + locationAt(this.offset));
                     }
                     this.offset++;
                     skipWhitespace();
@@ -1792,7 +1831,7 @@ public abstract sealed class JSONParser implements Closeable
 
             if (c < '0' || c > '9') {
                 this.offset = off;
-                throw new JSONException("expected digit at offset " + off);
+                throw new JSONException("expected digit at " + locationAt(off));
             }
 
             int value = c - '0';
@@ -1847,7 +1886,7 @@ public abstract sealed class JSONParser implements Closeable
                 this.offset = off + 5;
                 return false;
             }
-            throw new JSONException("expected 'true' or 'false' at offset " + off);
+            throw new JSONException("expected 'true' or 'false' at " + locationAt(off));
         }
 
         @Override
@@ -1860,11 +1899,11 @@ public abstract sealed class JSONParser implements Closeable
                 off++;
             }
             if (off >= e) {
-                throw new JSONException("expected quote at offset " + off);
+                throw new JSONException("expected quote at " + locationAt(off));
             }
             byte quote = b[off];
             if (quote != '"' && !(quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
-                throw new JSONException("expected quote at offset " + off);
+                throw new JSONException("expected quote at " + locationAt(off));
             }
             off++; // skip opening quote
             // Inline readStringContent fast path for ASCII
@@ -1909,11 +1948,11 @@ public abstract sealed class JSONParser implements Closeable
             final int e = this.end;
             // Expect '"' or '\'' (skipWS already done by caller)
             if (off >= e) {
-                throw new JSONException("expected quote at offset " + off);
+                throw new JSONException("expected quote at " + locationAt(off));
             }
             byte quote = b[off];
             if (quote != '"' && !(quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
-                throw new JSONException("expected quote at offset " + off);
+                throw new JSONException("expected quote at " + locationAt(off));
             }
             off++;
             int start = off;
@@ -1984,7 +2023,7 @@ public abstract sealed class JSONParser implements Closeable
                 off++;
             }
             if (off >= e) {
-                throw new JSONException("expected string value at offset " + off);
+                throw new JSONException("expected string value at " + locationAt(off));
             }
             byte c = b[off];
             if (c == 'n') {
@@ -1993,7 +2032,7 @@ public abstract sealed class JSONParser implements Closeable
                     this.offset = off + 4;
                     return null;
                 }
-                throw new JSONException("expected null or string at offset " + off);
+                throw new JSONException("expected null or string at " + locationAt(off));
             }
             if (c != '"') {
                 // AllowSingleQuotes: delegate to the slower but quote-aware
@@ -2002,7 +2041,7 @@ public abstract sealed class JSONParser implements Closeable
                     this.offset = off;
                     return readString();
                 }
-                throw new JSONException("expected '\"' at offset " + off);
+                throw new JSONException("expected '\"' at " + locationAt(off));
             }
             off++;
             int start = off;
@@ -2312,7 +2351,7 @@ public abstract sealed class JSONParser implements Closeable
                     return false;
                 }
             }
-            throw new JSONException("expected 'true' or 'false' at offset " + off);
+            throw new JSONException("expected 'true' or 'false' at " + locationAt(off));
         }
 
         /**
@@ -2576,7 +2615,7 @@ public abstract sealed class JSONParser implements Closeable
                 reader.setBooleanValue(bean, false);
                 return off + 5;
             }
-            throw new JSONException("expected 'true' or 'false' at offset " + off);
+            throw new JSONException("expected 'true' or 'false' at " + locationAt(off));
         }
 
         // ==================== Direct offset-passing methods (for ASM code gen) ====================
@@ -2727,7 +2766,7 @@ public abstract sealed class JSONParser implements Closeable
                 com.alibaba.fastjson3.util.JDKUtils.putBoolean(bean, fieldOffset, false);
                 return off + 5;
             }
-            throw new JSONException("expected 'true' or 'false' at offset " + off);
+            throw new JSONException("expected 'true' or 'false' at " + locationAt(off));
         }
 
         public int readStringOffDirect(int off, Object bean, long fieldOffset) {
@@ -3282,7 +3321,7 @@ public abstract sealed class JSONParser implements Closeable
             }
             if (off >= e) {
                 this.offset = off;
-                throw new JSONException("unexpected end of input in array at offset " + off);
+                throw new JSONException("unexpected end of input in array at " + locationAt(off));
             }
             byte c = b[off];
             if (c == ']') {
@@ -4413,7 +4452,7 @@ public abstract sealed class JSONParser implements Closeable
                 off++;
             }
             if (off >= e) {
-                throw new JSONException("unexpected end of input at offset " + off);
+                throw new JSONException("unexpected end of input at " + locationAt(off));
             }
             if (b[off] == ',') {
                 return off + 1;
@@ -4421,7 +4460,7 @@ public abstract sealed class JSONParser implements Closeable
             if (b[off] == '}') {
                 return -(off + 1);
             }
-            throw new JSONException("expected ',' or '}' at offset " + off);
+            throw new JSONException("expected ',' or '}' at " + locationAt(off));
         }
 
         /**
@@ -4726,10 +4765,10 @@ public abstract sealed class JSONParser implements Closeable
             int off = this.offset;
             final int e = this.end;
             while (off < e && b[off] <= ' ') off++;
-            if (off >= e) throw new JSONException("expected quote at offset " + off);
+            if (off >= e) throw new JSONException("expected quote at " + locationAt(off));
             byte quote = b[off];
             if (quote != '"' && !(quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
-                throw new JSONException("expected quote at offset " + off);
+                throw new JSONException("expected quote at " + locationAt(off));
             }
             off++;
             int start = off;
@@ -4898,7 +4937,7 @@ public abstract sealed class JSONParser implements Closeable
                     off++;
                     while (off < e && b[off] <= ' ') off++;
                     if (off >= e || b[off] != ':') {
-                        throw new JSONException("expected ':' at offset " + off);
+                        throw new JSONException("expected ':' at " + locationAt(off));
                     }
                     this.offset = off + 1;
 
@@ -5034,7 +5073,7 @@ public abstract sealed class JSONParser implements Closeable
             int off = this.offset;
 
             while (off < e && b[off] <= ' ') off++;
-            if (off >= e || b[off] != '{') throw new JSONException("expected '{' at offset " + off);
+            if (off >= e || b[off] != '{') throw new JSONException("expected '{' at " + locationAt(off));
             if (++depth > MAX_NESTING_DEPTH) throw new JSONException("nesting depth exceeds " + MAX_NESTING_DEPTH);
             off++;
 
@@ -5046,7 +5085,7 @@ public abstract sealed class JSONParser implements Closeable
                 // Field name
                 while (off < e && b[off] <= ' ') off++;
                 if (off >= e || b[off] != '"') {
-                    throw new JSONException("expected '\"' at offset " + off);
+                    throw new JSONException("expected '\"' at " + locationAt(off));
                 }
                 off++;
                 this.offset = off;
@@ -5066,7 +5105,7 @@ public abstract sealed class JSONParser implements Closeable
                 if (off >= e) throw new JSONException("unterminated object");
                 if (b[off] == ',') { off++; continue; }
                 if (b[off] == '}') { this.offset = off + 1; depth--; return obj; }
-                throw new JSONException("expected ',' or '}' at offset " + off);
+                throw new JSONException("expected ',' or '}' at " + locationAt(off));
             }
         }
 
@@ -5079,7 +5118,7 @@ public abstract sealed class JSONParser implements Closeable
             int off = this.offset;
 
             while (off < e && b[off] <= ' ') off++;
-            if (off >= e || b[off] != '[') throw new JSONException("expected '[' at offset " + off);
+            if (off >= e || b[off] != '[') throw new JSONException("expected '[' at " + locationAt(off));
             if (++depth > MAX_NESTING_DEPTH) throw new JSONException("nesting depth exceeds " + MAX_NESTING_DEPTH);
             off++;
 
@@ -5097,7 +5136,7 @@ public abstract sealed class JSONParser implements Closeable
                 if (off >= e) throw new JSONException("unterminated array");
                 if (b[off] == ',') { off++; while (off < e && b[off] <= ' ') off++; continue; }
                 if (b[off] == ']') { this.offset = off + 1; depth--; return arr; }
-                throw new JSONException("expected ',' or ']' at offset " + off);
+                throw new JSONException("expected ',' or ']' at " + locationAt(off));
             }
         }
 
@@ -5148,23 +5187,23 @@ public abstract sealed class JSONParser implements Closeable
                     this.offset = off + 4;
                     return Boolean.TRUE;
                 }
-                throw new JSONException("expected 'true' at offset " + off);
+                throw new JSONException("expected 'true' at " + locationAt(off));
             }
             if (c == 'f') {
                 if (off + 5 <= e && b[off+1] == 'a' && b[off+2] == 'l' && b[off+3] == 's' && b[off+4] == 'e') {
                     this.offset = off + 5;
                     return Boolean.FALSE;
                 }
-                throw new JSONException("expected 'false' at offset " + off);
+                throw new JSONException("expected 'false' at " + locationAt(off));
             }
             if (c == 'n') {
                 if (off + 4 <= e && b[off+1] == 'u' && b[off+2] == 'l' && b[off+3] == 'l') {
                     this.offset = off + 4;
                     return null;
                 }
-                throw new JSONException("expected 'null' at offset " + off);
+                throw new JSONException("expected 'null' at " + locationAt(off));
             }
-            throw new JSONException("unexpected character '" + (char) c + "' at offset " + off);
+            throw new JSONException("unexpected character '" + (char) c + "' at " + locationAt(off));
         }
 
         /**
@@ -5179,7 +5218,7 @@ public abstract sealed class JSONParser implements Closeable
                     int nameLen = off - nameStart;
                     off++;
                     while (off < e && b[off] <= ' ') off++;
-                    if (off >= e || b[off] != ':') throw new JSONException("expected ':' at offset " + off);
+                    if (off >= e || b[off] != ':') throw new JSONException("expected ':' at " + locationAt(off));
                     this.offset = off + 1;
 
                     // Fast path: names ≤ 8 bytes use content-as-key. The
