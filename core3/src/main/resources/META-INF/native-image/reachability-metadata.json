@@ -1,80 +1,50 @@
 {
   "reflection": [
     {
-      "condition": { "typeReachable": "com.alibaba.fastjson3.annotation.JSONField" },
+      "condition": { "typeReached": "com.alibaba.fastjson3.annotation.JSONField" },
       "type": "com.alibaba.fastjson3.annotation.JSONField",
-      "queryAllPublicMethods": true
+      "allPublicMethods": true
     },
     {
-      "condition": { "typeReachable": "com.alibaba.fastjson3.annotation.JSONType" },
+      "condition": { "typeReached": "com.alibaba.fastjson3.annotation.JSONType" },
       "type": "com.alibaba.fastjson3.annotation.JSONType",
-      "queryAllPublicMethods": true
+      "allPublicMethods": true
     },
     {
-      "condition": { "typeReachable": "com.alibaba.fastjson3.annotation.JSONCreator" },
+      "condition": { "typeReached": "com.alibaba.fastjson3.annotation.JSONCreator" },
       "type": "com.alibaba.fastjson3.annotation.JSONCreator",
-      "queryAllPublicMethods": true
+      "allPublicMethods": true
     },
     {
-      "condition": { "typeReachable": "com.fasterxml.jackson.annotation.JsonProperty" },
+      "condition": { "typeReached": "com.fasterxml.jackson.annotation.JsonProperty" },
       "type": "com.fasterxml.jackson.annotation.JsonProperty",
-      "queryAllPublicMethods": true
+      "allPublicMethods": true
     },
     {
-      "condition": { "typeReachable": "com.fasterxml.jackson.annotation.JsonTypeInfo" },
+      "condition": { "typeReached": "com.fasterxml.jackson.annotation.JsonTypeInfo" },
       "type": "com.fasterxml.jackson.annotation.JsonTypeInfo",
-      "queryAllPublicMethods": true
+      "allPublicMethods": true
     },
     {
-      "condition": { "typeReachable": "com.fasterxml.jackson.annotation.JsonSubTypes" },
+      "condition": { "typeReached": "com.fasterxml.jackson.annotation.JsonSubTypes" },
       "type": "com.fasterxml.jackson.annotation.JsonSubTypes",
-      "queryAllPublicMethods": true
-    },
-    {
-      "type": "com.alibaba.fastjson3.NativeImageTest$User",
-      "unsafeAllocated": true,
-      "fields": [
-        {
-          "name": "age"
-        },
-        {
-          "name": "name"
-        }
-      ]
+      "allPublicMethods": true
     },
     {
       "type": "com.alibaba.fastjson3.util.BufferPool$CacheItem"
     },
     {
-      "type": "com.alibaba.fastjson3.writer.gen.OW_User_0",
-      "methods": [
-        {
-          "name": "<init>",
-          "parameterTypes": []
-        }
-      ]
-    },
-    {
-      "type": "com.google.common.collect.ImmutableList"
-    },
-    {
       "type": "java.lang.String",
       "unsafeAllocated": true,
       "fields": [
-        {
-          "name": "coder"
-        },
-        {
-          "name": "value"
-        }
+        { "name": "coder" },
+        { "name": "value" }
       ]
     },
     {
       "type": "sun.misc.Unsafe",
       "fields": [
-        {
-          "name": "theUnsafe"
-        }
+        { "name": "theUnsafe" }
       ]
     }
   ]
