@@ -907,11 +907,141 @@ public abstract sealed class JSONParser implements Closeable
         if (type instanceof Class) {
             return read((Class<T>) type);
         }
+        // ParameterizedType dispatch for common generic collections. Lets
+        // `new TypeReference<List<User>>() {}` (and Map / Set variants)
+        // work end-to-end without the user having to special-case them to
+        // parseArray / parseMap / parseSet. Nested generics recurse through
+        // the same path, so TypeReference<Map<String, List<User>>> works too.
+        if (type instanceof java.lang.reflect.ParameterizedType pt
+                && pt.getRawType() instanceof Class<?> raw) {
+            java.lang.reflect.Type[] args = pt.getActualTypeArguments();
+            if (args.length == 1 && java.util.List.class.isAssignableFrom(raw)) {
+                return (T) readGenericList(args[0]);
+            }
+            if (args.length == 1 && java.util.Set.class.isAssignableFrom(raw)) {
+                return (T) readGenericSet(args[0]);
+            }
+            if (args.length == 2 && java.util.Map.class.isAssignableFrom(raw)) {
+                return (T) readGenericMap(args[0], args[1]);
+            }
+        }
         ObjectReader<T> reader = (ObjectReader<T>) ObjectMapper.shared().getObjectReader(type);
         if (reader == null) {
             throw new JSONException("no ObjectReader registered for type: " + type);
         }
         return reader.readObject(this, type, null, features);
+    }
+
+    /**
+     * Read a {@code List<E>} where {@code E} is resolved from a {@link Type}
+     * (may itself be a {@code ParameterizedType} — recursion handles nesting).
+     * Mirrors {@link #readArray} structure (whitespace, opening {@code [},
+     * comma-separated elements, closing {@code ]}) but dispatches each
+     * element through {@code read(Type)} so generic element types resolve.
+     */
+    private <E> java.util.List<E> readGenericList(Type elementType) {
+        if (readNull()) {
+            return null;
+        }
+        skipWhitespace();
+        if (offset >= end() || ch(offset) != '[') {
+            throw new JSONException("expected '[' at offset " + offset);
+        }
+        offset++;
+        skipWhitespace();
+        java.util.List<E> list = new java.util.ArrayList<>();
+        if (offset < end() && ch(offset) == ']') {
+            offset++;
+            return list;
+        }
+        for (;;) {
+            list.add(this.<E>read(elementType));
+            skipWhitespace();
+            if (offset >= end()) {
+                throw new JSONException("unterminated array");
+            }
+            int c = ch(offset);
+            if (c == ',') {
+                offset++;
+                skipWhitespace();
+                continue;
+            }
+            if (c == ']') {
+                offset++;
+                return list;
+            }
+            throw new JSONException("expected ',' or ']' at offset " + offset);
+        }
+    }
+
+    private <E> java.util.Set<E> readGenericSet(Type elementType) {
+        java.util.List<E> list = readGenericList(elementType);
+        return list == null ? null : new java.util.LinkedHashSet<>(list);
+    }
+
+    /**
+     * Read a {@code Map<K, V>}. Keys are parsed as strings (JSON mandates
+     * string keys), then converted to {@code K} via {@link #convertMapKey}
+     * for the common numeric / enum cases. Values may be arbitrary types
+     * including nested generics.
+     */
+    private <K, V> java.util.Map<K, V> readGenericMap(Type keyType, Type valueType) {
+        if (readNull()) {
+            return null;
+        }
+        skipWhitespace();
+        if (offset >= end() || ch(offset) != '{') {
+            throw new JSONException("expected '{' at offset " + offset);
+        }
+        offset++;
+        skipWhitespace();
+        java.util.Map<K, V> map = new java.util.LinkedHashMap<>();
+        if (offset < end() && ch(offset) == '}') {
+            offset++;
+            return map;
+        }
+        for (;;) {
+            String rawKey = readFieldName();
+            K key = convertMapKey(rawKey, keyType);
+            V value = this.<V>read(valueType);
+            map.put(key, value);
+            skipWhitespace();
+            if (offset >= end()) {
+                throw new JSONException("unterminated object");
+            }
+            int c = ch(offset);
+            if (c == ',') {
+                offset++;
+                skipWhitespace();
+                continue;
+            }
+            if (c == '}') {
+                offset++;
+                return map;
+            }
+            throw new JSONException("expected ',' or '}' at offset " + offset);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <K> K convertMapKey(String raw, Type keyType) {
+        if (raw == null || keyType == String.class || keyType == Object.class) {
+            return (K) raw;
+        }
+        if (keyType instanceof Class<?> cls) {
+            if (cls == Integer.class || cls == int.class) {
+                return (K) Integer.valueOf(raw);
+            }
+            if (cls == Long.class || cls == long.class) {
+                return (K) Long.valueOf(raw);
+            }
+            if (cls.isEnum()) {
+                @SuppressWarnings({"rawtypes", "unchecked"})
+                K v = (K) Enum.valueOf((Class<Enum>) cls, raw);
+                return v;
+            }
+        }
+        return (K) raw;
     }
 
     @Override
