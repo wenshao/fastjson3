@@ -600,6 +600,17 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     public abstract void writeRaw(String raw);
 
     /**
+     * Write a pre-encoded byte[] blob directly into the output buffer.
+     * Used by ASM-generated writers to emit precomputed enum field tokens
+     * (the form {@code "fieldName":"ENUM_VALUE",}) in a single memcpy.
+     *
+     * <p>The generator's trailing-comma model requires the caller-supplied
+     * bytes to already include the {@code ,} separator when appropriate —
+     * {@code endObject} strips the tail comma.</p>
+     */
+    public abstract void writeRawBytes(byte[] bytes);
+
+    /**
      * Write a LocalDate value as a JSON string in yyyy-MM-dd format.
      * Subclasses may override for zero-alloc direct writing.
      */
@@ -1994,6 +2005,16 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             count += len;
         }
 
+        @Override
+        public void writeRawBytes(byte[] bytes) {
+            int len = bytes.length;
+            ensureCapacity(count + len);
+            for (int i = 0; i < len; i++) {
+                buf[count + i] = (char) (bytes[i] & 0xFF);
+            }
+            count += len;
+        }
+
         private int outputCount() {
             int c = count;
             if (c > 0 && buf[c - 1] == ',') {
@@ -3216,6 +3237,13 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         public void writeRaw(String raw) {
             byte[] bytes = raw.getBytes(StandardCharsets.UTF_8);
             ensureCapacity(bytes.length);
+            System.arraycopy(bytes, 0, buf, count, bytes.length);
+            count += bytes.length;
+        }
+
+        @Override
+        public void writeRawBytes(byte[] bytes) {
+            ensureCapacity(count + bytes.length);
             System.arraycopy(bytes, 0, buf, count, bytes.length);
             count += bytes.length;
         }

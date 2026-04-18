@@ -249,6 +249,12 @@ public final class ObjectWriterCreatorASM {
         // generated constructor from the array passed in by generateWriter.
         cw.visitField(Opcodes.ACC_FINAL, "ow", "[Lcom/alibaba/fastjson3/ObjectWriter;");
 
+        // Pre-encoded enum-value token cache. Slot i is non-null only for
+        // TYPE_ENUM fields; slot i's inner byte[][] is indexed by enum ordinal
+        // and holds the full `"fieldName":"ENUM_VALUE",` blob. One System.arraycopy
+        // per enum field write, no instanceof ladder through writeAny.
+        cw.visitField(Opcodes.ACC_FINAL, "eb", "[[[B");
+
         // Generate <clinit> to initialize name data
         generateClinit(cw, classInternalName, fields);
 
@@ -271,12 +277,42 @@ public final class ObjectWriterCreatorASM {
         // call site always passes the right value (field value vs each
         // element). Slots stay null for fields with no cacheable child writer.
         ObjectWriter<?>[] nestedWriters = new ObjectWriter<?>[fields.size()];
+        byte[][][] enumBytes = new byte[fields.size()][][];
         java.util.Set<Class<?>> creating = CREATING.get();
         boolean ownGuard = creating.add(beanType);
         try {
             for (int i = 0; i < fields.size(); i++) {
                 FieldWriterInfo fi = fields.get(i);
                 Class<?> fc = fi.fieldClass;
+
+                // TYPE_ENUM blob precompute: bake the whole
+                // `"fieldName":"ENUM_VALUE",` token per ordinal. Keeps the
+                // write-time path to one System.arraycopy, matches fj2's
+                // FieldWriterEnum cache shape.
+                if (fc != null && fc.isEnum()) {
+                    try {
+                        Object[] constants = fc.getEnumConstants();
+                        if (constants != null && constants.length > 0) {
+                            byte[][] blobs = new byte[constants.length][];
+                            byte[] namePrefix = ("\"" + fi.jsonName + "\":\"")
+                                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                            byte[] suffix = new byte[] {'"', ','};
+                            for (int j = 0; j < constants.length; j++) {
+                                byte[] enumNameBytes = ((Enum<?>) constants[j])
+                                        .name().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                                byte[] blob = new byte[namePrefix.length + enumNameBytes.length + suffix.length];
+                                System.arraycopy(namePrefix, 0, blob, 0, namePrefix.length);
+                                System.arraycopy(enumNameBytes, 0, blob, namePrefix.length, enumNameBytes.length);
+                                System.arraycopy(suffix, 0, blob, namePrefix.length + enumNameBytes.length, suffix.length);
+                                blobs[j] = blob;
+                            }
+                            enumBytes[i] = blobs;
+                        }
+                    } catch (Throwable ignored) {
+                        // leave null → falls back to writeAny at runtime
+                    }
+                }
+
                 Class<?> target = null;
                 if (isNestedPojo(fc)) {
                     target = fc;
@@ -313,8 +349,8 @@ public final class ObjectWriterCreatorASM {
 
         try {
             return (ObjectWriter<?>) writerClass
-                    .getConstructor(ObjectWriter[].class)
-                    .newInstance((Object) nestedWriters);
+                    .getConstructor(ObjectWriter[].class, byte[][][].class)
+                    .newInstance(nestedWriters, enumBytes);
         } catch (Exception e) {
             throw new JSONException("Failed to instantiate generated writer for " + beanType.getName(), e);
         }
@@ -384,17 +420,22 @@ public final class ObjectWriterCreatorASM {
     }
 
     private static void generateInit(ClassWriter cw, String classInternalName) {
-        // Constructor takes the per-field nested-writer array. See
-        // generateWriter for how it's populated (recursive ASM creation).
+        // Constructor takes the per-field nested-writer array (slot i holds an
+        // ObjectWriter for POJO / List<POJO> element types) AND the per-field
+        // enum-blob array (slot i holds a byte[][] indexed by ordinal for
+        // TYPE_ENUM fields). Both arrays are populated by generateWriter.
         MethodWriter mw = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>",
-                "([Lcom/alibaba/fastjson3/ObjectWriter;)V", 16);
+                "([Lcom/alibaba/fastjson3/ObjectWriter;[[[B)V", 16);
         mw.aload(0);
         mw.invokespecial("java/lang/Object", "<init>", "()V");
         mw.aload(0);
         mw.aload(1);
         mw.putfield(classInternalName, "ow", "[Lcom/alibaba/fastjson3/ObjectWriter;");
+        mw.aload(0);
+        mw.aload(2);
+        mw.putfield(classInternalName, "eb", "[[[B");
         mw.return_();
-        mw.visitMaxs(2, 2);
+        mw.visitMaxs(2, 3);
     }
 
     private static void generateWriteMethod(
@@ -459,6 +500,13 @@ public final class ObjectWriterCreatorASM {
             case FieldWriter.TYPE_FLOAT -> generateWriteFloat(mw, classInternalName, beanInternalName, fi, namePrefix);
             case FieldWriter.TYPE_BOOL -> generateWriteBool(mw, classInternalName, beanInternalName, fi, namePrefix);
             case FieldWriter.TYPE_STRING -> generateWriteString(mw, classInternalName, beanInternalName, fi, namePrefix);
+            case FieldWriter.TYPE_ENUM -> {
+                if (fi.fieldClass != null && fi.fieldClass.isEnum()) {
+                    generateWriteEnum(mw, classInternalName, beanInternalName, fi, namePrefix, fieldIndex);
+                } else {
+                    generateWriteGeneric(mw, classInternalName, beanInternalName, fi, namePrefix, fieldIndex);
+                }
+            }
             case FieldWriter.TYPE_LONG_ARRAY -> generateWriteTypedArray(mw, classInternalName, beanInternalName, fi, namePrefix, "[J", "writeLongArray", "([J)V");
             case FieldWriter.TYPE_INT_ARRAY -> generateWriteTypedArray(mw, classInternalName, beanInternalName, fi, namePrefix, "[I", "writeIntArray", "([I)V");
             case FieldWriter.TYPE_STRING_ARRAY -> generateWriteTypedArray(mw, classInternalName, beanInternalName, fi, namePrefix, "[Ljava/lang/String;", "writeStringArray", "([Ljava/lang/String;)V");
@@ -711,6 +759,76 @@ public final class ObjectWriterCreatorASM {
             mw.invokevirtual(TYPE_JSON_GENERATOR, "writeNameStringCompact",
                     "([JI[B[CLjava/lang/String;)V");
         }
+
+        mw.visitLabel(end);
+    }
+
+    /**
+     * Emit an inline write for a TYPE_ENUM field. Loads the enum value,
+     * reads its ordinal, then copies the precomputed
+     * {@code "fieldName":"ENUM_VALUE",} blob from {@code this.eb[fieldIndex][ordinal]}
+     * into the output buffer via {@link com.alibaba.fastjson3.JSONGenerator#writeRawBytes}.
+     *
+     * <p>If the precompute slot is null at runtime (e.g., the enum class
+     * failed static init and {@code generateWriter} left the slot empty),
+     * falls back to {@code generator.writeAny(value)} — identical behaviour
+     * to the previous {@code generateWriteGeneric} path.
+     */
+    private static void generateWriteEnum(
+            MethodWriter mw, String classInternalName, String beanInternalName,
+            FieldWriterInfo fi, String namePrefix, int fieldIndex
+    ) {
+        // Object value = Unsafe.getObject(bean, fo_<i>);
+        mw.aload(7);
+        mw.getstatic(classInternalName, "fo" + namePrefix, "J");
+        mw.invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
+        mw.astore(8);
+
+        Label end = new Label();
+        mw.aload(8);
+        mw.ifnull(end);
+
+        // byte[][] slot = this.eb[fieldIndex];
+        mw.aload(0);
+        mw.getfield(classInternalName, "eb", "[[[B");
+        mw.bipush(fieldIndex);
+        mw.aaload();
+        mw.astore(9);
+
+        // if (slot == null) goto fallback;
+        Label fallback = new Label();
+        mw.aload(9);
+        mw.ifnull(fallback);
+
+        // int ord = ((Enum) value).ordinal();
+        mw.aload(8);
+        mw.checkcast("java/lang/Enum");
+        mw.invokevirtual("java/lang/Enum", "ordinal", "()I");
+
+        // byte[] blob = slot[ord];
+        mw.aload(9);
+        mw.swap();
+        mw.aaload();
+
+        // generator.writeRawBytes(blob);
+        mw.aload(1);
+        mw.swap();
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeRawBytes", "([B)V");
+        mw.goto_(end);
+
+        mw.visitLabel(fallback);
+        // Slot was not precomputed (raw Enum<?> or static init failure).
+        // Write the name token then hand the value to writeAny.
+        if (!emitNameWrite(mw, encodedNameBytes(fi.jsonName))) {
+            mw.aload(1);
+            loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
+            mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
+                    "([JI[C[B)V");
+        }
+        mw.aload(1);
+        mw.aload(8);
+        mw.invokevirtual(TYPE_JSON_GENERATOR, "writeAny",
+                "(Ljava/lang/Object;)V");
 
         mw.visitLabel(end);
     }
@@ -1422,6 +1540,9 @@ public final class ObjectWriterCreatorASM {
             }
             if (type == double[].class) {
                 return FieldWriter.TYPE_DOUBLE_ARRAY;
+            }
+            if (type != null && type.isEnum()) {
+                return FieldWriter.TYPE_ENUM;
             }
             return FieldWriter.TYPE_GENERIC;
         }
