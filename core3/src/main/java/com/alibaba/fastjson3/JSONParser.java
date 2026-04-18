@@ -993,8 +993,13 @@ public abstract sealed class JSONParser implements Closeable
             offset++;
             return list;
         }
+        int index = 0;
         for (;;) {
-            list.add(this.<E>read(elementType));
+            try {
+                list.add(this.<E>read(elementType));
+            } catch (RuntimeException e) {
+                throw JSONException.wrapWithPath(e, index);
+            }
             skipWhitespace();
             if (offset >= end()) {
                 throw new JSONException("unterminated array");
@@ -1003,6 +1008,7 @@ public abstract sealed class JSONParser implements Closeable
             if (c == ',') {
                 offset++;
                 skipWhitespace();
+                index++;
                 continue;
             }
             if (c == ']') {
@@ -1041,8 +1047,16 @@ public abstract sealed class JSONParser implements Closeable
         }
         for (;;) {
             String rawKey = readFieldName();
-            K key = convertMapKey(rawKey, keyType);
-            V value = this.<V>read(valueType);
+            // Include convertMapKey in the try: typed-key conversion failures
+            // (Map<Integer, …>, Map<Enum, …>) should carry the key path too.
+            K key;
+            V value;
+            try {
+                key = convertMapKey(rawKey, keyType);
+                value = this.<V>read(valueType);
+            } catch (RuntimeException e) {
+                throw JSONException.wrapWithPath(e, rawKey);
+            }
             map.put(key, value);
             skipWhitespace();
             if (offset >= end()) {
