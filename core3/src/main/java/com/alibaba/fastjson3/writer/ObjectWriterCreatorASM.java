@@ -388,12 +388,14 @@ public final class ObjectWriterCreatorASM {
             String encodedName = "\"" + fi.jsonName + "\":";
 
             // fieldOffset: foN = <constant offset>
-            mw.visitLdcInsn(fi.fieldOffset)
+            mw.chain()
+                    .visitLdcInsn(fi.fieldOffset)
                     .putstatic(classInternalName, "fo" + i, "J");
 
             // nameChars: char[]
             pushString(mw, encodedName);
-            mw.invokevirtual("java/lang/String", "toCharArray", "()[C")
+            mw.chain()
+                    .invokevirtual("java/lang/String", "toCharArray", "()[C")
                     .putstatic(classInternalName, "nc" + i, "[C");
 
             // nameBytes: byte[] (UTF-8)
@@ -410,7 +412,8 @@ public final class ObjectWriterCreatorASM {
             mw.putstatic(classInternalName, "nl" + i, "[J");
 
             // nameBytesLen: nameBytes.length
-            mw.getstatic(classInternalName, "nb" + i, "[B")
+            mw.chain()
+                    .getstatic(classInternalName, "nb" + i, "[B")
                     .arraylength()
                     .putstatic(classInternalName, "nn" + i, "I");
         }
@@ -426,7 +429,8 @@ public final class ObjectWriterCreatorASM {
         // TYPE_ENUM fields). Both arrays are populated by generateWriter.
         MethodWriter mw = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>",
                 "([Lcom/alibaba/fastjson3/ObjectWriter;[[[B)V", 16);
-        mw.aload(0)
+        mw.chain()
+                .aload(0)
                 .invokespecial("java/lang/Object", "<init>", "()V")
                 .aload(0)
                 .aload(1)
@@ -450,7 +454,8 @@ public final class ObjectWriterCreatorASM {
         // 7=bean (object reference, no cast needed for Unsafe access)
 
         // Store object reference directly (no cast - Unsafe accepts Object)
-        mw.aload(2)
+        mw.chain()
+                .aload(2)
                 .astore(7);
 
         // Pre-compute total estimated capacity: sum of all name bytes + 48 per field + 2 for {}
@@ -460,12 +465,14 @@ public final class ObjectWriterCreatorASM {
             int nameEncodedLen = ("\"" + fi.jsonName + "\":").getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
             totalEstimated += nameEncodedLen + 48; // name + max value size
         }
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .visitLdcInsn(totalEstimated)
                 .invokevirtual(TYPE_JSON_GENERATOR, "ensureCapacityPublic", "(I)V");
 
         // generator.startObject()
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "startObject", "()V");
 
         // Write each field
@@ -475,7 +482,8 @@ public final class ObjectWriterCreatorASM {
         }
 
         // generator.endObject()
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "endObject", "()V");
 
         mw.return_();
@@ -538,7 +546,8 @@ public final class ObjectWriterCreatorASM {
             // W#5 fast path: writeName1L/2L + writeInt32 (trailing comma in writeInt32)
             mw.aload(1); // generator
             if (fi.field != null && fi.fieldClass == int.class) {
-                mw.aload(7)
+                mw.chain()
+                        .aload(7)
                         .getstatic(classInternalName, "fo" + namePrefix, "J")
                         .invokestatic(TYPE_JDK_UTILS, "getInt", "(Ljava/lang/Object;J)I");
             } else if (fi.getter != null) {
@@ -556,7 +565,8 @@ public final class ObjectWriterCreatorASM {
         loadNameFields(mw, classInternalName, namePrefix);
         mw.aload(7); // bean
         if (fi.field != null && fi.fieldClass == int.class) {
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J")
+            mw.chain()
+                    .getstatic(classInternalName, "fo" + namePrefix, "J")
                     .invokestatic(TYPE_JDK_UTILS, "getInt", "(Ljava/lang/Object;J)I");
         } else if (fi.getter != null) {
             mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -578,7 +588,8 @@ public final class ObjectWriterCreatorASM {
             // W#5 fast path: writeName1L/2L + writeInt64
             mw.aload(1); // generator
             if (fi.field != null && fi.fieldClass == long.class) {
-                mw.aload(7)
+                mw.chain()
+                        .aload(7)
                         .getstatic(classInternalName, "fo" + namePrefix, "J")
                         .invokestatic(TYPE_JDK_UTILS, "getLongField", "(Ljava/lang/Object;J)J");
             } else if (fi.getter != null) {
@@ -596,7 +607,8 @@ public final class ObjectWriterCreatorASM {
         loadNameFields(mw, classInternalName, namePrefix);
         mw.aload(7);
         if (fi.field != null && fi.fieldClass == long.class) {
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J")
+            mw.chain()
+                    .getstatic(classInternalName, "fo" + namePrefix, "J")
                     .invokestatic(TYPE_JDK_UTILS, "getLongField", "(Ljava/lang/Object;J)J");
         } else if (fi.getter != null) {
             mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -616,7 +628,8 @@ public final class ObjectWriterCreatorASM {
             // W#5 fast path: writeName1L/2L + writeDouble
             mw.aload(1); // generator
             if (fi.field != null && fi.fieldClass == double.class) {
-                mw.aload(7)
+                mw.chain()
+                        .aload(7)
                         .getstatic(classInternalName, "fo" + namePrefix, "J")
                         .invokestatic(TYPE_JDK_UTILS, "getDouble", "(Ljava/lang/Object;J)D");
             } else if (fi.getter != null) {
@@ -633,7 +646,8 @@ public final class ObjectWriterCreatorASM {
         loadNameFields(mw, classInternalName, namePrefix);
         mw.aload(7);
         if (fi.field != null && fi.fieldClass == double.class) {
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J")
+            mw.chain()
+                    .getstatic(classInternalName, "fo" + namePrefix, "J")
                     .invokestatic(TYPE_JDK_UTILS, "getDouble", "(Ljava/lang/Object;J)D");
         } else if (fi.getter != null) {
             mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -653,7 +667,8 @@ public final class ObjectWriterCreatorASM {
             // W#5 fast path: writeName1L/2L + writeFloat
             mw.aload(1); // generator
             if (fi.field != null && fi.fieldClass == float.class) {
-                mw.aload(7)
+                mw.chain()
+                        .aload(7)
                         .getstatic(classInternalName, "fo" + namePrefix, "J")
                         .invokestatic(TYPE_JDK_UTILS, "getFloat", "(Ljava/lang/Object;J)F");
             } else if (fi.getter != null) {
@@ -671,10 +686,12 @@ public final class ObjectWriterCreatorASM {
         loadNameFieldsForPreEncoded(mw, classInternalName, namePrefix);
         mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
                 "([JI[C[B)V");
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .aload(7);
         if (fi.field != null && fi.fieldClass == float.class) {
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J")
+            mw.chain()
+                    .getstatic(classInternalName, "fo" + namePrefix, "J")
                     .invokestatic(TYPE_JDK_UTILS, "getFloat", "(Ljava/lang/Object;J)F");
         } else if (fi.getter != null) {
             mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -693,7 +710,8 @@ public final class ObjectWriterCreatorASM {
             // W#5 fast path: writeName1L/2L + writeBool
             mw.aload(1); // generator
             if (fi.field != null && fi.fieldClass == boolean.class) {
-                mw.aload(7)
+                mw.chain()
+                        .aload(7)
                         .getstatic(classInternalName, "fo" + namePrefix, "J")
                         .invokestatic(TYPE_JDK_UTILS, "getBoolean", "(Ljava/lang/Object;J)Z");
             } else if (fi.getter != null) {
@@ -710,7 +728,8 @@ public final class ObjectWriterCreatorASM {
         loadNameFields(mw, classInternalName, namePrefix);
         mw.aload(7);
         if (fi.field != null && fi.fieldClass == boolean.class) {
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J")
+            mw.chain()
+                    .getstatic(classInternalName, "fo" + namePrefix, "J")
                     .invokestatic(TYPE_JDK_UTILS, "getBoolean", "(Ljava/lang/Object;J)Z");
         } else if (fi.getter != null) {
             mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -730,7 +749,8 @@ public final class ObjectWriterCreatorASM {
         // String value = JDKUtils.getObject(bean, fieldOffset);
         mw.aload(7);
         if (fi.field != null) {
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J")
+            mw.chain()
+                    .getstatic(classInternalName, "fo" + namePrefix, "J")
                     .invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;")
                     .checkcast("java/lang/String");
         } else {
@@ -740,7 +760,8 @@ public final class ObjectWriterCreatorASM {
         mw.astore(8); // local 8 = string value
 
         Label notNull = new Label();
-        mw.aload(8)
+        mw.chain()
+                .aload(8)
                 .ifnonnull(notNull);
         Label end = new Label();
         mw.goto_(end);
@@ -748,7 +769,8 @@ public final class ObjectWriterCreatorASM {
         mw.visitLabel(notNull);
         if (emitNameWrite(mw, encodedName)) {
             // W#5 fast path: writeName1L/2L + writeString
-            mw.aload(1)
+            mw.chain()
+                    .aload(1)
                     .aload(8)
                     .invokevirtual(TYPE_JSON_GENERATOR, "writeString", "(Ljava/lang/String;)V");
         } else {
@@ -779,17 +801,20 @@ public final class ObjectWriterCreatorASM {
             FieldWriterInfo fi, String namePrefix, int fieldIndex
     ) {
         // Object value = Unsafe.getObject(bean, fo_<i>);
-        mw.aload(7)
+        mw.chain()
+                .aload(7)
                 .getstatic(classInternalName, "fo" + namePrefix, "J")
                 .invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;")
                 .astore(8);
 
         Label end = new Label();
-        mw.aload(8)
+        mw.chain()
+                .aload(8)
                 .ifnull(end);
 
         // byte[][] slot = this.eb[fieldIndex];
-        mw.aload(0)
+        mw.chain()
+                .aload(0)
                 .getfield(classInternalName, "eb", "[[[B")
                 .bipush(fieldIndex)
                 .aaload()
@@ -797,21 +822,25 @@ public final class ObjectWriterCreatorASM {
 
         // if (slot == null) goto fallback;
         Label fallback = new Label();
-        mw.aload(9)
+        mw.chain()
+                .aload(9)
                 .ifnull(fallback);
 
         // int ord = ((Enum) value).ordinal();
-        mw.aload(8)
+        mw.chain()
+                .aload(8)
                 .checkcast("java/lang/Enum")
                 .invokevirtual("java/lang/Enum", "ordinal", "()I");
 
         // byte[] blob = slot[ord];
-        mw.aload(9)
+        mw.chain()
+                .aload(9)
                 .swap()
                 .aaload();
 
         // generator.writeRawBytes(blob);
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .swap()
                 .invokevirtual(TYPE_JSON_GENERATOR, "writeRawBytes", "([B)V")
                 .goto_(end);
@@ -825,7 +854,8 @@ public final class ObjectWriterCreatorASM {
             mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs",
                     "([JI[C[B)V");
         }
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .aload(8);
         mw.invokevirtual(TYPE_JSON_GENERATOR, "writeAny",
                 "(Ljava/lang/Object;)V");
@@ -862,7 +892,8 @@ public final class ObjectWriterCreatorASM {
 
         // if (value == null) skip
         Label notNull = new Label();
-        mw.aload(8)
+        mw.chain()
+                .aload(8)
                 .ifnonnull(notNull);
         Label end = new Label();
         mw.goto_(end);
@@ -884,7 +915,8 @@ public final class ObjectWriterCreatorASM {
         // mirrors the read-side PR #74. The cache slot is monomorphic per
         // field, so C2's inline cache devirtualizes the invokeinterface to
         // a direct call into the child OW_<X>.write. No ObjectMapper lookup.
-        mw.aload(0)
+        mw.chain()
+                .aload(0)
                 .getfield(classInternalName, "ow", "[Lcom/alibaba/fastjson3/ObjectWriter;")
                 .bipush(fieldIndex)
                 .aaload()
@@ -898,7 +930,8 @@ public final class ObjectWriterCreatorASM {
         mw.aload(9);
         mw.aload(1);  // generator
         mw.aload(8);  // value
-        mw.aconst_null()
+        mw.chain()
+                .aconst_null()
                 .aconst_null();
         mw.lload(5);  // features (slots 5+6, long)
         mw.invokeinterface(TYPE_OBJECT_WRITER, "write",
@@ -907,7 +940,8 @@ public final class ObjectWriterCreatorASM {
 
         mw.visitLabel(noCachedWriter);
         // Fallback: generator.writeAny(value)
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .aload(8);
         mw.invokevirtual(TYPE_JSON_GENERATOR, "writeAny",
                 "(Ljava/lang/Object;)V");
@@ -957,7 +991,8 @@ public final class ObjectWriterCreatorASM {
         // list = bean.<field> (Unsafe-preferred)
         mw.aload(7);
         if (fi.field != null) {
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J")
+            mw.chain()
+                    .getstatic(classInternalName, "fo" + namePrefix, "J")
                     .invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
         } else if (fi.getter != null) {
             mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -968,7 +1003,8 @@ public final class ObjectWriterCreatorASM {
         mw.astore(8); // list
 
         Label end = new Label();
-        mw.aload(8)
+        mw.chain()
+                .aload(8)
                 .ifnull(end);
 
         // W#5: prefer per-length writeName1L/2L over writePreEncodedNameLongs.
@@ -980,7 +1016,8 @@ public final class ObjectWriterCreatorASM {
         }
 
         // elementWriter = this.ow[fieldIndex]
-        mw.aload(0)
+        mw.chain()
+                .aload(0)
                 .getfield(classInternalName, "ow", "[Lcom/alibaba/fastjson3/ObjectWriter;")
                 .bipush(fieldIndex)
                 .aaload();
@@ -988,7 +1025,8 @@ public final class ObjectWriterCreatorASM {
 
         // If no cached writer, fall back to writeAny(list)
         Label haveWriter = new Label();
-        mw.aload(9)
+        mw.chain()
+                .aload(9)
                 .ifnonnull(haveWriter)
                 .aload(1)
                 .aload(8);
@@ -998,43 +1036,50 @@ public final class ObjectWriterCreatorASM {
 
         mw.visitLabel(haveWriter);
         // generator.startArray()
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "startArray", "()V");
 
         // Iterator-based loop (works for any List subtype, no random-access
         // assumption). The JIT recognizes the pattern and unrolls for
         // ArrayList in particular.
-        mw.aload(8)
+        mw.chain()
+                .aload(8)
                 .invokeinterface("java/util/List", "iterator", "()Ljava/util/Iterator;");
         mw.astore(10); // iterator
 
         Label loopTop = new Label();
         Label loopEnd = new Label();
         mw.visitLabel(loopTop);
-        mw.aload(10)
+        mw.chain()
+                .aload(10)
                 .invokeinterface("java/util/Iterator", "hasNext", "()Z")
                 .ifeq(loopEnd);
 
         // generator.beforeArrayValue()
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "beforeArrayValue", "()V");
 
         // Object item = iterator.next()
-        mw.aload(10)
+        mw.chain()
+                .aload(10)
                 .invokeinterface("java/util/Iterator", "next", "()Ljava/lang/Object;");
         mw.astore(11); // item
 
         // if (item == null) generator.writeNull()
         mw.aload(11);
         Label notNullItem = new Label();
-        mw.ifnonnull(notNullItem)
+        mw.chain()
+                .ifnonnull(notNullItem)
                 .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "writeNull", "()V")
                 .goto_(loopTop);
 
         mw.visitLabel(notNullItem);
         // elementWriter.write(generator, item, null, null, features)
-        mw.aload(9)
+        mw.chain()
+                .aload(9)
                 .aload(1)
                 .aload(11)
                 .aconst_null()
@@ -1046,7 +1091,8 @@ public final class ObjectWriterCreatorASM {
 
         mw.visitLabel(loopEnd);
         // generator.endArray()
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "endArray", "()V");
 
         mw.visitLabel(end);
@@ -1065,7 +1111,8 @@ public final class ObjectWriterCreatorASM {
         // list = bean.<field> (Unsafe-preferred)
         mw.aload(7);
         if (fi.field != null) {
-            mw.getstatic(classInternalName, "fo" + namePrefix, "J")
+            mw.chain()
+                    .getstatic(classInternalName, "fo" + namePrefix, "J")
                     .invokestatic(TYPE_JDK_UTILS, "getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;");
         } else if (fi.getter != null) {
             mw.invokevirtual(beanInternalName, fi.getter.getName(),
@@ -1076,7 +1123,8 @@ public final class ObjectWriterCreatorASM {
         mw.astore(8);
 
         Label end = new Label();
-        mw.aload(8)
+        mw.chain()
+                .aload(8)
                 .ifnull(end);
 
         // W#5: prefer per-length writeName1L/2L over writePreEncodedNameLongs.
@@ -1088,45 +1136,53 @@ public final class ObjectWriterCreatorASM {
         }
 
         // generator.startArray()
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "startArray", "()V");
 
         // Iterator-based loop
-        mw.aload(8)
+        mw.chain()
+                .aload(8)
                 .invokeinterface("java/util/List", "iterator", "()Ljava/util/Iterator;")
                 .astore(10);
 
         Label loopTop = new Label();
         Label loopEnd = new Label();
         mw.visitLabel(loopTop);
-        mw.aload(10)
+        mw.chain()
+                .aload(10)
                 .invokeinterface("java/util/Iterator", "hasNext", "()Z")
                 .ifeq(loopEnd);
 
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "beforeArrayValue", "()V");
 
-        mw.aload(10)
+        mw.chain()
+                .aload(10)
                 .invokeinterface("java/util/Iterator", "next", "()Ljava/lang/Object;")
                 .astore(11);
 
         mw.aload(11);
         Label notNullItem = new Label();
-        mw.ifnonnull(notNullItem)
+        mw.chain()
+                .ifnonnull(notNullItem)
                 .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "writeNull", "()V")
                 .goto_(loopTop);
 
         mw.visitLabel(notNullItem);
         // generator.writeString((String) item)
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .aload(11)
                 .checkcast("java/lang/String")
                 .invokevirtual(TYPE_JSON_GENERATOR, "writeString", "(Ljava/lang/String;)V")
                 .goto_(loopTop);
 
         mw.visitLabel(loopEnd);
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "endArray", "()V");
 
         mw.visitLabel(end);
@@ -1150,7 +1206,8 @@ public final class ObjectWriterCreatorASM {
         mw.astore(8);
 
         Label notNull = new Label();
-        mw.aload(8)
+        mw.chain()
+                .aload(8)
                 .ifnonnull(notNull);
         Label end = new Label();
         mw.goto_(end);
@@ -1163,7 +1220,8 @@ public final class ObjectWriterCreatorASM {
             mw.invokevirtual(TYPE_JSON_GENERATOR, "writePreEncodedNameLongs", "([JI[C[B)V");
         }
 
-        mw.aload(1)
+        mw.chain()
+                .aload(1)
                 .aload(8)
                 .invokevirtual(TYPE_JSON_GENERATOR, writeMethodName, writeMethodDesc);
 
@@ -1176,7 +1234,8 @@ public final class ObjectWriterCreatorASM {
      * Load name fields in the order expected by writeNameXxx: nl, nn, nb, nc
      */
     private static void loadNameFields(MethodWriter mw, String classInternalName, String namePrefix) {
-        mw.getstatic(classInternalName, "nl" + namePrefix, "[J")
+        mw.chain()
+                .getstatic(classInternalName, "nl" + namePrefix, "[J")
                 .getstatic(classInternalName, "nn" + namePrefix, "I")
                 .getstatic(classInternalName, "nb" + namePrefix, "[B")
                 .getstatic(classInternalName, "nc" + namePrefix, "[C");
@@ -1186,7 +1245,8 @@ public final class ObjectWriterCreatorASM {
      * Load name fields in the order expected by writePreEncodedNameLongs: nl, nn, nc, nb
      */
     private static void loadNameFieldsForPreEncoded(MethodWriter mw, String classInternalName, String namePrefix) {
-        mw.getstatic(classInternalName, "nl" + namePrefix, "[J")
+        mw.chain()
+                .getstatic(classInternalName, "nl" + namePrefix, "[J")
                 .getstatic(classInternalName, "nn" + namePrefix, "I")
                 .getstatic(classInternalName, "nc" + namePrefix, "[C")
                 .getstatic(classInternalName, "nb" + namePrefix, "[B");
@@ -1246,10 +1306,12 @@ public final class ObjectWriterCreatorASM {
         mw.aload(1); // generator
         mw.visitLdcInsn(packNameLong0(encodedName));
         if (len <= 8) {
-            mw.visitLdcInsn(len)
+            mw.chain()
+                    .visitLdcInsn(len)
                     .invokevirtual(TYPE_JSON_GENERATOR, "writeName1L", "(JI)V");
         } else {
-            mw.visitLdcInsn(packNameLong1(encodedName))
+            mw.chain()
+                    .visitLdcInsn(packNameLong1(encodedName))
                     .visitLdcInsn(len)
                     .invokevirtual(TYPE_JSON_GENERATOR, "writeName2L", "(JJI)V");
         }
