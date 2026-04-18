@@ -991,6 +991,7 @@ public final class ObjectReaderCreator {
                     // vs the previous if/else chain (O(N) worst case).
                     // For 22-field POJOs with 8+ type tags, the tableswitch
                     // is faster on average and more JIT-friendly.
+                    try {
                     switch (reader.typeTag) {
                     case FieldReader.TAG_STRING:
                         if (fi >= 0 && objReaders != null && objReaders[fi] != null) {
@@ -1056,6 +1057,11 @@ public final class ObjectReaderCreator {
                         readAndSetFieldUTF8Inline(utf8, instance, reader, fi, features, objReaders, elemReaders);
                         off = utf8.getOffset();
                         break;
+                    }
+                    } catch (RuntimeException e) {
+                        // Tag the in-flight field so a nested parse failure reports
+                        // "expected '{' at offset N (path: outer.address.city)".
+                        throw JSONException.wrapWithPath(e, reader.fieldName);
                     }
                     if (fi >= 0 && fi < 64) {
                         fieldSetMask |= (1L << fi);
@@ -1128,7 +1134,11 @@ public final class ObjectReaderCreator {
 
                 if (reader != null) {
                     int fi = reader.index;
-                    readAndSetFieldGeneric(parser, instance, reader, features);
+                    try {
+                        readAndSetFieldGeneric(parser, instance, reader, features);
+                    } catch (RuntimeException e) {
+                        throw JSONException.wrapWithPath(e, reader.fieldName);
+                    }
                     if (fi >= 0 && fi < 64) {
                         fieldSetMask |= (1L << fi);
                     }
@@ -1471,15 +1481,21 @@ public final class ObjectReaderCreator {
 
         private ArrayList<Object> readListPojoUTF8(JSONParser.UTF8 utf8, ObjectReader<?> elemReader, Class<?> elemClass, long features) {
             ArrayList<Object> list = new ArrayList<>(16);
+            int index = 0;
             for (;;) {
                 int peek = utf8.skipWSAndPeek();
                 if (peek == 'n' && utf8.readNull()) {
                     list.add(null);
                 } else {
-                    list.add(elemReader.readObjectUTF8(utf8, features));
+                    try {
+                        list.add(elemReader.readObjectUTF8(utf8, features));
+                    } catch (RuntimeException e) {
+                        throw JSONException.wrapWithPath(e, index);
+                    }
                 }
                 int sep = utf8.readArraySeparator();
                 if (sep == 0) {
+                    index++;
                     continue;
                 }
                 if (sep == 1) {
@@ -1577,12 +1593,17 @@ public final class ObjectReaderCreator {
 
         private ArrayList<Object> readListPojoGeneric(JSONParser parser, ObjectReader<?> elemReader, Class<?> elemClass, long features) {
             ArrayList<Object> list = new ArrayList<>();
+            int index = 0;
             for (;;) {
                 parser.skipWS();
                 if (parser.charAt(parser.getOffset()) == 'n' && parser.readNull()) {
                     list.add(null);
                 } else {
-                    list.add(elemReader.readObject(parser, elemClass, null, features));
+                    try {
+                        list.add(elemReader.readObject(parser, elemClass, null, features));
+                    } catch (RuntimeException e) {
+                        throw JSONException.wrapWithPath(e, index);
+                    }
                 }
                 parser.skipWS();
                 if (parser.charAt(parser.getOffset()) == ']') {
@@ -1591,6 +1612,7 @@ public final class ObjectReaderCreator {
                 }
                 if (parser.charAt(parser.getOffset()) == ',') {
                     parser.advance(1);
+                    index++;
                     continue;
                 }
                 throw new JSONException("expected ',' or ']'");
@@ -1712,17 +1734,23 @@ public final class ObjectReaderCreator {
 
         private ArrayList<Object> readListPojo(JSONParser parser, ObjectReader<?> elemReader, Class<?> elemClass, long features) {
             ArrayList<Object> list = new ArrayList<>();
+            int index = 0;
             for (;;) {
                 parser.skipWS();
                 if (parser.charAt(parser.getOffset()) == 'n' && parser.readNull()) {
                     list.add(null);
                 } else {
-                    list.add(elemReader.readObject(parser, elemClass, null, features));
+                    try {
+                        list.add(elemReader.readObject(parser, elemClass, null, features));
+                    } catch (RuntimeException e) {
+                        throw JSONException.wrapWithPath(e, index);
+                    }
                 }
                 parser.skipWS();
                 int c = parser.charAt(parser.getOffset());
                 if (c == ',') {
                     parser.advance(1);
+                    index++;
                     continue;
                 }
                 if (c == ']') {
@@ -2113,16 +2141,20 @@ public final class ObjectReaderCreator {
                     // ArrayList/LinkedHashMap.
                     utf8.setOffset(off);
                     Object value;
-                    int tag = reader.typeTag;
-                    if (tag == FieldReader.TAG_LIST || tag == FieldReader.TAG_SET
-                            || tag == FieldReader.TAG_MAP) {
-                        value = utf8.read(reader.fieldType);
-                    } else {
-                        value = utf8.readAny();
+                    try {
+                        int tag = reader.typeTag;
+                        if (tag == FieldReader.TAG_LIST || tag == FieldReader.TAG_SET
+                                || tag == FieldReader.TAG_MAP) {
+                            value = utf8.read(reader.fieldType);
+                        } else {
+                            value = utf8.readAny();
+                        }
+                        off = utf8.getOffset();
+                        int paramIdx = paramMapping[reader.index];
+                        values[paramIdx] = reader.convertValue(value);
+                    } catch (RuntimeException e) {
+                        throw JSONException.wrapWithPath(e, reader.fieldName);
                     }
-                    off = utf8.getOffset();
-                    int paramIdx = paramMapping[reader.index];
-                    values[paramIdx] = reader.convertValue(value);
                 } else {
                     if (errorOnUnknown) {
                         throw new JSONException("unknown property in " + objectClass.getName());
@@ -2160,16 +2192,20 @@ public final class ObjectReaderCreator {
                 for (FieldReader fr : fieldReaders) {
                     Object value = map.get(fr.fieldName);
                     if (value != null) {
-                        // Re-parse the raw value through the generic-aware path when
-                        // the record component is a resolved collection/map type so
-                        // elements arrive as the declared type, not raw LinkedHashMap.
-                        int tag = fr.typeTag;
-                        if (tag == FieldReader.TAG_LIST || tag == FieldReader.TAG_SET
-                                || tag == FieldReader.TAG_MAP) {
-                            value = com.alibaba.fastjson3.JSON.parseObject(
-                                    com.alibaba.fastjson3.JSON.toJSONString(value), fr.fieldType);
+                        try {
+                            // Re-parse the raw value through the generic-aware path when
+                            // the record component is a resolved collection/map type so
+                            // elements arrive as the declared type, not raw LinkedHashMap.
+                            int tag = fr.typeTag;
+                            if (tag == FieldReader.TAG_LIST || tag == FieldReader.TAG_SET
+                                    || tag == FieldReader.TAG_MAP) {
+                                value = com.alibaba.fastjson3.JSON.parseObject(
+                                        com.alibaba.fastjson3.JSON.toJSONString(value), fr.fieldType);
+                            }
+                            values[paramMapping[fr.index]] = fr.convertValue(value);
+                        } catch (RuntimeException e) {
+                            throw JSONException.wrapWithPath(e, fr.fieldName);
                         }
-                        values[paramMapping[fr.index]] = fr.convertValue(value);
                     }
                 }
                 return constructRecord(values);
