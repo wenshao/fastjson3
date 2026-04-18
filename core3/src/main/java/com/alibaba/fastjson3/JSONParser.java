@@ -1047,9 +1047,12 @@ public abstract sealed class JSONParser implements Closeable
         }
         for (;;) {
             String rawKey = readFieldName();
-            K key = convertMapKey(rawKey, keyType);
+            // Include convertMapKey in the try: typed-key conversion failures
+            // (Map<Integer, …>, Map<Enum, …>) should carry the key path too.
+            K key;
             V value;
             try {
+                key = convertMapKey(rawKey, keyType);
                 value = this.<V>read(valueType);
             } catch (RuntimeException e) {
                 throw JSONException.wrapWithPath(e, rawKey);

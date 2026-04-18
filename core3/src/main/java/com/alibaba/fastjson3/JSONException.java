@@ -113,9 +113,13 @@ public class JSONException extends RuntimeException {
         if (path == null || path.isEmpty()) {
             return rawMessage;
         }
-        StringBuilder sb = new StringBuilder(rawMessage.length() + 16 + path.size() * 8);
-        sb.append(rawMessage);
-        sb.append(" (path: ");
+        // rawMessage may legitimately be null (the Throwable contract allows
+        // null messages and callers may pass one through to our ctors). Use
+        // an empty prefix so we still surface the path rather than NPE.
+        String raw = rawMessage != null ? rawMessage : "";
+        StringBuilder sb = new StringBuilder(raw.length() + 16 + path.size() * 8);
+        sb.append(raw);
+        sb.append(raw.isEmpty() ? "(path: " : " (path: ");
         // Format outermost-first. Array / map-integer-key segments get
         // `[N]` with no preceding dot; field-name segments get a leading dot
         // except at the very start.

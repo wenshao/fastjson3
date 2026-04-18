@@ -174,4 +174,33 @@ public class ParseErrorPathTest {
         assertTrue(e.getMessage().contains("age"),
                 "message should include 'age': " + e.getMessage());
     }
+
+    // ==================== Null rawMessage with path — regression guard ====================
+
+    @Test
+    public void getMessageTolerantOfNullRawMessage() {
+        // Throwable allows a null message; getMessage() must not NPE when a
+        // path has been attached.
+        JSONException e = new JSONException(null);
+        e.prependPath("field");
+        String formatted = e.getMessage();
+        assertNotNull(formatted);
+        assertTrue(formatted.contains("(path: field)"),
+                "null raw + path should still format: " + formatted);
+    }
+
+    // ==================== Typed Map key conversion carries the key path ====================
+
+    @Test
+    public void mapIntegerKeyConversionFailureHasPath() {
+        // "abc" can't be parsed as Integer; previously the key-conversion
+        // throw site ran outside the path-tagging try/catch, so the breadcrumb
+        // was missing on Map<Integer, ?> conversion failures.
+        JSONException e = assertThrows(JSONException.class, () ->
+                JSON.parseObject("{\"abc\":1}", new TypeReference<Map<Integer, Integer>>() {}));
+        assertNotNull(e.getPath(), "map integer key conversion should attach path");
+        assertEquals("abc", e.getPath().get(0));
+        assertTrue(e.getMessage().contains("abc"),
+                "message should include failing key 'abc': " + e.getMessage());
+    }
 }
