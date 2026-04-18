@@ -133,4 +133,40 @@ public class RecordTest {
         Point p = JSON.parseObject(json, Point.class);
         assertNull(p);
     }
+
+    @Test
+    public void missingPrimitiveFieldErrorMessageIsUserFacing() {
+        // Record component 'y' is primitive int; JSON omits it.
+        // Pre-fix: JDK's MethodHandle adapter threw NullPointerException from
+        //   sun.invoke.util.ValueConversions.primitiveConversion, wrapped in
+        //   JSONException with zero user-facing context.
+        // Post-fix: detect the missing primitive slot before invoking the
+        //   canonical constructor and throw a clear message naming the field.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("{\"x\":1}", Point.class));
+        String msg = ex.getMessage();
+        assertTrue(msg.contains("required int field 'y'"),
+                "should name the missing primitive field; got: " + msg);
+        assertFalse(msg.contains("ValueConversions"),
+                "must not leak JDK internal class names; got: " + msg);
+        assertFalse(msg.contains("NullPointerException"),
+                "must not leak wrapped NPE type; got: " + msg);
+    }
+
+    @Test
+    public void missingPrimitiveFieldExplicitNullAlsoReported() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("{\"x\":1,\"y\":null}", Point.class));
+        assertTrue(ex.getMessage().contains("required int field 'y'"),
+                "should name the null-valued primitive field; got: " + ex.getMessage());
+    }
+
+    @Test
+    public void missingReferenceFieldPassesAsNull() {
+        // Reference-typed components tolerate missing values; only primitives
+        // require explicit reporting.
+        Item item = JSON.parseObject("{\"value\":7}", Item.class);
+        assertNull(item.name());
+        assertEquals(7, item.value());
+    }
 }
