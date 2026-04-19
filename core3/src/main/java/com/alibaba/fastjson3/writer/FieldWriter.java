@@ -691,7 +691,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         // Unwrapped: write nested object's fields directly into parent (no field name, no braces)
         if (unwrapped) {
-            ObjectWriter<Object> writer = resolveObjectWriter(value.getClass());
+            ObjectWriter<Object> writer = resolveObjectWriter(generator, value.getClass());
             if (writer instanceof ObjectWriterCreator.ReflectObjectWriter row) {
                 ObjectWriterCreator.writeFields(generator, row.writers, value, features);
             } else {
@@ -734,7 +734,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             Class<?> valueClass = value.getClass();
             ObjectWriter<Object> writer = cachedWriter;
             if (writer == null || cachedWriterClass != valueClass) {
-                writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(valueClass);
+                writer = (ObjectWriter<Object>) generator.effectiveMapper().getObjectWriter(valueClass);
                 if (writer != null) {
                     // Write class guard BEFORE writer data to prevent another thread
                     // from seeing new writer with stale class guard
@@ -823,7 +823,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
 
             ObjectWriter<Object> elemWriter = cachedWriter;
             if (elemWriter == null && elementClass != null) {
-                elemWriter = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(elementClass);
+                elemWriter = (ObjectWriter<Object>) generator.effectiveMapper().getObjectWriter(elementClass);
                 if (elemWriter != null) {
                     cachedWriter = elemWriter;
                 }
@@ -983,7 +983,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                             if (itemClass == previousClass) {
                                 writer = previousWriter;
                             } else {
-                                writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(itemClass);
+                                writer = (ObjectWriter<Object>) generator.effectiveMapper().getObjectWriter(itemClass);
                                 previousClass = itemClass;
                                 previousWriter = writer;
                             }
@@ -1014,7 +1014,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             return;
         }
         Class<?> itemClass = item.getClass();
-        ObjectWriter<Object> writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(itemClass);
+        ObjectWriter<Object> writer = (ObjectWriter<Object>) generator.effectiveMapper().getObjectWriter(itemClass);
         if (writer != null) {
             writer.write(generator, item, null, null, features);
         } else {
@@ -1026,7 +1026,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         generator.pushReference(value);
         try {
             Class<?> valueClass = value.getClass();
-            ObjectWriter<Object> writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(valueClass);
+            ObjectWriter<Object> writer = (ObjectWriter<Object>) generator.effectiveMapper().getObjectWriter(valueClass);
             if (writer != null) {
                 writer.write(generator, value, fieldName, fieldType, features);
             } else {
@@ -1038,10 +1038,10 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     }
 
     @SuppressWarnings("unchecked")
-    private ObjectWriter<Object> resolveObjectWriter(Class<?> valueClass) {
+    private ObjectWriter<Object> resolveObjectWriter(JSONGenerator generator, Class<?> valueClass) {
         ObjectWriter<Object> writer = cachedWriter;
         if (writer == null || cachedWriterClass != valueClass) {
-            writer = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(valueClass);
+            writer = (ObjectWriter<Object>) generator.effectiveMapper().getObjectWriter(valueClass);
             if (writer != null) {
                 cachedWriterClass = valueClass;
                 cachedWriter = writer;
@@ -1151,7 +1151,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         // Unwrapped: write nested fields directly (no name, no braces)
         if (unwrapped) {
-            ObjectWriter<Object> writer = resolveObjectWriter(value.getClass());
+            ObjectWriter<Object> writer = resolveObjectWriter(generator, value.getClass());
             if (writer instanceof ObjectWriterCreator.ReflectObjectWriter row) {
                 ObjectWriterCreator.writeFields(generator, row.writers, value, features);
             } else {

@@ -151,6 +151,24 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     protected int writeDepth;
     protected final boolean pretty;
     public boolean isPretty() { return pretty; }
+
+    /**
+     * Owning {@link ObjectMapper} — null when the generator was created outside a
+     * mapper context (e.g. direct construction by test code). Set by the mapper's
+     * {@code writeValueAsString}/{@code writeValueAsBytes} entries so nested writer
+     * lookups honour mapper-specific mix-ins and registered writers instead of
+     * falling through to {@link ObjectMapper#shared()}.
+     */
+    public ObjectMapper owner;
+
+    /**
+     * Return the mapper whose configuration should drive nested writer lookups
+     * during this serialisation. Defaults to {@link ObjectMapper#shared()} when
+     * no owner was attached.
+     */
+    public ObjectMapper effectiveMapper() {
+        return owner != null ? owner : ObjectMapper.shared();
+    }
     protected final boolean bigDecimalPlain;
     protected final boolean longAsString;
     protected final boolean nonStringAsString;
@@ -864,9 +882,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeInstant(date.toInstant());
             }
         } else {
-            // Try ObjectWriter-based serialization
+            // Try ObjectWriter-based serialization via the owning mapper so mix-in /
+            // registerWriter configurations attached to a custom mapper drive nested
+            // polymorphic discriminator emission.
             @SuppressWarnings("unchecked")
-            ObjectWriter<Object> objectWriter = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(value.getClass());
+            ObjectWriter<Object> objectWriter = (ObjectWriter<Object>) effectiveMapper().getObjectWriter(value.getClass());
             if (objectWriter != null) {
                 objectWriter.write(this, value, null, null, features);
             } else {

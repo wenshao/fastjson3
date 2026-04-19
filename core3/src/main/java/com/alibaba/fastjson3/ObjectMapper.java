@@ -1252,6 +1252,7 @@ public final class ObjectMapper {
             ObjectWriter<Object> writer = (ObjectWriter<Object>) getObjectWriter(obj.getClass());
             if (writer != null) {
                 try (JSONGenerator.UTF8 gen = (JSONGenerator.UTF8) JSONGenerator.ofUTF8()) {
+                    gen.owner = this;
                     writer.write(gen, obj, null, null, 0);
                     String result = gen.toStringLatin1();
                     if (result != null) {
@@ -1262,6 +1263,7 @@ public final class ObjectMapper {
             }
         }
         try (JSONGenerator generator = createCharGenerator(features)) {
+            generator.owner = this;
             applyFilters(generator);
             writeValue0(generator, obj, features);
             return generator.toString();
@@ -1292,6 +1294,7 @@ public final class ObjectMapper {
             return "null".getBytes(StandardCharsets.UTF_8);
         }
         try (JSONGenerator generator = createUTF8Generator(features)) {
+            generator.owner = this;
             applyFilters(generator);
             writeValue0(generator, obj, features);
             return generator.toByteArray();
@@ -2123,6 +2126,7 @@ public final class ObjectMapper {
                 return "null";
             }
             try (JSONGenerator generator = features != 0 ? new JSONGenerator.Char(features) : JSONGenerator.of()) {
+                generator.owner = mapper;
                 writeValue0(generator, obj);
                 return generator.toString();
             }
@@ -2136,6 +2140,7 @@ public final class ObjectMapper {
                 return "null".getBytes(StandardCharsets.UTF_8);
             }
             try (JSONGenerator generator = features != 0 ? new JSONGenerator.UTF8(features) : JSONGenerator.ofUTF8()) {
+                generator.owner = mapper;
                 writeValue0(generator, obj);
                 return generator.toByteArray();
             }

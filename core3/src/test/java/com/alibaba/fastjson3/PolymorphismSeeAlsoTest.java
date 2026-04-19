@@ -269,4 +269,63 @@ public class PolymorphismSeeAlsoTest {
         assertTrue(msg.contains("seeAlso") || msg.contains("sealed") || msg.contains("JsonTypeInfo"),
                 "must point at remedies: " + msg);
     }
+
+    // ==================== Custom mapper context propagates to nested writers ====================
+    //
+    // Polymorphic metadata attached to a non-shared mapper via addMixIn must reach
+    // nested field / collection element serialisation. Prior to the fix, nested
+    // writer lookups went through ObjectMapper.shared(), silently dropping the
+    // custom mapper's mix-in so a bean field typed Animal emitted no discriminator.
+
+    public static abstract class Pet {
+        public String name;
+    }
+
+    public static class PetCat extends Pet {
+    }
+
+    public static class PetDog extends Pet {
+    }
+
+    @JSONType(seeAlso = {PetCat.class, PetDog.class}, typeKey = "petKind")
+    public interface PetMixIn {
+    }
+
+    public static class PetOwner {
+        public String id;
+        public Pet pet;
+    }
+
+    @Test
+    public void customMapperMixInReachesNestedFieldWriter() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(Pet.class, PetMixIn.class)
+                .build();
+
+        PetOwner owner = new PetOwner();
+        owner.id = "o1";
+        PetCat c = new PetCat();
+        c.name = "Whiskers";
+        owner.pet = c;
+
+        String json = mapper.writeValueAsString(owner);
+        assertTrue(json.contains("\"petKind\":\"PetCat\""),
+                "nested polymorphic field must see the mapper's mix-in: " + json);
+    }
+
+    @Test
+    public void customMapperMixInReachesCollectionElementWriter() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(Pet.class, PetMixIn.class)
+                .build();
+
+        PetCat c = new PetCat();
+        c.name = "W";
+        PetDog d = new PetDog();
+        d.name = "R";
+
+        String json = mapper.writeValueAsString(java.util.List.of(c, d));
+        assertTrue(json.contains("\"petKind\":\"PetCat\""), json);
+        assertTrue(json.contains("\"petKind\":\"PetDog\""), json);
+    }
 }
