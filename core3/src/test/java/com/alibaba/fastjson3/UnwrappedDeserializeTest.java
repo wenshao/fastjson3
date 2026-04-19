@@ -653,4 +653,74 @@ public class UnwrappedDeserializeTest {
             com.alibaba.fastjson3.reader.ObjectReaderCreator.MIXIN_CONTEXT.remove();
         }
     }
+
+    // ==================== Nested unwrapped inside record / constructor ====================
+    //
+    // The writer already double-flattens a record that wraps an unwrapped POJO
+    // which itself wraps another unwrapped POJO. The reader must round-trip that
+    // shape — prior to the fix, expandRecordUnwrapped refused to walk the chain.
+
+    public static class DeepHandle {
+        public String nick;
+    }
+
+    public static class DeepName {
+        @JSONField(unwrapped = true)
+        public DeepHandle handle;
+        public String first;
+    }
+
+    public record DeepCelebrityRecord(
+            @JSONField(unwrapped = true) DeepName name,
+            int fame
+    ) {
+    }
+
+    @Test
+    public void recordDoubleUnwrappedParse() {
+        // Hand-craft the double-flattened shape (matches what the writer emits
+        // for mutable double-unwrap). The reader must walk the intermediate
+        // holder chain: component `name` = new DeepName, then DeepName.handle
+        // = new DeepHandle, then set nick on Handle.
+        DeepCelebrityRecord back = JSON.parse(
+                "{\"nick\":\"Prince\",\"first\":\"Mononymous\",\"fame\":11}",
+                DeepCelebrityRecord.class);
+        assertEquals(11, back.fame());
+        assertNotNull(back.name());
+        assertEquals("Mononymous", back.name().first);
+        assertNotNull(back.name().handle);
+        assertEquals("Prince", back.name().handle.nick);
+    }
+
+    public static final class DeepCelebrityCtor {
+        private final DeepName name;
+        private final int fame;
+
+        @com.alibaba.fastjson3.annotation.JSONCreator(parameterNames = {"name", "fame"})
+        public DeepCelebrityCtor(
+                @JSONField(unwrapped = true) DeepName name,
+                int fame) {
+            this.name = name;
+            this.fame = fame;
+        }
+
+        public DeepName getName() {
+            return name;
+        }
+
+        public int getFame() {
+            return fame;
+        }
+    }
+
+    @Test
+    public void constructorDoubleUnwrappedRoundTrip() {
+        DeepCelebrityCtor back = JSON.parse(
+                "{\"nick\":\"P\",\"first\":\"M\",\"fame\":9}", DeepCelebrityCtor.class);
+        assertEquals(9, back.getFame());
+        assertNotNull(back.getName());
+        assertEquals("M", back.getName().first);
+        assertNotNull(back.getName().handle);
+        assertEquals("P", back.getName().handle.nick);
+    }
 }

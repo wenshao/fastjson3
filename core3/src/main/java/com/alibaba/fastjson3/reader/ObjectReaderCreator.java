@@ -332,13 +332,19 @@ public final class ObjectReaderCreator {
         for (FieldReader innerFr : innerCollection.fieldReaders) {
             sink.add(new RecordUnwrappedEntry(componentIdx, innerClass, innerFr));
         }
-        // Two-level nesting inside a record unwrap is out of scope for now — inner
-        // @JSONField(unwrapped=true) would need a second holder chain. Reject so
-        // users see a clear limitation rather than silent drops.
-        if (innerCollection.unwrappedEntries != null && !innerCollection.unwrappedEntries.isEmpty()) {
-            throw new JSONException("@JSONField(unwrapped=true) at component #" + componentIdx
-                    + ": inner type " + innerClass.getName() + " cannot itself declare"
-                    + " @JSONField(unwrapped=true) (nested unwrap not supported for records)");
+        // Nested unwrapped inside the component: the inner class itself declares
+        // @JSONField(unwrapped=true), producing a deeper holder chain. Carry each
+        // leaf through so double-flattened JSON emitted by the writer round-trips.
+        // For a leaf inside `NestedName(@unwrapped Handle handle, String first)`
+        // referenced from `record Person(@unwrapped NestedName name, int age)`,
+        // the entry ends up keyed by "nick" with intermediateChain=[name.handle]
+        // so ensureRecordScratch can construct NestedName, then Handle, before
+        // writing the leaf field.
+        if (innerCollection.unwrappedEntries != null) {
+            for (UnwrappedEntry deep : innerCollection.unwrappedEntries) {
+                sink.add(new RecordUnwrappedEntry(componentIdx, innerClass,
+                        deep.holderChain, deep.holderClasses, deep.innerReader));
+            }
         }
     }
 
@@ -548,14 +554,32 @@ public final class ObjectReaderCreator {
      * the canonical constructor at the correct parameter index.
      */
     static final class RecordUnwrappedEntry {
+        static final Field[] EMPTY_CHAIN = new Field[0];
+        static final Class<?>[] EMPTY_CLASSES = new Class<?>[0];
+
         final int componentIdx;
         final Class<?> innerClass;
+        // Chain of intermediate holder Fields inside the component type when the
+        // inner class itself has @JSONField(unwrapped=true). Empty for the direct
+        // case. For `record Person(@unwrapped NestedName name, int age)` where
+        // NestedName has `@unwrapped Handle handle`, a leaf entry for Handle.nick
+        // carries intermediateChain=[NestedName.handle], classes=[Handle].
+        final Field[] intermediateChain;
+        final Class<?>[] intermediateClasses;
         final FieldReader innerReader;
         volatile ObjectReader<?> customReader;
 
         RecordUnwrappedEntry(int componentIdx, Class<?> innerClass, FieldReader innerReader) {
+            this(componentIdx, innerClass, EMPTY_CHAIN, EMPTY_CLASSES, innerReader);
+        }
+
+        RecordUnwrappedEntry(int componentIdx, Class<?> innerClass,
+                             Field[] intermediateChain, Class<?>[] intermediateClasses,
+                             FieldReader innerReader) {
             this.componentIdx = componentIdx;
             this.innerClass = innerClass;
+            this.intermediateChain = intermediateChain;
+            this.intermediateClasses = intermediateClasses;
             this.innerReader = innerReader;
         }
 
@@ -2618,7 +2642,32 @@ public final class ObjectReaderCreator {
                 }
                 values[entry.componentIdx] = scratch;
             }
-            return scratch;
+            // Walk intermediate holder chain inside the scratch when the entry
+            // represents a nested unwrapped hop (inner class itself declares
+            // @JSONField(unwrapped=true)). Each hop lazily constructs + attaches
+            // the intermediate POJO on demand, mirroring ensureUnwrappedTarget
+            // for mutable outer classes.
+            Object target = scratch;
+            for (int i = 0; i < entry.intermediateChain.length; i++) {
+                Field holder = entry.intermediateChain[i];
+                try {
+                    holder.setAccessible(true);
+                    Object next = holder.get(target);
+                    if (next == null) {
+                        next = entry.intermediateClasses[i].getDeclaredConstructor().newInstance();
+                        holder.set(target, next);
+                    }
+                    target = next;
+                } catch (NoSuchMethodException e) {
+                    throw new JSONException("@JSONField(unwrapped=true) requires "
+                            + entry.intermediateClasses[i].getName() + " to declare a no-arg constructor", e);
+                } catch (ReflectiveOperationException e) {
+                    throw new JSONException("cannot construct unwrapped intermediate "
+                            + entry.intermediateClasses[i].getName() + " for field '" + holder.getName()
+                            + "': " + e.getMessage(), e);
+                }
+            }
+            return target;
         }
 
         private boolean writeRecordUnwrapped(JSONParser parser, Object[] values, String fname, long features) {
