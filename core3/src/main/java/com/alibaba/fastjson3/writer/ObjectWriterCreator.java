@@ -386,6 +386,12 @@ public final class ObjectWriterCreator {
             // Prefer backing field for Unsafe direct access (avoids Method.invoke overhead)
             Type fieldType = method.getGenericReturnType();
             Class<?> fieldClass = method.getReturnType();
+            if (customWriter == null && fieldClass.isEnum()) {
+                // Enum type declares @JSONField(value=true) / @JsonValue on one of its methods —
+                // route the field through that single-value writer instead of TYPE_ENUM's
+                // ordinal-based name cache.
+                customWriter = findValueWriter(fieldClass, null, useJacksonAnnotation);
+            }
             // Detect List<T> element type for specialized List serialization
             // Skip specialization when field has custom features/unwrapped (not supported by ofList)
             if (List.class.isAssignableFrom(fieldClass) && fieldFeatures == 0 && !unwrapped
@@ -485,6 +491,11 @@ public final class ObjectWriterCreator {
             String label = resolveLabel(jsonField, null, mixIn);
             long fieldFeatures = resolveFieldFeatures(jsonField);
             boolean unwrapped = jsonField != null && jsonField.unwrapped();
+
+            Class<?> publicFieldClass = field.getType();
+            if (customWriter == null && publicFieldClass.isEnum()) {
+                customWriter = findValueWriter(publicFieldClass, null, useJacksonAnnotation);
+            }
 
             field.setAccessible(true);
             writerMap.put(propertyName, FieldWriter.ofField(
