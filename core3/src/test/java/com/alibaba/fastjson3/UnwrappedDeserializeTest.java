@@ -139,4 +139,58 @@ public class UnwrappedDeserializeTest {
                         Person.class, ReadFeature.ErrorOnUnknownProperties));
         assertTrue(ex.getMessage().contains("unknown"), ex.getMessage());
     }
+
+    // ==================== Double-unwrap (nested @JSONField(unwrapped=true)) ====================
+
+    public static class Handle {
+        public String nick;
+    }
+
+    public static class NestedName {
+        @JSONField(unwrapped = true)
+        public Handle handle;
+        public String first;
+    }
+
+    public static class Celebrity {
+        @JSONField(unwrapped = true)
+        public NestedName name;
+        public int fame;
+    }
+
+    @Test
+    public void doubleUnwrapRoundTrip() {
+        Celebrity c = new Celebrity();
+        c.name = new NestedName();
+        c.name.first = "Mononymous";
+        c.name.handle = new Handle();
+        c.name.handle.nick = "Prince";
+        c.fame = 11;
+
+        String json = MAPPER.writeValueAsString(c);
+        assertTrue(json.contains("\"nick\":\"Prince\""), json);
+        assertTrue(json.contains("\"first\":\"Mononymous\""), json);
+        assertTrue(json.contains("\"fame\":11"), json);
+
+        Celebrity back = JSON.parse(json, Celebrity.class);
+        assertEquals(11, back.fame);
+        assertNotNull(back.name);
+        assertEquals("Mononymous", back.name.first);
+        assertNotNull(back.name.handle);
+        assertEquals("Prince", back.name.handle.nick);
+    }
+
+    // ==================== Non-UTF8 parser path (non-ASCII input) ====================
+
+    @Test
+    public void unwrappedWorksOnStringPathWithNonAscii() {
+        // Non-ASCII characters route parsing through the generic Str path in some
+        // entry points; unwrapped routing must be available in readObjectGeneric,
+        // not only in the UTF8 fast loop.
+        Person back = JSON.parseObject("{\"first\":\"张\",\"last\":\"伟\",\"age\":7}", Person.class);
+        assertEquals(7, back.age);
+        assertNotNull(back.name);
+        assertEquals("张", back.name.first);
+        assertEquals("伟", back.name.last);
+    }
 }
