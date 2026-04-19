@@ -197,4 +197,76 @@ public class PolymorphismSeeAlsoTest {
         assertEquals(78, parsed.area);
         assertEquals(5.0, ((ThirdPartyCircle) parsed).radius);
     }
+
+    @Test
+    public void mixInOnlySeeAlsoRoundTripViaWriter() {
+        // Writer must honour the mix-in's @JSONType so the emitted discriminator
+        // matches what the reader reads.
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(ThirdPartyShape.class, ShapeMixIn.class)
+                .build();
+
+        ThirdPartyCircle c = new ThirdPartyCircle();
+        c.area = 78;
+        c.radius = 5.0;
+
+        String json = mapper.writeValueAsString(c);
+        assertTrue(json.contains("\"shape\":\"ThirdPartyCircle\""),
+                "writer must emit mix-in-derived typeKey: " + json);
+
+        ThirdPartyShape back = mapper.readValue(json, ThirdPartyShape.class);
+        assertInstanceOf(ThirdPartyCircle.class, back);
+        assertEquals(78, back.area);
+    }
+
+    // ==================== Deep interface hierarchy — ancestor recursion ====================
+    //
+    // Impl → MidInterface → BaseInterface(@JSONType). Prior to the fix the writer
+    // only looked at direct interfaces, so Impl emitted "@type" instead of
+    // BaseInterface's custom typeKey, breaking round-trip.
+
+    @JSONType(seeAlso = {Impl.class}, typeKey = "level")
+    public interface BaseInterface {
+    }
+
+    public interface MidInterface extends BaseInterface {
+    }
+
+    @JSONType(typeName = "impl")
+    public static class Impl implements MidInterface {
+        public String label;
+    }
+
+    @Test
+    public void deepInterfaceHierarchyInheritsTypeKey() {
+        Impl i = new Impl();
+        i.label = "hi";
+        String json = MAPPER.writeValueAsString(i);
+        assertTrue(json.contains("\"level\":\"impl\""),
+                "subtype must inherit typeKey from BaseInterface across MidInterface: " + json);
+
+        BaseInterface back = JSON.parse(json, BaseInterface.class);
+        assertInstanceOf(Impl.class, back);
+        assertEquals("hi", ((Impl) back).label);
+    }
+
+    // ==================== List of abstract types without registration ====================
+    //
+    // Prior to the fix, readList on an abstract element type silently cast raw
+    // JSONObject elements to AbstractBase, leading to later ClassCastException.
+    // Now it raises the targeted registration error at the list level.
+
+    public static abstract class NoRegBase {
+        public int x;
+    }
+
+    @Test
+    public void parseListOfAbstractWithoutRegistrationErrorsEarly() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseList("[{\"x\":1},{\"x\":2}]", NoRegBase.class));
+        String msg = ex.getMessage();
+        assertTrue(msg.contains("abstract") || msg.contains("interface"), msg);
+        assertTrue(msg.contains("seeAlso") || msg.contains("sealed") || msg.contains("JsonTypeInfo"),
+                "must point at remedies: " + msg);
+    }
 }

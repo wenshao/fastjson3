@@ -632,25 +632,13 @@ public final class ObjectReaderCreator {
     // ==================== Internal ObjectReader implementation ====================
 
     /**
-     * Create an ObjectReader for a sealed class/interface that auto-discovers permitted subtypes.
-     * Uses the typeKey from @JSONType (default "@type") and typeName from each subtype's @JSONType.
-     * Built once at creation time — zero hot-path overhead.
+     * Create an ObjectReader for a sealed class/interface (or a non-sealed abstract
+     * parent / interface with {@code @JSONType(seeAlso=...)}). Uses the typeKey from
+     * the supplied {@code jsonType} (resolved from the target class or its mix-in)
+     * — {@code "@type"} by default — and the typeName from each subtype's
+     * {@code @JSONType}, falling back to simple class name. Built once at creation
+     * time so the hot path is zero-overhead dispatch.
      */
-    @SuppressWarnings("unchecked")
-    private static <T> ObjectReader<T> createSealedReader(Class<T> sealedType, Class<?> mixIn) {
-        // Overload retained for callers that haven't resolved mix-in metadata.
-        // The primary entry below accepts a pre-resolved JSONType so a mix-in-only
-        // polymorphic registration (addMixIn(Base.class, BaseMixIn.class) where
-        // BaseMixIn carries @JSONType(seeAlso=...)) routes through createSealedReader
-        // instead of getting dropped when sealedType.getAnnotation(JSONType.class)
-        // returns null.
-        JSONType jsonType = sealedType.getAnnotation(JSONType.class);
-        if (jsonType == null && mixIn != null) {
-            jsonType = mixIn.getAnnotation(JSONType.class);
-        }
-        return createSealedReader(sealedType, jsonType, mixIn);
-    }
-
     @SuppressWarnings("unchecked")
     private static <T> ObjectReader<T> createSealedReader(Class<T> sealedType, JSONType jsonType, Class<?> mixIn) {
         String typeKey = (jsonType != null && !jsonType.typeKey().isEmpty()) ? jsonType.typeKey() : "@type";

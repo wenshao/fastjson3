@@ -824,6 +824,7 @@ public final class ObjectMapper {
                 return null;
             }
             ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
+            assertElementTypeDeserializable(type, objectReader);
             List<T> list = new ArrayList<>(array.size());
             for (int i = 0, size = array.size(); i < size; i++) {
                 Object item = array.get(i);
@@ -842,6 +843,25 @@ public final class ObjectMapper {
                 }
             }
             return list;
+        }
+    }
+
+    /**
+     * When the element type is abstract/interface and no reader was registered,
+     * the list path would otherwise silently emit raw {@code JSONObject} elements
+     * that later fail with {@code ClassCastException}. Raise a targeted error at
+     * the point of failure so users get the actionable polymorphic-registration
+     * hint instead.
+     */
+    private static void assertElementTypeDeserializable(Class<?> type, ObjectReader<?> reader) {
+        if (reader != null) {
+            return;
+        }
+        if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
+            throw new JSONException("cannot deserialize list elements of "
+                    + (type.isInterface() ? "interface" : "abstract class") + " " + type.getName()
+                    + ": register subtypes via @JSONType(seeAlso=..., typeKey=...),"
+                    + " make the type sealed, or use Jackson @JsonTypeInfo + @JsonSubTypes");
         }
     }
 
@@ -866,6 +886,7 @@ public final class ObjectMapper {
                 return null;
             }
             ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
+            assertElementTypeDeserializable(type, objectReader);
             List<T> list = new ArrayList<>(array.size());
             for (int i = 0, size = array.size(); i < size; i++) {
                 Object item = array.get(i);
@@ -1599,7 +1620,7 @@ public final class ObjectMapper {
                             | WriteFeature.IgnoreNonFieldGetter.mask)) != 0) {
                     // When annotations/mixIns/serializable checks are needed, use ObjectWriterCreator directly
                     Class<?> mixIn = mixInCache.get(rawType);
-                    writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation, writeFeatures);
+                    writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation, writeFeatures, mixInCache);
                 } else if (writerCreator != null) {
                     writer = writerCreator.apply(rawType);
                 } else if (writerProvider != null) {
