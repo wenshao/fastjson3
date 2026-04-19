@@ -96,12 +96,18 @@ public final class ObjectReaderCreator {
             return createConstructorReader(type, contextType, constructor, mixIn, useJacksonAnnotation);
         }
 
-        boolean useUnsafeAlloc = JDKUtils.UNSAFE_AVAILABLE;
-
         FieldReaderCollection collection = collectFieldReaders(type, contextType, mixIn, useJacksonAnnotation);
 
         // Scan for @JSONField(anySetter=true) or Jackson @JsonAnySetter
         Method anySetter = findAnySetterMethod(type, mixIn, useJacksonAnnotation);
+
+        // Prefer Unsafe allocation for the common POJO case — bean fields get overwritten by
+        // the parse path anyway, so skipping the constructor is safe and faster. Exception:
+        // when the class declares an anySetter, its backing storage is typically an instance
+        // field with an initializer (private Map<String,Object> extra = new LinkedHashMap<>()),
+        // and Unsafe.allocateInstance skips initializers. Fall back to the no-arg constructor
+        // so the map is non-null before the first anySetter.put() call.
+        boolean useUnsafeAlloc = JDKUtils.UNSAFE_AVAILABLE && anySetter == null;
 
         // Parse class-level @JSONType(schema=)
         JSONSchema typeSchema = parseTypeSchema(type);
