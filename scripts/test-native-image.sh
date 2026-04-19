@@ -65,8 +65,44 @@ cat > "$BUILD_DIR/user-meta/META-INF/native-image/fastjson3-ni-test/reachability
       "type": "com.alibaba.fastjson3.NativeImageTest$User",
       "unsafeAllocated": true,
       "allDeclaredFields": true,
+      "methods": [{ "name": "<init>", "parameterTypes": [] }]
+    },
+    {
+      "type": "com.alibaba.fastjson3.NativeImageTest$Address",
+      "unsafeAllocated": true,
+      "allDeclaredFields": true,
+      "methods": [{ "name": "<init>", "parameterTypes": [] }]
+    },
+    {
+      "type": "com.alibaba.fastjson3.NativeImageTest$UserWithAddress",
+      "unsafeAllocated": true,
+      "allDeclaredFields": true,
+      "methods": [{ "name": "<init>", "parameterTypes": [] }]
+    },
+    {
+      "type": "com.alibaba.fastjson3.NativeImageTest$Box",
+      "unsafeAllocated": true,
+      "allDeclaredFields": true,
+      "methods": [{ "name": "<init>", "parameterTypes": [] }]
+    },
+    {
+      "type": "com.alibaba.fastjson3.NativeImageTest$BeanBox",
+      "unsafeAllocated": true,
+      "allDeclaredFields": true,
+      "methods": [{ "name": "<init>", "parameterTypes": [] }]
+    },
+    {
+      "type": "com.alibaba.fastjson3.NativeImageTest$LargeBean",
+      "unsafeAllocated": true,
+      "allDeclaredFields": true,
+      "methods": [{ "name": "<init>", "parameterTypes": [] }]
+    },
+    {
+      "type": "com.alibaba.fastjson3.NativeImageTest$RecordUser",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
       "methods": [
-        { "name": "<init>", "parameterTypes": [] }
+        { "name": "<init>", "parameterTypes": ["java.lang.String", "int"] }
       ]
     }
   ]
