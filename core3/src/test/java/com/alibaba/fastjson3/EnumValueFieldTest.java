@@ -151,4 +151,83 @@ public class EnumValueFieldTest {
         PlainBean back = JSON.parse(json, PlainBean.class);
         assertEquals(PlainEnum.B, back.e);
     }
+
+    // ==================== Ordinal fallback preserved for numeric value enums ====================
+    //
+    // A user whose enum has @JSONField(value=true) returning a code may still receive JSON
+    // that sends the enum's ordinal (legacy client, mixed ecosystem). The Number path must
+    // probe the value-map WITHOUT throwing on miss so the ordinal fallback stays reachable.
+
+    public enum Channel {
+        SMS(100), EMAIL(101);
+
+        private final int code;
+
+        Channel(int c) {
+            this.code = c;
+        }
+
+        @JSONField(value = true)
+        public int getCode() {
+            return code;
+        }
+    }
+
+    public static class Notification {
+        public String subject;
+        public Channel channel;
+    }
+
+    @Test
+    public void numericEnumValueCodeHits() {
+        // JSON uses the value-method code 101 → EMAIL.
+        Notification back = JSON.parse("{\"subject\":\"hi\",\"channel\":101}", Notification.class);
+        assertEquals(Channel.EMAIL, back.channel);
+    }
+
+    @Test
+    public void numericEnumOrdinalFallbackStillWorks() {
+        // JSON uses ordinal 0 (SMS) — must still resolve after the value-map probe misses.
+        Notification back = JSON.parse("{\"subject\":\"hi\",\"channel\":0}", Notification.class);
+        assertEquals(Channel.SMS, back.channel);
+    }
+
+    // ==================== Jackson @JsonValue symmetric with writer ====================
+
+    public enum Tier {
+        GOLD("gold"), SILVER("silver");
+
+        private final String label;
+
+        Tier(String l) {
+            this.label = l;
+        }
+
+        @com.fasterxml.jackson.annotation.JsonValue
+        public String getLabel() {
+            return label;
+        }
+    }
+
+    public static class Membership {
+        public String user;
+        public Tier tier;
+    }
+
+    @Test
+    public void jacksonJsonValueEnumReadBack() {
+        ObjectMapper m = ObjectMapper.builder().useJacksonAnnotation(true).build();
+        Membership src = new Membership();
+        src.user = "alice";
+        src.tier = Tier.GOLD;
+        String json = m.writeValueAsString(src);
+        assertTrue(json.contains("\"tier\":\"gold\""), json);
+
+        Membership back = m.readValue(json, Membership.class);
+        assertEquals(Tier.GOLD, back.tier);
+
+        // Lenient name-based read still works for callers that emit enum.name().
+        Membership lenient = m.readValue("{\"user\":\"bob\",\"tier\":\"SILVER\"}", Membership.class);
+        assertEquals(Tier.SILVER, lenient.tier);
+    }
 }

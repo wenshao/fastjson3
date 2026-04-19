@@ -653,8 +653,20 @@ public final class FieldReader implements Comparable<FieldReader> {
             if (value instanceof Number number) {
                 // When the enum has a numeric @JSONField(value=true) accessor, try value-map first
                 // (e.g. Priority.HIGH has getCode() == 1, so JSON 1 must map back to HIGH, not ordinal(1)).
+                // Use a non-throwing probe so a value-map miss still falls through to the
+                // ordinal fallback below — callers that historically sent enum ordinals
+                // must keep working even when the enum grows a value-method.
                 if (enumValueMap != null) {
-                    Object mapped = resolveEnumValue(number);
+                    Object mapped = enumValueMap.get(number);
+                    if (mapped == null) {
+                        for (java.util.Map.Entry<Object, Object> e : enumValueMap.entrySet()) {
+                            Object k = e.getKey();
+                            if (k instanceof Number kn && kn.longValue() == number.longValue()) {
+                                mapped = e.getValue();
+                                break;
+                            }
+                        }
+                    }
                     if (mapped != null) {
                         return mapped;
                     }
@@ -749,6 +761,21 @@ public final class FieldReader implements Comparable<FieldReader> {
             if (jf != null && jf.value()) {
                 valueMethod = m;
                 break;
+            }
+            // Jackson @JsonValue — detected unconditionally so the reader stays
+            // symmetric with the writer's findValueWriter which honours @JsonValue
+            // when useJacksonAnnotation is enabled. The annotation's presence is
+            // explicit user intent; mirroring it on the read side avoids a
+            // round-trip break for enum-field serialization via @JsonValue.
+            try {
+                com.alibaba.fastjson3.annotation.JacksonAnnotationSupport.FieldInfo ji
+                        = com.alibaba.fastjson3.annotation.JacksonAnnotationSupport.getFieldInfo(m.getAnnotations());
+                if (ji != null && ji.isValue()) {
+                    valueMethod = m;
+                    break;
+                }
+            } catch (Throwable ignored) {
+                // Jackson annotations off the classpath — skip silently.
             }
         }
         if (valueMethod == null) {
