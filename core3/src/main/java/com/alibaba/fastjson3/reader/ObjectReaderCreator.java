@@ -431,11 +431,36 @@ public final class ObjectReaderCreator {
         final Field[] holderChain;       // [outerHolder, midHolder, ...] — index 0 is the direct parent field
         final Class<?>[] holderClasses;  // erased type of each holder, for no-arg construction
         final FieldReader innerReader;   // FieldReader for the deepest target class's field
+        volatile ObjectReader<?> customReader; // lazily-instantiated @JSONField(deserializeUsing=) instance
 
         UnwrappedEntry(Field[] holderChain, Class<?>[] holderClasses, FieldReader innerReader) {
             this.holderChain = holderChain;
             this.holderClasses = holderClasses;
             this.innerReader = innerReader;
+        }
+
+        /**
+         * Return the custom {@code @JSONField(deserializeUsing=)} ObjectReader for this
+         * route's target field, lazily instantiated via the annotation's declared class.
+         * Returns null if the field has no custom deserialiser. Cached on the entry so
+         * subsequent writes through the same name reuse the instance.
+         */
+        ObjectReader<?> resolveCustomReader() {
+            if (innerReader.deserializeUsingClass == null) {
+                return null;
+            }
+            ObjectReader<?> r = customReader;
+            if (r != null) {
+                return r;
+            }
+            try {
+                r = (ObjectReader<?>) innerReader.deserializeUsingClass.getDeclaredConstructor().newInstance();
+                customReader = r;
+                return r;
+            } catch (Exception e) {
+                throw new JSONException("cannot instantiate deserializeUsing: "
+                        + innerReader.deserializeUsingClass.getName(), e);
+            }
         }
     }
 
@@ -492,21 +517,6 @@ public final class ObjectReaderCreator {
                 continue;
             }
 
-            // @JSONField(unwrapped=true) on deserialization: don't register this field
-            // as a top-level reader. Instead, expand the inner POJO's FieldReaders and
-            // route by their JSON names via the unwrappedEntries side table so the read
-            // loop can lazily construct the inner and delegate field writes.
-            if (annotation != null && annotation.unwrapped()
-                    && !Modifier.isStatic(field.getModifiers())
-                    && !field.getType().isPrimitive()) {
-                if (unwrappedEntries == null) {
-                    unwrappedEntries = new ArrayList<>();
-                }
-                expandUnwrappedField(field, mixIn, useJacksonAnnotation, unwrappedEntries, processedNames);
-                processedNames.add(field.getName());
-                continue;
-            }
-
             // Jackson field annotations as fallback
             JacksonAnnotationSupport.FieldInfo jacksonField = null;
             if (annotation == null && useJacksonAnnotation) {
@@ -530,6 +540,21 @@ public final class ObjectReaderCreator {
                 continue;
             }
             if (Modifier.isStatic(field.getModifiers()) || Modifier.isTransient(field.getModifiers())) {
+                continue;
+            }
+
+            // @JSONField(unwrapped=true) on deserialization: don't register this field
+            // as a top-level reader. Instead, expand the inner POJO's FieldReaders and
+            // route by their JSON names via the unwrappedEntries side table so the read
+            // loop can lazily construct the inner and delegate field writes.
+            // Placed AFTER the eligibility filters (ignores/includes/transient/visibility)
+            // so an excluded holder field never contributes routes.
+            if (annotation != null && annotation.unwrapped() && !field.getType().isPrimitive()) {
+                if (unwrappedEntries == null) {
+                    unwrappedEntries = new ArrayList<>();
+                }
+                expandUnwrappedField(field, mixIn, useJacksonAnnotation, unwrappedEntries, processedNames);
+                processedNames.add(field.getName());
                 continue;
             }
 
@@ -1226,9 +1251,7 @@ public final class ObjectReaderCreator {
                         UnwrappedEntry entry = unwrappedByName.get(fname);
                         if (entry != null) {
                             Object inner = ensureUnwrappedTarget(instance, entry);
-                            Object fvalue = utf8.readAny();
-                            Object converted = entry.innerReader.convertValue(fvalue);
-                            entry.innerReader.setFieldValue(inner, converted);
+                            writeUnwrappedValue(utf8, inner, entry, features);
                             off = utf8.getOffset();
                             handled = true;
                         } else {
@@ -1278,6 +1301,27 @@ public final class ObjectReaderCreator {
         }
 
         /**
+         * Read and assign a value for an @JSONField(unwrapped=true) inner field. Honours
+         * @JSONField(deserializeUsing=...) declared on the inner field so custom per-field
+         * deserialisers participate even when the field surfaces as a flattened key at the
+         * outer level. Fields without a custom deserialiser go through
+         * {@code readAny} + {@code convertValue} — sufficient for primitives, enums, and
+         * nested POJOs (convertValue handles Map→POJO via JSON round-trip).
+         */
+        private static void writeUnwrappedValue(JSONParser parser, Object inner, UnwrappedEntry entry, long features) {
+            FieldReader innerFr = entry.innerReader;
+            ObjectReader<?> custom = entry.resolveCustomReader();
+            if (custom != null) {
+                Object v = custom.readObject(parser, innerFr.fieldType, innerFr.fieldName, features);
+                innerFr.setFieldValue(inner, v);
+                return;
+            }
+            Object fvalue = parser.readAny();
+            Object converted = innerFr.convertValue(fvalue);
+            innerFr.setFieldValue(inner, converted);
+        }
+
+        /**
          * Walk the holder chain, lazily constructing each intermediate POJO as needed.
          * Subsequent hits on fields routed through the same chain return the cached
          * instance so multiple JSON keys collapse into a single inner-type graph.
@@ -1295,6 +1339,13 @@ public final class ObjectReaderCreator {
                         holder.set(target, next);
                     }
                     target = next;
+                } catch (NoSuchMethodException e) {
+                    // Be specific about the no-arg-constructor requirement — types that
+                    // need a parameterised creator (Kotlin data, @JSONCreator with params,
+                    // Records) cannot be lazily constructed by the unwrapped reader.
+                    throw new JSONException("@JSONField(unwrapped=true) requires "
+                            + classes[i].getName() + " to declare a no-arg constructor"
+                            + " (cannot lazily construct via the unwrapped reader)", e);
                 } catch (ReflectiveOperationException e) {
                     throw new JSONException("cannot construct unwrapped inner " + classes[i].getName()
                             + " for field '" + holder.getName() + "': " + e.getMessage(), e);
@@ -1352,9 +1403,7 @@ public final class ObjectReaderCreator {
                         UnwrappedEntry entry = unwrappedByName.get(fname);
                         if (entry != null) {
                             Object inner = ensureUnwrappedTarget(instance, entry);
-                            Object fvalue = parser.readAny();
-                            Object converted = entry.innerReader.convertValue(fvalue);
-                            entry.innerReader.setFieldValue(inner, converted);
+                            writeUnwrappedValue(parser, inner, entry, features);
                             handled = true;
                         } else {
                             parser.setOffset(fieldStart);
@@ -2046,13 +2095,33 @@ public final class ObjectReaderCreator {
                 }
             }
 
-            // Handle @JSONField(anySetter=true) for unmapped fields
-            if (anySetterMethod != null) {
+            // Route unmapped keys to the @JSONField(unwrapped=true) side table before
+            // falling through to anySetter — mirrors the parser-based loops so behavior
+            // is consistent regardless of which entry point converts the JSONObject.
+            if (unwrappedByName != null || anySetterMethod != null) {
                 java.util.Set<String> knownNames = fieldReaderMap.keySet();
                 for (var entry : jsonObj.entrySet()) {
-                    if (!knownNames.contains(entry.getKey())) {
+                    String key = entry.getKey();
+                    if (knownNames.contains(key)) {
+                        continue;
+                    }
+                    if (unwrappedByName != null) {
+                        UnwrappedEntry ue = unwrappedByName.get(key);
+                        if (ue != null) {
+                            Object target = ensureUnwrappedTarget(instance, ue);
+                            // This path feeds already-parsed values, so custom
+                            // deserialiseUsing classes that expect a live parser can't
+                            // participate here — the conversion goes through
+                            // FieldReader.convertValue which already handles Map→POJO
+                            // via toJSONString/parseObject for nested types.
+                            Object converted = ue.innerReader.convertValue(entry.getValue());
+                            ue.innerReader.setFieldValue(target, converted);
+                            continue;
+                        }
+                    }
+                    if (anySetterMethod != null) {
                         try {
-                            anySetterMethod.invoke(instance, entry.getKey(), entry.getValue());
+                            anySetterMethod.invoke(instance, key, entry.getValue());
                         } catch (Exception e) {
                             throw new JSONException("anySetter error: " + e.getMessage(), e);
                         }

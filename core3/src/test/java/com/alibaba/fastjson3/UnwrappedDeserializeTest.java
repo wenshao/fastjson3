@@ -193,4 +193,76 @@ public class UnwrappedDeserializeTest {
         assertEquals("张", back.name.first);
         assertEquals("伟", back.name.last);
     }
+
+    // ==================== Custom @JSONField(deserializeUsing=) on unwrapped inner field ====================
+
+    public static class MoneyInner {
+        @JSONField(deserializeUsing = MoneyReader.class)
+        public java.math.BigDecimal amount;
+    }
+
+    public static class InvoicePayload {
+        @JSONField(unwrapped = true)
+        public MoneyInner money;
+        public String id;
+    }
+
+    public static class MoneyReader implements com.alibaba.fastjson3.ObjectReader<java.math.BigDecimal> {
+        @Override
+        public java.math.BigDecimal readObject(JSONParser p, java.lang.reflect.Type type, Object name, long features) {
+            String s = p.readString();
+            if (s == null) {
+                return null;
+            }
+            if (s.startsWith("$")) {
+                s = s.substring(1);
+            }
+            return new java.math.BigDecimal(s);
+        }
+    }
+
+    @Test
+    public void unwrappedHonoursCustomDeserializeUsing() {
+        InvoicePayload back = JSON.parse("{\"id\":\"inv1\",\"amount\":\"$42.50\"}", InvoicePayload.class);
+        assertEquals("inv1", back.id);
+        assertNotNull(back.money);
+        assertEquals(new java.math.BigDecimal("42.50"), back.money.amount);
+    }
+
+    // ==================== Holder eligibility — ignored holder is skipped ====================
+
+    @com.alibaba.fastjson3.annotation.JSONType(ignores = {"name"})
+    public static class IgnoredHolder {
+        @JSONField(unwrapped = true)
+        public Name name;
+        public int age;
+    }
+
+    @Test
+    public void ignoredHolderSkipped() {
+        IgnoredHolder back = JSON.parse("{\"first\":\"X\",\"last\":\"Y\",\"age\":3}", IgnoredHolder.class);
+        assertEquals(3, back.age);
+        assertNull(back.name, "ignored holder must not be hydrated from inner keys");
+    }
+
+    // ==================== No-arg constructor validated up front ====================
+
+    public static class ParamOnlyInner {
+        public final String v;
+        public ParamOnlyInner(String v) {
+            this.v = v;
+        }
+    }
+
+    public static class ParamOnlyHolder {
+        @JSONField(unwrapped = true)
+        public ParamOnlyInner inner;
+    }
+
+    @Test
+    public void noArgCtorValidationFailsWithClearMessage() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parse("{\"v\":\"hi\"}", ParamOnlyHolder.class));
+        assertTrue(ex.getMessage().contains("no-arg constructor"), ex.getMessage());
+    }
 }
