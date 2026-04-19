@@ -847,18 +847,19 @@ public final class ObjectMapper {
     }
 
     /**
-     * When the element type is abstract/interface and no reader was registered,
-     * the list path would otherwise silently emit raw {@code JSONObject} elements
-     * that later fail with {@code ClassCastException}. Raise a targeted error at
-     * the point of failure so users get the actionable polymorphic-registration
-     * hint instead.
+     * When the element / value type is abstract or interface and no reader was
+     * registered, the collection path would otherwise silently emit raw
+     * {@code JSONObject} values that later fail with {@code ClassCastException}.
+     * Raise a targeted error at the point of failure so users get the actionable
+     * polymorphic-registration hint instead. Shared by {@code readList},
+     * {@code readSet}, and {@code readMap}.
      */
     private static void assertElementTypeDeserializable(Class<?> type, ObjectReader<?> reader) {
         if (reader != null) {
             return;
         }
         if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
-            throw new JSONException("cannot deserialize list elements of "
+            throw new JSONException("cannot deserialize collection values of "
                     + (type.isInterface() ? "interface" : "abstract class") + " " + type.getName()
                     + ": register subtypes via @JSONType(seeAlso=..., typeKey=...),"
                     + " make the type sealed, or use Jackson @JsonTypeInfo + @JsonSubTypes");
@@ -972,6 +973,7 @@ public final class ObjectMapper {
                 return null;
             }
             ObjectReader<V> objectReader = (ObjectReader<V>) getObjectReader(valueType);
+            assertElementTypeDeserializable(valueType, objectReader);
             java.util.Map<String, V> map = new java.util.LinkedHashMap<>(object.size());
             for (String key : object.keySet()) {
                 Object item = object.get(key);
@@ -1012,6 +1014,7 @@ public final class ObjectMapper {
                 return null;
             }
             ObjectReader<V> objectReader = (ObjectReader<V>) getObjectReader(valueType);
+            assertElementTypeDeserializable(valueType, objectReader);
             java.util.Map<String, V> map = new java.util.LinkedHashMap<>(object.size());
             for (String key : object.keySet()) {
                 Object item = object.get(key);

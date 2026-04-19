@@ -1102,7 +1102,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         buf[pos++] = '['; buf[pos++] = ']'; buf[pos++] = ',';
                         return pos;
                     }
-                    com.alibaba.fastjson3.writer.FieldWriter[] elemFws = getElementWriters(fw.elementClass);
+                    com.alibaba.fastjson3.writer.FieldWriter[] elemFws = getElementWriters(gen, fw.elementClass);
                     if (elemFws != null) {
                         pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
                         buf[pos++] = '[';
@@ -1216,20 +1216,23 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
     }
 
-    // Cache for element type FieldWriters (for LIST_OBJECT inline serialization)
-    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, com.alibaba.fastjson3.writer.FieldWriter[]>
-            ELEMENT_WRITERS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
-
-    private static com.alibaba.fastjson3.writer.FieldWriter[] getElementWriters(Class<?> elementClass) {
-        return ELEMENT_WRITERS_CACHE.computeIfAbsent(elementClass, cls -> {
-            try {
-                com.alibaba.fastjson3.ObjectWriter<?> w = com.alibaba.fastjson3.writer.ObjectWriterCreator.createObjectWriter(cls);
-                if (w instanceof com.alibaba.fastjson3.writer.ObjectWriterCreator.ReflectObjectWriter rw) {
-                    return rw.writers;
-                }
-            } catch (Exception ignored) {}
-            return null;
-        });
+    /**
+     * Resolve the inline FieldWriter[] for a TYPE_LIST_OBJECT element type via the
+     * owning mapper's per-type writer cache, so mapper-specific mix-ins / registered
+     * writers / polymorphic discriminators applied to the element type are honoured
+     * when serialising nested list fields. Falling back to ObjectMapper.shared() when
+     * owner is null preserves the pre-existing behaviour for generators constructed
+     * outside a mapper context.
+     */
+    private static com.alibaba.fastjson3.writer.FieldWriter[] getElementWriters(UTF8 gen, Class<?> elementClass) {
+        try {
+            com.alibaba.fastjson3.ObjectWriter<?> w = gen.effectiveMapper().getObjectWriter(elementClass);
+            if (w instanceof com.alibaba.fastjson3.writer.ObjectWriterCreator.ReflectObjectWriter rw) {
+                return rw.writers;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     // ---- Static field-writing paths (no braces, called between startObject/endObject) ----

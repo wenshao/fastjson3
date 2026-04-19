@@ -328,4 +328,46 @@ public class PolymorphismSeeAlsoTest {
         assertTrue(json.contains("\"petKind\":\"PetCat\""), json);
         assertTrue(json.contains("\"petKind\":\"PetDog\""), json);
     }
+
+    // ==================== TYPE_LIST_OBJECT static fast path ====================
+    //
+    // The element-writer cache used by the TYPE_LIST_OBJECT static fast path used
+    // to be keyed globally with no mapper context, so a `List<Pet> pets` field
+    // dropped the mapper-specific mix-in and emitted elements with no
+    // discriminator. Now the cache resolves via the owning mapper.
+
+    public static class PetOwnerWithList {
+        public String id;
+        public java.util.List<Pet> pets;
+    }
+
+    @Test
+    public void customMapperMixInReachesTypeListObjectFastPath() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(Pet.class, PetMixIn.class)
+                .build();
+
+        PetOwnerWithList owner = new PetOwnerWithList();
+        owner.id = "o2";
+        PetCat c = new PetCat(); c.name = "W";
+        PetDog d = new PetDog(); d.name = "R";
+        owner.pets = java.util.List.of(c, d);
+
+        String json = mapper.writeValueAsString(owner);
+        assertTrue(json.contains("\"petKind\":\"PetCat\""),
+                "List<Pet> field writer must see the mapper's mix-in: " + json);
+        assertTrue(json.contains("\"petKind\":\"PetDog\""), json);
+    }
+
+    // ==================== readMap of abstract value type ====================
+
+    @Test
+    public void parseMapOfAbstractValueWithoutRegistrationErrorsEarly() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseMap("{\"a\":{\"x\":1}}", NoRegBase.class));
+        String msg = ex.getMessage();
+        assertTrue(msg.contains("abstract") || msg.contains("interface"), msg);
+        assertTrue(msg.contains("seeAlso") || msg.contains("sealed") || msg.contains("JsonTypeInfo"),
+                "must point at remedies: " + msg);
+    }
 }
