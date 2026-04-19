@@ -140,6 +140,32 @@ public class AnySetterInitializerTest {
         assertEquals(42, ((Number) parsed.extra.get("size")).intValue());
     }
 
+    // ==================== Mix-in inheritance — annotations come from a parent interface ====================
+
+    public interface BaseExtensibleMixIn {
+        @JSONField(anyGetter = true)
+        Map<String, Object> getExtra();
+
+        @JSONField(anySetter = true)
+        void put(String key, Object value);
+    }
+
+    public interface ChildExtensibleMixIn extends BaseExtensibleMixIn {
+        // Empty — annotations come from the parent interface.
+    }
+
+    @Test
+    public void inheritedMixInAnySetter() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(ThirdPartyExtensible.class, ChildExtensibleMixIn.class)
+                .build();
+
+        ThirdPartyExtensible parsed = mapper.readValue(
+                "{\"id\":\"y\",\"tag\":\"blue\"}", ThirdPartyExtensible.class);
+        assertEquals("y", parsed.id);
+        assertEquals("blue", parsed.extra.get("tag"));
+    }
+
     @Test
     public void plainClassStillSkipsConstructorWhenUnsafeAvailable() {
         // This test pins the existing perf behavior: for classes WITHOUT an anySetter,

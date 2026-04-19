@@ -2463,16 +2463,54 @@ public final class ObjectReaderCreator {
      * Locate the mix-in method whose signature matches {@code targetMethod}. Matches by
      * exact name + parameter types — used for lookup of method-level annotations that
      * don't follow the JavaBean setter naming convention (like anySetter / anyGetter).
+     *
+     * Walks {@code getMethods()} first so inherited annotations from a parent mix-in
+     * interface (e.g. {@code ChildMixIn extends BaseMixIn}) are visible, then falls
+     * back to {@code getDeclaredMethods()} so package-private mix-in methods are
+     * still discoverable.
      */
     private static Method findMixInMethod(Class<?> mixIn, Method targetMethod) {
-        for (Method m : mixIn.getDeclaredMethods()) {
-            if (m.getName().equals(targetMethod.getName())
-                    && m.getParameterCount() == targetMethod.getParameterCount()
-                    && java.util.Arrays.equals(m.getParameterTypes(), targetMethod.getParameterTypes())) {
+        String name = targetMethod.getName();
+        Class<?>[] params = targetMethod.getParameterTypes();
+        for (Method m : mixIn.getMethods()) {
+            if (m.getName().equals(name) && java.util.Arrays.equals(m.getParameterTypes(), params)) {
                 return m;
             }
         }
+        for (Class<?> c = mixIn; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Method m : c.getDeclaredMethods()) {
+                if (m.getName().equals(name) && java.util.Arrays.equals(m.getParameterTypes(), params)) {
+                    return m;
+                }
+            }
+        }
+        for (Class<?> iface : collectAllInterfaces(mixIn)) {
+            for (Method m : iface.getDeclaredMethods()) {
+                if (m.getName().equals(name) && java.util.Arrays.equals(m.getParameterTypes(), params)) {
+                    return m;
+                }
+            }
+        }
         return null;
+    }
+
+    private static java.util.Set<Class<?>> collectAllInterfaces(Class<?> start) {
+        java.util.Set<Class<?>> out = new java.util.LinkedHashSet<>();
+        java.util.Deque<Class<?>> stack = new java.util.ArrayDeque<>();
+        stack.push(start);
+        while (!stack.isEmpty()) {
+            Class<?> c = stack.pop();
+            for (Class<?> iface : c.getInterfaces()) {
+                if (out.add(iface)) {
+                    stack.push(iface);
+                }
+            }
+            Class<?> sup = c.getSuperclass();
+            if (sup != null && sup != Object.class) {
+                stack.push(sup);
+            }
+        }
+        return out;
     }
 
     private static <A extends java.lang.annotation.Annotation> A findMixInMethodAnnotation(
