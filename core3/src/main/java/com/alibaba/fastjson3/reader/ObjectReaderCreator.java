@@ -79,12 +79,32 @@ public final class ObjectReaderCreator {
             return createSealedReader(type, mixIn);
         }
 
+        // @JSONType(seeAlso=...) on abstract class or interface: manual polymorphic
+        // registration for non-sealed hierarchies. Reuses createSealedReader's logic
+        // since that method already honours seeAlso; we just need to route here.
+        JSONType typeAnnotation = type.getAnnotation(JSONType.class);
+        if (typeAnnotation == null && mixIn != null) {
+            typeAnnotation = mixIn.getAnnotation(JSONType.class);
+        }
+        if (typeAnnotation != null && typeAnnotation.seeAlso().length > 0
+                && (type.isInterface() || Modifier.isAbstract(type.getModifiers()))) {
+            return createSealedReader(type, mixIn);
+        }
+
         // Jackson @JsonTypeInfo + @JsonSubTypes: polymorphic deserialization for non-sealed types
         if (useJacksonAnnotation) {
             JacksonAnnotationSupport.BeanInfo jacksonBean = JacksonAnnotationSupport.getBeanInfo(type);
             if (jacksonBean != null && jacksonBean.typeKey() != null && jacksonBean.subTypes() != null) {
                 return createJacksonPolymorphicReader(type, mixIn, jacksonBean.typeKey(), jacksonBean.subTypes());
             }
+        }
+
+        // Abstract class or interface without polymorphic info: no way to construct.
+        // Return null so the caller (JSONParser.read) can raise a targeted error
+        // that distinguishes "no registered reader (maybe handled by a parser
+        // special case)" from "abstract type with no discriminator registered".
+        if (type.isInterface() || Modifier.isAbstract(type.getModifiers())) {
+            return null;
         }
 
         Constructor<T> constructor = resolveConstructor(type, mixIn, useJacksonAnnotation);
@@ -617,8 +637,12 @@ public final class ObjectReaderCreator {
         JSONType jsonType = sealedType.getAnnotation(JSONType.class);
         String typeKey = (jsonType != null && !jsonType.typeKey().isEmpty()) ? jsonType.typeKey() : "@type";
 
-        // Auto-discover permitted subtypes (includes seeAlso for manual overrides)
-        Class<?>[] permitted = sealedType.getPermittedSubclasses();
+        // Auto-discover permitted subtypes (includes seeAlso for manual overrides).
+        // getPermittedSubclasses() returns null for non-sealed types (this path is
+        // also used for @JSONType(seeAlso) on abstract/interface types without `sealed`).
+        Class<?>[] permitted = sealedType.isSealed()
+                ? sealedType.getPermittedSubclasses()
+                : new Class<?>[0];
         Class<?>[] seeAlso = (jsonType != null) ? jsonType.seeAlso() : new Class<?>[0];
 
         // Build typeName → subtype map, eagerly create ObjectReaders

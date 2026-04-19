@@ -208,6 +208,17 @@ public final class ObjectWriterCreator {
                 }
             }
         }
+        if (typeName == null || typeKey == null) {
+            JSONType ancestor = findSeeAlsoAncestor(type);
+            if (ancestor != null) {
+                if (typeKey == null) {
+                    typeKey = !ancestor.typeKey().isEmpty() ? ancestor.typeKey() : "@type";
+                }
+                if (typeName == null) {
+                    typeName = type.getSimpleName();
+                }
+            }
+        }
         return buildObjectWriter(writers, null, typeName, typeKey);
     }
 
@@ -556,6 +567,17 @@ public final class ObjectWriterCreator {
                 typeKey = jacksonBean.typeKey();
                 if (typeName == null) {
                     typeName = resolveJacksonTypeName(type, jacksonBean);
+                }
+            }
+        }
+        if (typeName == null || typeKey == null) {
+            JSONType ancestor = findSeeAlsoAncestor(type);
+            if (ancestor != null) {
+                if (typeKey == null) {
+                    typeKey = !ancestor.typeKey().isEmpty() ? ancestor.typeKey() : "@type";
+                }
+                if (typeName == null) {
+                    typeName = type.getSimpleName();
                 }
             }
         }
@@ -969,6 +991,38 @@ public final class ObjectWriterCreator {
             }
         }
         return type.getSimpleName();
+    }
+
+    /**
+     * Walk ancestors looking for an {@code @JSONType(seeAlso=...)} that registers {@code type}
+     * as a polymorphic subtype. Returns the discovered parent annotation so the subtype writer
+     * can inherit {@code typeKey}/{@code typeName} defaults — otherwise round-trip with a
+     * parent-only discriminator config breaks because the subtype emits "@type" while the
+     * parent reader expects the parent's custom {@code typeKey}.
+     */
+    private static JSONType findSeeAlsoAncestor(Class<?> type) {
+        for (Class<?> cur = type.getSuperclass(); cur != null && cur != Object.class; cur = cur.getSuperclass()) {
+            JSONType a = cur.getAnnotation(JSONType.class);
+            if (a != null && containsType(a.seeAlso(), type)) {
+                return a;
+            }
+        }
+        for (Class<?> iface : type.getInterfaces()) {
+            JSONType a = iface.getAnnotation(JSONType.class);
+            if (a != null && containsType(a.seeAlso(), type)) {
+                return a;
+            }
+        }
+        return null;
+    }
+
+    private static boolean containsType(Class<?>[] array, Class<?> target) {
+        for (Class<?> c : array) {
+            if (c == target) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
