@@ -781,6 +781,44 @@ public class UnwrappedDeserializeTest {
     public interface ChildUnwrappedMixIn extends BaseUnwrappedMixIn {
     }
 
+    // ==================== readFromJSONObject honours ErrorOnUnknownProperties ====================
+    //
+    // The JSONObject fast path used by sealed / Jackson polymorphic readers used
+    // to silently ignore unknown keys when no anySetter was registered. It must
+    // mirror the parser-based loops: throw under ErrorOnUnknownProperties.
+
+    public sealed interface JsonObjectStrictBase permits JsonObjectStrictImpl {
+    }
+
+    @com.alibaba.fastjson3.annotation.JSONType(typeName = "strict")
+    public static final class JsonObjectStrictImpl implements JsonObjectStrictBase {
+        public int x;
+    }
+
+    @Test
+    public void readFromJsonObjectHonoursErrorOnUnknown() {
+        // Sealed-interface dispatch materialises a JSONObject and calls
+        // readFromJSONObject. The unknown "junk" key must surface under
+        // ErrorOnUnknownProperties, same as the streaming paths.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject(
+                        "{\"@type\":\"strict\",\"x\":5,\"junk\":\"nope\"}",
+                        JsonObjectStrictBase.class,
+                        ReadFeature.ErrorOnUnknownProperties));
+        assertTrue(ex.getMessage().contains("unknown"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("junk"), ex.getMessage());
+    }
+
+    @Test
+    public void readFromJsonObjectAcceptsKnownKeysUnderErrorOnUnknown() {
+        JsonObjectStrictBase back = JSON.parseObject(
+                "{\"@type\":\"strict\",\"x\":7}",
+                JsonObjectStrictBase.class,
+                ReadFeature.ErrorOnUnknownProperties);
+        assertInstanceOf(JsonObjectStrictImpl.class, back);
+        assertEquals(7, ((JsonObjectStrictImpl) back).x);
+    }
+
     @Test
     public void autoProviderRejectsAsmForInheritedMixInUnwrapped() {
         // hasUnwrappedField must recurse through interface inheritance so a

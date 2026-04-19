@@ -1100,9 +1100,11 @@ public final class ObjectReaderCreator {
                                 + typeName + "'");
             }
 
-            // Fast path: read directly from JSONObject (no byte[] round-trip)
+            // Fast path: read directly from JSONObject (no byte[] round-trip).
+            // Pass the typeKey so the sub-reader's strict-unknown check skips it —
+            // the discriminator is not a "real" property of the subtype.
             if (subReader instanceof ReflectionObjectReader<?> reflectReader) {
-                return (T) reflectReader.readFromJSONObject(jsonObj, features);
+                return (T) reflectReader.readFromJSONObject(jsonObj, features, typeKey);
             }
             // Fallback for ASM-generated readers
             byte[] bytes = com.alibaba.fastjson3.JSON.toJSONBytes(jsonObj);
@@ -1141,9 +1143,10 @@ public final class ObjectReaderCreator {
                         "cannot determine subtype, unknown type discriminator value '"
                                 + typeName + "'");
             }
-            // Fast path: read directly from JSONObject (no byte[] round-trip)
+            // Fast path: read directly from JSONObject (no byte[] round-trip).
+            // Pass the typeKey so the sub-reader's strict-unknown check skips it.
             if (subReader instanceof ReflectionObjectReader<?> reflectReader) {
-                return (T) reflectReader.readFromJSONObject(jsonObj, features);
+                return (T) reflectReader.readFromJSONObject(jsonObj, features, typeKey);
             }
             // Fallback for ASM-generated readers
             byte[] bytes = com.alibaba.fastjson3.JSON.toJSONBytes(jsonObj);
@@ -2364,8 +2367,19 @@ public final class ObjectReaderCreator {
          * Read directly from a JSONObject without byte[] round-trip.
          * Used by polymorphic readers (sealed class, Jackson @JsonTypeInfo) to
          * avoid the serialize→parse cycle after type discriminator inspection.
+         * Back-compat overload — equivalent to passing {@code discriminatorKey=null}.
          */
         T readFromJSONObject(com.alibaba.fastjson3.JSONObject jsonObj, long features) {
+            return readFromJSONObject(jsonObj, features, null);
+        }
+
+        /**
+         * Variant used by polymorphic dispatch that passes the resolved discriminator
+         * key so the strict-unknown check can skip it (the sealed / Jackson polymorphic
+         * readers call this after extracting the subtype — the discriminator key is
+         * not a "real" property of the sub-reader's type).
+         */
+        T readFromJSONObject(com.alibaba.fastjson3.JSONObject jsonObj, long features, String discriminatorKey) {
             ensureFieldReaders();
             T instance = createInstance(features);
             long fieldSetMask = 0;
@@ -2396,11 +2410,18 @@ public final class ObjectReaderCreator {
             // Route unmapped keys to the @JSONField(unwrapped=true) side table before
             // falling through to anySetter — mirrors the parser-based loops so behavior
             // is consistent regardless of which entry point converts the JSONObject.
-            if (unwrappedByName != null || anySetterMethod != null) {
+            boolean errorOnUnknown = (features & ReadFeature.ErrorOnUnknownProperties.mask) != 0;
+            if (unwrappedByName != null || anySetterMethod != null || errorOnUnknown) {
                 java.util.Set<String> knownNames = fieldReaderMap.keySet();
                 for (var entry : jsonObj.entrySet()) {
                     String key = entry.getKey();
                     if (knownNames.contains(key)) {
+                        continue;
+                    }
+                    // Polymorphic discriminator belongs to the parent reader, not this
+                    // sub-reader's type. Skip it so ErrorOnUnknownProperties + anySetter
+                    // don't mistakenly treat the type-key as a real user property.
+                    if (discriminatorKey != null && discriminatorKey.equals(key)) {
                         continue;
                     }
                     if (unwrappedByName != null) {
@@ -2418,6 +2439,15 @@ public final class ObjectReaderCreator {
                         } catch (Exception e) {
                             throw new JSONException("anySetter error: " + e.getMessage(), e);
                         }
+                        continue;
+                    }
+                    if (errorOnUnknown) {
+                        // Mirror the parser-based loops. Sealed / Jackson polymorphic flows
+                        // materialize a JSONObject and call readFromJSONObject directly, so
+                        // without this check ErrorOnUnknownProperties was silently ignored
+                        // on those entry points.
+                        throw new JSONException("unknown property '" + key
+                                + "' in " + objectClass.getName());
                     }
                 }
             }
