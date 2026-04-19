@@ -174,6 +174,7 @@ public final class ObjectReaderCreator {
         }
 
         List<FieldReader> fieldReaderList = new ArrayList<>();
+        List<RecordUnwrappedEntry> recordUnwrapped = null;
         for (int i = 0; i < componentNames.length; i++) {
             String rawName = componentNames[i];
             Field field = null;
@@ -191,6 +192,19 @@ public final class ObjectReaderCreator {
                     annotation = mixInField.getAnnotation(JSONField.class);
                 } catch (NoSuchFieldException ignored) {
                 }
+            }
+
+            // @JSONField(unwrapped=true) on a record component: don't register a
+            // regular FieldReader — collect the inner's FieldReaders in a parallel
+            // side table keyed by (component index, inner reader) so the record
+            // reader can stage a scratch inner into the canonical constructor slot.
+            if (annotation != null && annotation.unwrapped()
+                    && !componentTypes[i].isPrimitive()) {
+                if (recordUnwrapped == null) {
+                    recordUnwrapped = new ArrayList<>();
+                }
+                expandRecordUnwrapped(i, componentTypes[i], useJacksonAnnotation, recordUnwrapped);
+                continue;
             }
 
             // Jackson field annotations as fallback
@@ -264,7 +278,35 @@ public final class ObjectReaderCreator {
         }
 
         return new RecordObjectReader<>(type, constructor, collection.fieldReaders,
-                collection.fieldReaderMap, collection.matcher, componentTypes.length, paramMapping);
+                collection.fieldReaderMap, collection.matcher, componentTypes.length, paramMapping,
+                recordUnwrapped);
+    }
+
+    /**
+     * Resolve the inner POJO's FieldReaders for a record component / constructor
+     * parameter annotated with @JSONField(unwrapped=true), and stage them in the
+     * record-side unwrapped list keyed by component index.
+     */
+    private static void expandRecordUnwrapped(int componentIdx, Class<?> innerClass,
+                                               boolean useJacksonAnnotation,
+                                               List<RecordUnwrappedEntry> sink) {
+        if (innerClass.isInterface() || Modifier.isAbstract(innerClass.getModifiers())
+                || JDKUtils.isRecord(innerClass)) {
+            throw new JSONException("@JSONField(unwrapped=true) at component #" + componentIdx
+                    + ": inner type " + innerClass.getName() + " must be a concrete POJO");
+        }
+        FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, null, useJacksonAnnotation);
+        for (FieldReader innerFr : innerCollection.fieldReaders) {
+            sink.add(new RecordUnwrappedEntry(componentIdx, innerClass, innerFr));
+        }
+        // Two-level nesting inside a record unwrap is out of scope for now — inner
+        // @JSONField(unwrapped=true) would need a second holder chain. Reject so
+        // users see a clear limitation rather than silent drops.
+        if (innerCollection.unwrappedEntries != null && !innerCollection.unwrappedEntries.isEmpty()) {
+            throw new JSONException("@JSONField(unwrapped=true) at component #" + componentIdx
+                    + ": inner type " + innerClass.getName() + " cannot itself declare"
+                    + " @JSONField(unwrapped=true) (nested unwrap not supported for records)");
+        }
     }
 
     /**
@@ -303,6 +345,7 @@ public final class ObjectReaderCreator {
 
         // Build FieldReaders from fields (in declaration order = constructor parameter order)
         List<FieldReader> fieldReaderList = new ArrayList<>();
+        List<RecordUnwrappedEntry> ctorUnwrapped = null;
         for (int i = 0; i < instanceFields.size() && i < paramTypes.length; i++) {
             Field field = instanceFields.get(i);
             field.setAccessible(true);
@@ -316,6 +359,26 @@ public final class ObjectReaderCreator {
             JSONField annotation = field.getAnnotation(JSONField.class);
             if (annotation == null && mixIn != null) {
                 annotation = findMixInFieldAnnotation(mixIn, rawName, JSONField.class);
+            }
+            // Constructor parameter annotations — an all-args / @JSONCreator style
+            // class often carries @JSONField on the constructor parameter rather
+            // than on the matching private field, so fall back to the parameter.
+            if (annotation == null) {
+                Parameter[] ctorParams = constructor.getParameters();
+                if (i < ctorParams.length) {
+                    annotation = ctorParams[i].getAnnotation(JSONField.class);
+                }
+            }
+
+            // @JSONField(unwrapped=true) on a constructor parameter: same treatment
+            // as record components — skip the regular FieldReader and collect the
+            // inner's FieldReaders into a side table keyed by parameter index.
+            if (annotation != null && annotation.unwrapped() && !paramTypes[i].isPrimitive()) {
+                if (ctorUnwrapped == null) {
+                    ctorUnwrapped = new ArrayList<>();
+                }
+                expandRecordUnwrapped(i, paramTypes[i], useJacksonAnnotation, ctorUnwrapped);
+                continue;
             }
 
             JacksonAnnotationSupport.FieldInfo jacksonField = null;
@@ -394,7 +457,8 @@ public final class ObjectReaderCreator {
         }
 
         return new RecordObjectReader<>(type, constructor, collection.fieldReaders,
-                collection.fieldReaderMap, collection.matcher, paramTypes.length, paramMapping);
+                collection.fieldReaderMap, collection.matcher, paramTypes.length, paramMapping,
+                ctorUnwrapped);
     }
 
     /**
@@ -417,6 +481,43 @@ public final class ObjectReaderCreator {
             this.matcher = matcher;
             this.fieldReaderMap = fieldReaderMap;
             this.unwrappedEntries = unwrappedEntries;
+        }
+    }
+
+    /**
+     * Record / constructor-based equivalent of {@link UnwrappedEntry}. Because the
+     * outer is immutable there's no holder field to write into — the flattened inner
+     * keys accumulate into a scratch instance stored by the parser and then pass to
+     * the canonical constructor at the correct parameter index.
+     */
+    static final class RecordUnwrappedEntry {
+        final int componentIdx;
+        final Class<?> innerClass;
+        final FieldReader innerReader;
+        volatile ObjectReader<?> customReader;
+
+        RecordUnwrappedEntry(int componentIdx, Class<?> innerClass, FieldReader innerReader) {
+            this.componentIdx = componentIdx;
+            this.innerClass = innerClass;
+            this.innerReader = innerReader;
+        }
+
+        ObjectReader<?> resolveCustomReader() {
+            if (innerReader.deserializeUsingClass == null) {
+                return null;
+            }
+            ObjectReader<?> r = customReader;
+            if (r != null) {
+                return r;
+            }
+            try {
+                r = (ObjectReader<?>) innerReader.deserializeUsingClass.getDeclaredConstructor().newInstance();
+                customReader = r;
+                return r;
+            } catch (Exception e) {
+                throw new JSONException("cannot instantiate deserializeUsing: "
+                        + innerReader.deserializeUsingClass.getName(), e);
+            }
         }
     }
 
@@ -649,6 +750,37 @@ public final class ObjectReaderCreator {
             }
             if (!includes.isEmpty() && !includes.contains(rawName)) {
                 continue;
+            }
+
+            // Setter-backed @JSONField(unwrapped=true): expand into the side table
+            // using the corresponding backing field as the holder. Without a backing
+            // field we can't lazily read/write the inner POJO (a setter-only API
+            // doesn't give us a getter path). Fall through to a normal field reader
+            // when no such field exists — the user gets a regular setter and can
+            // see the flattened keys land on the holder field directly at best.
+            if (annotation != null && annotation.unwrapped()) {
+                Class<?> paramType = method.getParameterTypes()[0];
+                if (!paramType.isPrimitive()) {
+                    Field holderField = null;
+                    try {
+                        holderField = type.getDeclaredField(rawName);
+                    } catch (NoSuchFieldException ignored) {
+                    }
+                    if (holderField != null && !Modifier.isStatic(holderField.getModifiers())) {
+                        if (unwrappedEntries == null) {
+                            unwrappedEntries = new ArrayList<>();
+                        }
+                        expandUnwrappedField(holderField, mixIn, useJacksonAnnotation, unwrappedEntries, processedNames);
+                        processedNames.add(rawName);
+                        continue;
+                    }
+                    // No backing field — the unwrapped semantics can't be lazily
+                    // implemented. Reject fast with a clear message rather than
+                    // silently falling back to a whole-object setter.
+                    throw new JSONException("@JSONField(unwrapped=true) on setter "
+                            + type.getName() + "." + method.getName()
+                            + " requires a backing field named '" + rawName + "' to be lazily constructed");
+                }
             }
 
             String jsonName = resolveFieldName(rawName, annotation, naming);
@@ -2264,6 +2396,7 @@ public final class ObjectReaderCreator {
         private final FieldNameMatcher matcher;
         private final int componentCount;
         private final int[] paramMapping; // fieldReader index → constructor param index
+        private final Map<String, RecordUnwrappedEntry> unwrappedByName; // null when no unwrapped components
 
         private volatile boolean fieldReadersResolved;
         private ObjectReader<?>[] fieldObjectReaders;
@@ -2276,7 +2409,8 @@ public final class ObjectReaderCreator {
                 Map<String, FieldReader> fieldReaderMap,
                 FieldNameMatcher matcher,
                 int componentCount,
-                int[] paramMapping
+                int[] paramMapping,
+                List<RecordUnwrappedEntry> unwrappedEntries
         ) {
             this.objectClass = objectClass;
             this.constructor = constructor;
@@ -2285,6 +2419,65 @@ public final class ObjectReaderCreator {
             this.matcher = matcher;
             this.componentCount = componentCount;
             this.paramMapping = paramMapping;
+            if (unwrappedEntries == null || unwrappedEntries.isEmpty()) {
+                this.unwrappedByName = null;
+            } else {
+                Map<String, RecordUnwrappedEntry> map = HashMap.newHashMap(unwrappedEntries.size() * 2);
+                for (RecordUnwrappedEntry ue : unwrappedEntries) {
+                    map.putIfAbsent(ue.innerReader.fieldName, ue);
+                    for (String alt : ue.innerReader.alternateNames) {
+                        map.putIfAbsent(alt, ue);
+                    }
+                }
+                this.unwrappedByName = map;
+            }
+        }
+
+        /**
+         * Lazily create the scratch inner instance for a given record-unwrapped
+         * component and cache it in the component-values array slot. Subsequent hits
+         * on the same componentIdx return the cached instance so sibling flattened
+         * keys share one inner POJO.
+         */
+        private Object ensureRecordScratch(Object[] values, RecordUnwrappedEntry entry) {
+            Object scratch = values[entry.componentIdx];
+            if (scratch == null) {
+                try {
+                    scratch = entry.innerClass.getDeclaredConstructor().newInstance();
+                } catch (NoSuchMethodException e) {
+                    throw new JSONException("@JSONField(unwrapped=true) requires "
+                            + entry.innerClass.getName() + " to declare a no-arg constructor"
+                            + " (record/constructor-side unwrap stages flattened values before"
+                            + " invoking the canonical constructor)", e);
+                } catch (ReflectiveOperationException e) {
+                    throw new JSONException("cannot construct unwrapped inner "
+                            + entry.innerClass.getName() + ": " + e.getMessage(), e);
+                }
+                values[entry.componentIdx] = scratch;
+            }
+            return scratch;
+        }
+
+        private boolean writeRecordUnwrapped(JSONParser parser, Object[] values, String fname, long features) {
+            if (unwrappedByName == null) {
+                return false;
+            }
+            RecordUnwrappedEntry entry = unwrappedByName.get(fname);
+            if (entry == null) {
+                return false;
+            }
+            Object scratch = ensureRecordScratch(values, entry);
+            FieldReader innerFr = entry.innerReader;
+            ObjectReader<?> custom = entry.resolveCustomReader();
+            if (custom != null) {
+                Object v = custom.readObject(parser, innerFr.fieldType, innerFr.fieldName, features);
+                innerFr.setFieldValue(scratch, v);
+            } else {
+                Object fvalue = parser.readAny();
+                Object converted = innerFr.convertValue(fvalue);
+                innerFr.setFieldValue(scratch, converted);
+            }
+            return true;
         }
 
         private void ensureFieldReaders() {
@@ -2390,6 +2583,7 @@ public final class ObjectReaderCreator {
 
             for (;;) {
                 FieldReader reader = null;
+                int fieldStart = off; // saved for potential re-read in the unwrapped miss branch
 
                 // Ordered field speculation
                 if (nextExpected < frLen) {
@@ -2398,6 +2592,7 @@ public final class ObjectReaderCreator {
                     while (b[off] <= ' ') {
                         off++;
                     }
+                    fieldStart = off;
                     if (b[off] == '"') {
                         int hdrLen = hdr.length;
                         boolean match = true;
@@ -2452,6 +2647,20 @@ public final class ObjectReaderCreator {
                     } catch (RuntimeException e) {
                         throw JSONException.wrapWithPath(e, reader.fieldName);
                     }
+                } else if (unwrappedByName != null) {
+                    // Re-read the field name and consult the record-side unwrapped table.
+                    // On hit, lazily construct the scratch inner at values[componentIdx]
+                    // and stage the inner field value there; the canonical constructor
+                    // will consume it alongside normally-matched components.
+                    utf8.setOffset(fieldStart);
+                    String fname = utf8.readFieldName();
+                    if (!writeRecordUnwrapped(utf8, values, fname, features)) {
+                        if (errorOnUnknown) {
+                            throw new JSONException("unknown property '" + fname + "' in " + objectClass.getName());
+                        }
+                        utf8.skipValue();
+                    }
+                    off = utf8.getOffset();
                 } else {
                     if (errorOnUnknown) {
                         throw new JSONException("unknown property in " + objectClass.getName());
@@ -2486,9 +2695,13 @@ public final class ObjectReaderCreator {
             }
             if (obj instanceof Map<?, ?> map) {
                 Object[] values = new Object[componentCount];
+                java.util.Set<String> consumed = (unwrappedByName == null) ? null : new java.util.HashSet<>();
                 for (FieldReader fr : fieldReaders) {
                     Object value = map.get(fr.fieldName);
                     if (value != null) {
+                        if (consumed != null) {
+                            consumed.add(fr.fieldName);
+                        }
                         try {
                             // Re-parse the raw value through the generic-aware path when
                             // the record component is a resolved collection/map type so
@@ -2503,6 +2716,23 @@ public final class ObjectReaderCreator {
                         } catch (RuntimeException e) {
                             throw JSONException.wrapWithPath(e, fr.fieldName);
                         }
+                    }
+                }
+                // Second pass — staged flattened keys go into scratch inners then feed the
+                // canonical constructor at their component index.
+                if (unwrappedByName != null) {
+                    for (Map.Entry<?, ?> e : map.entrySet()) {
+                        String key = String.valueOf(e.getKey());
+                        if (consumed.contains(key)) {
+                            continue;
+                        }
+                        RecordUnwrappedEntry ue = unwrappedByName.get(key);
+                        if (ue == null) {
+                            continue;
+                        }
+                        Object scratch = ensureRecordScratch(values, ue);
+                        Object converted = ue.innerReader.convertValue(e.getValue());
+                        ue.innerReader.setFieldValue(scratch, converted);
                     }
                 }
                 return constructRecord(values);

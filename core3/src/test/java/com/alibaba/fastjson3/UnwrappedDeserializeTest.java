@@ -265,4 +265,90 @@ public class UnwrappedDeserializeTest {
                 () -> JSON.parse("{\"v\":\"hi\"}", ParamOnlyHolder.class));
         assertTrue(ex.getMessage().contains("no-arg constructor"), ex.getMessage());
     }
+
+    // ==================== Setter-backed unwrapped ====================
+
+    public static class SetterHolder {
+        private Name name;
+        public int age;
+
+        @JSONField(unwrapped = true)
+        public void setName(Name n) {
+            this.name = n;
+        }
+
+        public Name getName() {
+            return name;
+        }
+    }
+
+    @Test
+    public void setterBackedUnwrapped() {
+        SetterHolder back = JSON.parse("{\"first\":\"S1\",\"last\":\"S2\",\"age\":9}", SetterHolder.class);
+        assertEquals(9, back.age);
+        assertNotNull(back.getName());
+        assertEquals("S1", back.getName().first);
+        assertEquals("S2", back.getName().last);
+    }
+
+    // ==================== Record component unwrapped ====================
+
+    public record RecordPerson(
+            @JSONField(unwrapped = true) Name name,
+            int age
+    ) {
+    }
+
+    @Test
+    public void recordComponentUnwrapped() {
+        RecordPerson back = JSON.parse("{\"first\":\"R1\",\"last\":\"R2\",\"age\":11}", RecordPerson.class);
+        assertEquals(11, back.age());
+        assertNotNull(back.name());
+        assertEquals("R1", back.name().first);
+        assertEquals("R2", back.name().last);
+    }
+
+    @Test
+    public void recordComponentUnwrappedAbsent() {
+        // Flattened keys missing → scratch inner never built → component stays null.
+        RecordPerson back = JSON.parse("{\"age\":12}", RecordPerson.class);
+        assertEquals(12, back.age());
+        assertNull(back.name());
+    }
+
+    // ==================== Constructor-based unwrapped ====================
+
+    public static final class ImmutablePerson {
+        private final Name name;
+        private final int age;
+
+        @com.alibaba.fastjson3.annotation.JSONCreator(parameterNames = {"name", "age"})
+        public ImmutablePerson(
+                @JSONField(unwrapped = true) Name name,
+                int age) {
+            this.name = name;
+            this.age = age;
+        }
+
+        public Name getName() {
+            return name;
+        }
+
+        public int getAge() {
+            return age;
+        }
+    }
+
+    @Test
+    public void constructorComponentUnwrapped() {
+        // Note: @JSONCreator with unwrapped constructor param. The constructor
+        // reader paths the param type as the inner POJO and stages flattened keys
+        // into a scratch inner before invoking the constructor.
+        ImmutablePerson back = JSON.parse(
+                "{\"first\":\"C1\",\"last\":\"C2\",\"age\":13}", ImmutablePerson.class);
+        assertEquals(13, back.getAge());
+        assertNotNull(back.getName());
+        assertEquals("C1", back.getName().first);
+        assertEquals("C2", back.getName().last);
+    }
 }
