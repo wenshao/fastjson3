@@ -99,6 +99,47 @@ public class AnySetterInitializerTest {
         }
     }
 
+    // ==================== Mix-in-provided any-setter ====================
+    //
+    // Target bean is third-party with no @JSONField annotations. The user adapts
+    // it via a mix-in whose method carries @JSONField(anySetter=true). The reader
+    // must consult the mix-in when searching for an any-setter, and consequently
+    // skip Unsafe allocation so field initializers run.
+
+    public static class ThirdPartyExtensible {
+        public String id;
+        private Map<String, Object> extra = new LinkedHashMap<>();
+
+        public Map<String, Object> getExtra() {
+            return extra;
+        }
+
+        public void put(String key, Object value) {
+            extra.put(key, value);
+        }
+    }
+
+    public interface ThirdPartyExtensibleMixIn {
+        @JSONField(anyGetter = true)
+        Map<String, Object> getExtra();
+
+        @JSONField(anySetter = true)
+        void put(String key, Object value);
+    }
+
+    @Test
+    public void mixInProvidedAnySetter() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(ThirdPartyExtensible.class, ThirdPartyExtensibleMixIn.class)
+                .build();
+
+        ThirdPartyExtensible parsed = mapper.readValue(
+                "{\"id\":\"x1\",\"color\":\"red\",\"size\":42}", ThirdPartyExtensible.class);
+        assertEquals("x1", parsed.id);
+        assertEquals("red", parsed.extra.get("color"));
+        assertEquals(42, ((Number) parsed.extra.get("size")).intValue());
+    }
+
     @Test
     public void plainClassStillSkipsConstructorWhenUnsafeAvailable() {
         // This test pins the existing perf behavior: for classes WITHOUT an anySetter,

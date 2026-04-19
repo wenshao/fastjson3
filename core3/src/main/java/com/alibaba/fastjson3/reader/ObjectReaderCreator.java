@@ -2423,13 +2423,24 @@ public final class ObjectReaderCreator {
                 continue;
             }
             JSONField jsonField = method.getAnnotation(JSONField.class);
+            if (jsonField == null && mixIn != null) {
+                // Mix-in can declare @JSONField(anySetter=true) on a method with the same
+                // name + parameter types as the target's setter. Without this lookup, a
+                // user can't adapt a third-party bean's catch-all method from a mix-in.
+                jsonField = findMixInMethodAnnotation(mixIn, method, JSONField.class);
+            }
             if (jsonField != null && jsonField.anySetter()) {
                 method.setAccessible(true);
                 return method;
             }
             if (useJacksonAnnotation) {
-                for (java.lang.annotation.Annotation ann : method.getAnnotations()) {
-                    if ("com.fasterxml.jackson.annotation.JsonAnySetter".equals(ann.annotationType().getName())) {
+                if (hasJsonAnySetter(method.getAnnotations())) {
+                    method.setAccessible(true);
+                    return method;
+                }
+                if (mixIn != null) {
+                    Method mixInMethod = findMixInMethod(mixIn, method);
+                    if (mixInMethod != null && hasJsonAnySetter(mixInMethod.getAnnotations())) {
                         method.setAccessible(true);
                         return method;
                     }
@@ -2437,6 +2448,37 @@ public final class ObjectReaderCreator {
             }
         }
         return null;
+    }
+
+    private static boolean hasJsonAnySetter(java.lang.annotation.Annotation[] annotations) {
+        for (java.lang.annotation.Annotation ann : annotations) {
+            if ("com.fasterxml.jackson.annotation.JsonAnySetter".equals(ann.annotationType().getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Locate the mix-in method whose signature matches {@code targetMethod}. Matches by
+     * exact name + parameter types — used for lookup of method-level annotations that
+     * don't follow the JavaBean setter naming convention (like anySetter / anyGetter).
+     */
+    private static Method findMixInMethod(Class<?> mixIn, Method targetMethod) {
+        for (Method m : mixIn.getDeclaredMethods()) {
+            if (m.getName().equals(targetMethod.getName())
+                    && m.getParameterCount() == targetMethod.getParameterCount()
+                    && java.util.Arrays.equals(m.getParameterTypes(), targetMethod.getParameterTypes())) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    private static <A extends java.lang.annotation.Annotation> A findMixInMethodAnnotation(
+            Class<?> mixIn, Method targetMethod, Class<A> annotationType) {
+        Method m = findMixInMethod(mixIn, targetMethod);
+        return m != null ? m.getAnnotation(annotationType) : null;
     }
 
     private static String extractPropertyName(Method method) {
