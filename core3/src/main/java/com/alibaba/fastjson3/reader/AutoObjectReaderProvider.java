@@ -110,8 +110,21 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
      * inner-routing side table populated by {@code expandUnwrappedField}, so
      * beans that declare unwrapped must fall back to reflection until ASM
      * gains native support.
+     *
+     * Also consults the owning mapper's mix-in (via
+     * {@link ObjectReaderCreator#resolveMixIn(Class)}) so a {@code unwrapped=true}
+     * registration applied only through {@code addMixIn(Type, TypeMixIn)} still
+     * blocks ASM selection.
      */
     private static boolean hasUnwrappedField(Class<?> type) {
+        if (scanForUnwrapped(type)) {
+            return true;
+        }
+        Class<?> mixIn = ObjectReaderCreator.resolveMixIn(type);
+        return mixIn != null && scanForUnwrapped(mixIn);
+    }
+
+    private static boolean scanForUnwrapped(Class<?> type) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             for (java.lang.reflect.Field field : c.getDeclaredFields()) {
                 if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {

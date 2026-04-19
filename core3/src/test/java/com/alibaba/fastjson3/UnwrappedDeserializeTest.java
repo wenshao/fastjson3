@@ -609,4 +609,48 @@ public class UnwrappedDeserializeTest {
         assertEquals(9, back.age());
         assertEquals("a", back.name().first);
     }
+
+    // ==================== AUTO provider: mix-in-provided unwrapped blocks ASM ====================
+
+    public static class AsmEligibleTarget {
+        public String id;
+        public Name name;
+        public int age;
+    }
+
+    public interface UnwrappedNameMixIn {
+        @JSONField(unwrapped = true)
+        Name getName();
+
+        @JSONField(unwrapped = true)
+        void setName(Name n);
+    }
+
+    @Test
+    public void autoProviderRejectsAsmWhenMixInProvidesUnwrapped() {
+        // The AUTO provider consults MIXIN_CONTEXT when deciding ASM eligibility.
+        // Simulate the mapper-set context and ask the provider directly for a reader;
+        // it must return a reflection reader (not ASM) because the mix-in marks a
+        // method unwrapped. Note: for ObjectMapper.readValue the builder shortcuts
+        // mix-in-bearing mappers past the provider to ObjectReaderCreator directly
+        // (line 255 in ObjectMapper), so this defensive check guards the direct
+        // provider path and any custom harness wiring that consults it.
+        java.util.Map<Class<?>, Class<?>> ctx = new java.util.HashMap<>();
+        ctx.put(AsmEligibleTarget.class, UnwrappedNameMixIn.class);
+        com.alibaba.fastjson3.reader.ObjectReaderCreator.MIXIN_CONTEXT.set(ctx);
+        try {
+            // Direct provider call — the provider path is mix-in-aware after the fix.
+            com.alibaba.fastjson3.ObjectReader<?> reader =
+                    com.alibaba.fastjson3.reader.AutoObjectReaderProvider.INSTANCE
+                            .getObjectReader(AsmEligibleTarget.class);
+            assertNotNull(reader);
+            // The ASM reader class names include "gen." prefix; reflection readers don't.
+            // Asserting the class name stays free of the gen prefix pins "ASM bypassed".
+            assertFalse(reader.getClass().getName().contains(".gen."),
+                    "ASM provider should fall back to reflection for mix-in-provided unwrapped, got "
+                            + reader.getClass().getName());
+        } finally {
+            com.alibaba.fastjson3.reader.ObjectReaderCreator.MIXIN_CONTEXT.remove();
+        }
+    }
 }
