@@ -38,9 +38,21 @@ public final class ObjectWriterCreator {
         return createObjectWriter(type, mixIn, useJacksonAnnotation, 0);
     }
 
-    @SuppressWarnings("unchecked")
     public static <T> ObjectWriter<T> createObjectWriter(Class<T> type, Class<?> mixIn,
                                                           boolean useJacksonAnnotation, long writeFeatures) {
+        return createObjectWriter(type, mixIn, useJacksonAnnotation, writeFeatures, null);
+    }
+
+    /**
+     * @param ancestorMixIns the full mix-in map from the owning ObjectMapper, used
+     *     to resolve an ancestor's effective {@code @JSONType} annotation when the
+     *     annotation lives on a mix-in rather than the real class. {@code null} is
+     *     equivalent to an empty map — ancestor-mix-in discovery is then skipped.
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> ObjectWriter<T> createObjectWriter(Class<T> type, Class<?> mixIn,
+                                                          boolean useJacksonAnnotation, long writeFeatures,
+                                                          java.util.Map<Class<?>, Class<?>> ancestorMixIns) {
         // Check @JSONType(serializer=...) for class-level custom writer
         JSONType jsonType = type.getAnnotation(JSONType.class);
         if (jsonType != null && jsonType.serializer() != Void.class) {
@@ -61,13 +73,14 @@ public final class ObjectWriterCreator {
         if (com.alibaba.fastjson3.util.JDKUtils.isRecord(type)) {
             // Note: writeFeatures (IgnoreNoneSerializable etc.) not yet applied to Record fields.
             // Record fields are always final components — Serializable check is less relevant.
-            return createRecordWriter(type, mixIn, useJacksonAnnotation);
+            return createRecordWriter(type, mixIn, useJacksonAnnotation, ancestorMixIns);
         }
 
-        return createPojoWriter(type, mixIn, useJacksonAnnotation, writeFeatures);
+        return createPojoWriter(type, mixIn, useJacksonAnnotation, writeFeatures, ancestorMixIns);
     }
 
-    private static <T> ObjectWriter<T> createRecordWriter(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+    private static <T> ObjectWriter<T> createRecordWriter(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation,
+                                                           java.util.Map<Class<?>, Class<?>> ancestorMixIns) {
         JSONType jsonType = type.getAnnotation(JSONType.class);
         NamingStrategy naming = jsonType != null ? jsonType.naming() : NamingStrategy.NoneStrategy;
         Set<String> includes = jsonType != null && jsonType.includes().length > 0 ? Set.of(jsonType.includes()) : Set.of();
@@ -208,15 +221,27 @@ public final class ObjectWriterCreator {
                 }
             }
         }
+        if (typeName == null || typeKey == null) {
+            JSONType ancestor = findSeeAlsoAncestor(type, ancestorMixIns);
+            if (ancestor != null) {
+                if (typeKey == null) {
+                    typeKey = !ancestor.typeKey().isEmpty() ? ancestor.typeKey() : "@type";
+                }
+                if (typeName == null) {
+                    typeName = type.getSimpleName();
+                }
+            }
+        }
         return buildObjectWriter(writers, null, typeName, typeKey);
     }
 
     private static <T> ObjectWriter<T> createPojoWriter(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
-        return createPojoWriter(type, mixIn, useJacksonAnnotation, 0);
+        return createPojoWriter(type, mixIn, useJacksonAnnotation, 0, null);
     }
 
     private static <T> ObjectWriter<T> createPojoWriter(Class<T> type, Class<?> mixIn,
-                                                         boolean useJacksonAnnotation, long writeFeatures) {
+                                                         boolean useJacksonAnnotation, long writeFeatures,
+                                                         java.util.Map<Class<?>, Class<?>> ancestorMixIns) {
         JSONType jsonType = type.getAnnotation(JSONType.class);
         NamingStrategy naming = jsonType != null ? jsonType.naming() : NamingStrategy.NoneStrategy;
         Set<String> includes = jsonType != null && jsonType.includes().length > 0 ? Set.of(jsonType.includes()) : Set.of();
@@ -556,6 +581,17 @@ public final class ObjectWriterCreator {
                 typeKey = jacksonBean.typeKey();
                 if (typeName == null) {
                     typeName = resolveJacksonTypeName(type, jacksonBean);
+                }
+            }
+        }
+        if (typeName == null || typeKey == null) {
+            JSONType ancestor = findSeeAlsoAncestor(type, ancestorMixIns);
+            if (ancestor != null) {
+                if (typeKey == null) {
+                    typeKey = !ancestor.typeKey().isEmpty() ? ancestor.typeKey() : "@type";
+                }
+                if (typeName == null) {
+                    typeName = type.getSimpleName();
                 }
             }
         }
@@ -969,6 +1005,80 @@ public final class ObjectWriterCreator {
             }
         }
         return type.getSimpleName();
+    }
+
+    /**
+     * Walk the full class + interface hierarchy of {@code type} looking for an
+     * {@code @JSONType(seeAlso=...)} declaration (either directly on the ancestor
+     * or on a mix-in registered for that ancestor) that lists {@code type} as a
+     * polymorphic subtype. Returns the discovered parent annotation so the
+     * subtype writer can inherit {@code typeKey}/{@code typeName} defaults —
+     * otherwise round-trip with a parent-only discriminator config breaks because
+     * the subtype emits "@type" while the parent reader expects the parent's
+     * custom {@code typeKey}.
+     *
+     * @param ancestorMixIns map used to resolve mix-in classes by ancestor type.
+     *     {@code null} is treated as empty — ancestor mix-in resolution is then
+     *     skipped and only direct annotations participate. {@link ObjectMapper}
+     *     passes its full mix-in cache so {@code addMixIn(AncestorInterface.class,
+     *     AncestorMixIn.class)}-style registrations work end-to-end.
+     */
+    private static JSONType findSeeAlsoAncestor(Class<?> type,
+                                                 java.util.Map<Class<?>, Class<?>> ancestorMixIns) {
+        java.util.Set<Class<?>> visited = new java.util.HashSet<>();
+        return findSeeAlsoAncestorRecursive(type, type, ancestorMixIns, visited);
+    }
+
+    /**
+     * @param target  the class we're asking "who declares me in seeAlso?" — never changes during recursion
+     * @param current the node being inspected on this step
+     */
+    private static JSONType findSeeAlsoAncestorRecursive(
+            Class<?> target,
+            Class<?> current,
+            java.util.Map<Class<?>, Class<?>> ancestorMixIns,
+            java.util.Set<Class<?>> visited
+    ) {
+        if (current == null || current == Object.class || !visited.add(current)) {
+            return null;
+        }
+        // Don't treat the target itself as its own ancestor.
+        if (current != target) {
+            JSONType direct = current.getAnnotation(JSONType.class);
+            if (direct != null && containsType(direct.seeAlso(), target)) {
+                return direct;
+            }
+            if (ancestorMixIns != null) {
+                Class<?> mix = ancestorMixIns.get(current);
+                if (mix != null) {
+                    JSONType mxAnn = mix.getAnnotation(JSONType.class);
+                    if (mxAnn != null && containsType(mxAnn.seeAlso(), target)) {
+                        return mxAnn;
+                    }
+                }
+            }
+        }
+        // Recurse into superclass first, then each implemented interface.
+        JSONType f = findSeeAlsoAncestorRecursive(target, current.getSuperclass(), ancestorMixIns, visited);
+        if (f != null) {
+            return f;
+        }
+        for (Class<?> iface : current.getInterfaces()) {
+            f = findSeeAlsoAncestorRecursive(target, iface, ancestorMixIns, visited);
+            if (f != null) {
+                return f;
+            }
+        }
+        return null;
+    }
+
+    private static boolean containsType(Class<?>[] array, Class<?> target) {
+        for (Class<?> c : array) {
+            if (c == target) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

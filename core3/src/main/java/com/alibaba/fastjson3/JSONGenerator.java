@@ -151,6 +151,24 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
     protected int writeDepth;
     protected final boolean pretty;
     public boolean isPretty() { return pretty; }
+
+    /**
+     * Owning {@link ObjectMapper} — null when the generator was created outside a
+     * mapper context (e.g. direct construction by test code). Set by the mapper's
+     * {@code writeValueAsString}/{@code writeValueAsBytes} entries so nested writer
+     * lookups honour mapper-specific mix-ins and registered writers instead of
+     * falling through to {@link ObjectMapper#shared()}.
+     */
+    public ObjectMapper owner;
+
+    /**
+     * Return the mapper whose configuration should drive nested writer lookups
+     * during this serialisation. Defaults to {@link ObjectMapper#shared()} when
+     * no owner was attached.
+     */
+    public ObjectMapper effectiveMapper() {
+        return owner != null ? owner : ObjectMapper.shared();
+    }
     protected final boolean bigDecimalPlain;
     protected final boolean longAsString;
     protected final boolean nonStringAsString;
@@ -864,9 +882,11 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 writeInstant(date.toInstant());
             }
         } else {
-            // Try ObjectWriter-based serialization
+            // Try ObjectWriter-based serialization via the owning mapper so mix-in /
+            // registerWriter configurations attached to a custom mapper drive nested
+            // polymorphic discriminator emission.
             @SuppressWarnings("unchecked")
-            ObjectWriter<Object> objectWriter = (ObjectWriter<Object>) ObjectMapper.shared().getObjectWriter(value.getClass());
+            ObjectWriter<Object> objectWriter = (ObjectWriter<Object>) effectiveMapper().getObjectWriter(value.getClass());
             if (objectWriter != null) {
                 objectWriter.write(this, value, null, null, features);
             } else {
@@ -1082,7 +1102,7 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         buf[pos++] = '['; buf[pos++] = ']'; buf[pos++] = ',';
                         return pos;
                     }
-                    com.alibaba.fastjson3.writer.FieldWriter[] elemFws = getElementWriters(fw.elementClass);
+                    com.alibaba.fastjson3.writer.FieldWriter[] elemFws = getElementWriters(gen, fw.elementClass);
                     if (elemFws != null) {
                         pos = UTF8.writeNameStatic(buf, pos, fw.nameByteLongs, fw.nameBytes, fw.nameBytesLen);
                         buf[pos++] = '[';
@@ -1196,20 +1216,23 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         gen.count = pos; fw.writeField(gen, bean, features); return gen.count;
     }
 
-    // Cache for element type FieldWriters (for LIST_OBJECT inline serialization)
-    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, com.alibaba.fastjson3.writer.FieldWriter[]>
-            ELEMENT_WRITERS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
-
-    private static com.alibaba.fastjson3.writer.FieldWriter[] getElementWriters(Class<?> elementClass) {
-        return ELEMENT_WRITERS_CACHE.computeIfAbsent(elementClass, cls -> {
-            try {
-                com.alibaba.fastjson3.ObjectWriter<?> w = com.alibaba.fastjson3.writer.ObjectWriterCreator.createObjectWriter(cls);
-                if (w instanceof com.alibaba.fastjson3.writer.ObjectWriterCreator.ReflectObjectWriter rw) {
-                    return rw.writers;
-                }
-            } catch (Exception ignored) {}
-            return null;
-        });
+    /**
+     * Resolve the inline FieldWriter[] for a TYPE_LIST_OBJECT element type via the
+     * owning mapper's per-type writer cache, so mapper-specific mix-ins / registered
+     * writers / polymorphic discriminators applied to the element type are honoured
+     * when serialising nested list fields. Falling back to ObjectMapper.shared() when
+     * owner is null preserves the pre-existing behaviour for generators constructed
+     * outside a mapper context.
+     */
+    private static com.alibaba.fastjson3.writer.FieldWriter[] getElementWriters(UTF8 gen, Class<?> elementClass) {
+        try {
+            com.alibaba.fastjson3.ObjectWriter<?> w = gen.effectiveMapper().getObjectWriter(elementClass);
+            if (w instanceof com.alibaba.fastjson3.writer.ObjectWriterCreator.ReflectObjectWriter rw) {
+                return rw.writers;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     // ---- Static field-writing paths (no braces, called between startObject/endObject) ----

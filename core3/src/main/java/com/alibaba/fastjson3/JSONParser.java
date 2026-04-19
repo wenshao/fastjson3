@@ -936,6 +936,12 @@ public abstract sealed class JSONParser implements Closeable
         // Callers who need a custom mapper should use ObjectMapper.readValue() directly.
         ObjectReader<T> reader = ObjectMapper.shared().getObjectReader(type);
         if (reader == null) {
+            if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
+                throw new JSONException("cannot deserialize "
+                        + (type.isInterface() ? "interface" : "abstract class") + " " + type.getName()
+                        + ": register subtypes via @JSONType(seeAlso=..., typeKey=...),"
+                        + " make the type sealed, or use Jackson @JsonTypeInfo + @JsonSubTypes");
+            }
             throw new JSONException("no ObjectReader registered for type: " + type.getName());
         }
         return reader.readObject(this, type, null, features);

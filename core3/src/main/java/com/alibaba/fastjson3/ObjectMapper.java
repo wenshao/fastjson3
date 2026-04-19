@@ -838,11 +838,35 @@ public final class ObjectMapper {
                         list.add(objectReader.readObject(itemParser, type, null, features));
                     }
                 } else {
-                    list.add((T) item);
+                    list.add(coerceElement(type, item));
                 }
             }
             return list;
         }
+    }
+
+    /**
+     * Assignment-fallback for the collection read paths. When the raw JSON element
+     * isn't assignable to the declared element type AND we don't have an
+     * ObjectReader for materialisation, the only remaining option is the unchecked
+     * cast — but for the specific case of a {@code JSONObject} node targeted at an
+     * abstract or interface element type, that unchecked cast silently succeeds and
+     * surfaces later as a confusing {@code ClassCastException}. Raise the targeted
+     * polymorphic-registration error at the point of first hit so users get an
+     * actionable message; otherwise preserve the pre-existing unchecked-cast
+     * behaviour (empty collections, Number/CharSequence supertypes, null-only, etc.
+     * already handled by the caller's fast branches).
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> T coerceElement(Class<T> type, Object item) {
+        if (item instanceof JSONObject
+                && (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers()))) {
+            throw new JSONException("cannot deserialize collection values of "
+                    + (type.isInterface() ? "interface" : "abstract class") + " " + type.getName()
+                    + ": register subtypes via @JSONType(seeAlso=..., typeKey=...),"
+                    + " make the type sealed, or use Jackson @JsonTypeInfo + @JsonSubTypes");
+        }
+        return (T) item;
     }
 
     /**
@@ -879,7 +903,7 @@ public final class ObjectMapper {
                         list.add(objectReader.readObject(itemParser, type, null, features));
                     }
                 } else {
-                    list.add((T) item);
+                    list.add(coerceElement(type, item));
                 }
             }
             return list;
@@ -964,7 +988,7 @@ public final class ObjectMapper {
                         map.put(key, objectReader.readObject(itemParser, valueType, null, features));
                     }
                 } else {
-                    map.put(key, (V) item);
+                    map.put(key, coerceElement(valueType, item));
                 }
             }
             return map;
@@ -1004,7 +1028,7 @@ public final class ObjectMapper {
                         map.put(key, objectReader.readObject(itemParser, valueType, null, features));
                     }
                 } else {
-                    map.put(key, (V) item);
+                    map.put(key, coerceElement(valueType, item));
                 }
             }
             return map;
@@ -1231,6 +1255,7 @@ public final class ObjectMapper {
             ObjectWriter<Object> writer = (ObjectWriter<Object>) getObjectWriter(obj.getClass());
             if (writer != null) {
                 try (JSONGenerator.UTF8 gen = (JSONGenerator.UTF8) JSONGenerator.ofUTF8()) {
+                    gen.owner = this;
                     writer.write(gen, obj, null, null, 0);
                     String result = gen.toStringLatin1();
                     if (result != null) {
@@ -1241,6 +1266,7 @@ public final class ObjectMapper {
             }
         }
         try (JSONGenerator generator = createCharGenerator(features)) {
+            generator.owner = this;
             applyFilters(generator);
             writeValue0(generator, obj, features);
             return generator.toString();
@@ -1271,6 +1297,7 @@ public final class ObjectMapper {
             return "null".getBytes(StandardCharsets.UTF_8);
         }
         try (JSONGenerator generator = createUTF8Generator(features)) {
+            generator.owner = this;
             applyFilters(generator);
             writeValue0(generator, obj, features);
             return generator.toByteArray();
@@ -1599,7 +1626,7 @@ public final class ObjectMapper {
                             | WriteFeature.IgnoreNonFieldGetter.mask)) != 0) {
                     // When annotations/mixIns/serializable checks are needed, use ObjectWriterCreator directly
                     Class<?> mixIn = mixInCache.get(rawType);
-                    writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation, writeFeatures);
+                    writer = ObjectWriterCreator.createObjectWriter(rawType, mixIn, useJacksonAnnotation, writeFeatures, mixInCache);
                 } else if (writerCreator != null) {
                     writer = writerCreator.apply(rawType);
                 } else if (writerProvider != null) {
@@ -2102,6 +2129,7 @@ public final class ObjectMapper {
                 return "null";
             }
             try (JSONGenerator generator = features != 0 ? new JSONGenerator.Char(features) : JSONGenerator.of()) {
+                generator.owner = mapper;
                 writeValue0(generator, obj);
                 return generator.toString();
             }
@@ -2115,6 +2143,7 @@ public final class ObjectMapper {
                 return "null".getBytes(StandardCharsets.UTF_8);
             }
             try (JSONGenerator generator = features != 0 ? new JSONGenerator.UTF8(features) : JSONGenerator.ofUTF8()) {
+                generator.owner = mapper;
                 writeValue0(generator, obj);
                 return generator.toByteArray();
             }
