@@ -193,6 +193,26 @@ public final class FieldReader implements Comparable<FieldReader> {
             String schema,
             long fieldFeatures
     ) {
+        this(fieldName, alternateNames, fieldType, fieldClass, ordinal, defaultValue,
+                required, field, setter, format, deserializeUsingClass, schema, fieldFeatures, false);
+    }
+
+    public FieldReader(
+            String fieldName,
+            String[] alternateNames,
+            Type fieldType,
+            Class<?> fieldClass,
+            int ordinal,
+            String defaultValue,
+            boolean required,
+            Field field,
+            Method setter,
+            String format,
+            Class<?> deserializeUsingClass,
+            String schema,
+            long fieldFeatures,
+            boolean useJacksonAnnotation
+    ) {
         this.fieldName = fieldName;
         this.alternateNames = alternateNames != null ? alternateNames : new String[0];
         this.fieldType = fieldType;
@@ -255,7 +275,7 @@ public final class FieldReader implements Comparable<FieldReader> {
 
         // Cache enum constants for enum fields
         this.enumConstants = fieldClass.isEnum() ? fieldClass.getEnumConstants() : null;
-        this.enumValueMap = fieldClass.isEnum() ? buildEnumValueMap(fieldClass) : null;
+        this.enumValueMap = fieldClass.isEnum() ? buildEnumValueMap(fieldClass, useJacksonAnnotation) : null;
         this.fieldFeatures = fieldFeatures;
 
         // Resolve Unsafe field offset (look up corresponding field if we only have a setter)
@@ -659,11 +679,18 @@ public final class FieldReader implements Comparable<FieldReader> {
                 if (enumValueMap != null) {
                     Object mapped = enumValueMap.get(number);
                     if (mapped == null) {
+                        // Cross-compat for mismatched numeric boxings (e.g. JSON arrives
+                        // as Long, map key is Integer). Compare by exact numeric value via
+                        // BigDecimal.compareTo so 1.1 and 1.9 do not both collapse to 1.
+                        java.math.BigDecimal probe = toBigDecimal(number);
                         for (java.util.Map.Entry<Object, Object> e : enumValueMap.entrySet()) {
                             Object k = e.getKey();
-                            if (k instanceof Number kn && kn.longValue() == number.longValue()) {
-                                mapped = e.getValue();
-                                break;
+                            if (k instanceof Number kn) {
+                                java.math.BigDecimal kd = toBigDecimal(kn);
+                                if (kd != null && probe != null && kd.compareTo(probe) == 0) {
+                                    mapped = e.getValue();
+                                    break;
+                                }
                             }
                         }
                     }
@@ -725,11 +752,16 @@ public final class FieldReader implements Comparable<FieldReader> {
             }
             // Numeric cross-compat: JSON number arrives as Long/Integer/BigDecimal;
             // map keys may have been stored as the value-method's declared return type.
+            // Compare by exact numeric value so 1.1 and 1.9 don't both match 1.
             if (value instanceof Number n) {
+                java.math.BigDecimal probe = toBigDecimal(n);
                 for (java.util.Map.Entry<Object, Object> e : enumValueMap.entrySet()) {
                     Object k = e.getKey();
-                    if (k instanceof Number kn && kn.longValue() == n.longValue()) {
-                        return e.getValue();
+                    if (k instanceof Number kn) {
+                        java.math.BigDecimal kd = toBigDecimal(kn);
+                        if (kd != null && probe != null && kd.compareTo(probe) == 0) {
+                            return e.getValue();
+                        }
                     }
                 }
             }
@@ -745,11 +777,43 @@ public final class FieldReader implements Comparable<FieldReader> {
     }
 
     /**
+     * Normalise any {@link Number} to a {@link java.math.BigDecimal} for exact value
+     * comparison in the enum value-map cross-compat branches. Integer / Long / Short /
+     * Byte keep integer precision; Double / Float convert through {@code toString()}
+     * to avoid the binary-fraction drift {@code new BigDecimal(double)} introduces.
+     */
+    private static java.math.BigDecimal toBigDecimal(Number n) {
+        if (n == null) {
+            return null;
+        }
+        if (n instanceof java.math.BigDecimal bd) {
+            return bd;
+        }
+        if (n instanceof java.math.BigInteger bi) {
+            return new java.math.BigDecimal(bi);
+        }
+        if (n instanceof Integer || n instanceof Long || n instanceof Short || n instanceof Byte
+                || n instanceof java.util.concurrent.atomic.AtomicInteger
+                || n instanceof java.util.concurrent.atomic.AtomicLong) {
+            return java.math.BigDecimal.valueOf(n.longValue());
+        }
+        if (n instanceof Double || n instanceof Float) {
+            return new java.math.BigDecimal(n.toString());
+        }
+        // Fallback for uncommon Number subclasses — toString keeps textual precision.
+        try {
+            return new java.math.BigDecimal(n.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
      * Inspect the enum class for a {@code @JSONField(value=true)} or Jackson {@code @JsonValue}
      * accessor. If present, invoke it on each enum constant and build the inverse lookup map.
      * Returns null when the enum has no value method.
      */
-    private static java.util.Map<Object, Object> buildEnumValueMap(Class<?> enumClass) {
+    private static java.util.Map<Object, Object> buildEnumValueMap(Class<?> enumClass, boolean useJacksonAnnotation) {
         java.lang.reflect.Method valueMethod = null;
         for (java.lang.reflect.Method m : enumClass.getMethods()) {
             if (m.getParameterCount() != 0 || java.lang.reflect.Modifier.isStatic(m.getModifiers())
@@ -762,20 +826,21 @@ public final class FieldReader implements Comparable<FieldReader> {
                 valueMethod = m;
                 break;
             }
-            // Jackson @JsonValue — detected unconditionally so the reader stays
-            // symmetric with the writer's findValueWriter which honours @JsonValue
-            // when useJacksonAnnotation is enabled. The annotation's presence is
-            // explicit user intent; mirroring it on the read side avoids a
-            // round-trip break for enum-field serialization via @JsonValue.
-            try {
-                com.alibaba.fastjson3.annotation.JacksonAnnotationSupport.FieldInfo ji
-                        = com.alibaba.fastjson3.annotation.JacksonAnnotationSupport.getFieldInfo(m.getAnnotations());
-                if (ji != null && ji.isValue()) {
-                    valueMethod = m;
-                    break;
+            // Jackson @JsonValue is respected only when the owning ObjectMapper has
+            // Jackson-annotation support enabled, mirroring the writer's
+            // findValueWriter(useJacksonAnnotation=true) opt-in so reader and writer
+            // stay consistent on the same flag.
+            if (useJacksonAnnotation) {
+                try {
+                    com.alibaba.fastjson3.annotation.JacksonAnnotationSupport.FieldInfo ji
+                            = com.alibaba.fastjson3.annotation.JacksonAnnotationSupport.getFieldInfo(m.getAnnotations());
+                    if (ji != null && ji.isValue()) {
+                        valueMethod = m;
+                        break;
+                    }
+                } catch (Throwable ignored) {
+                    // Jackson annotations off the classpath — skip silently.
                 }
-            } catch (Throwable ignored) {
-                // Jackson annotations off the classpath — skip silently.
             }
         }
         if (valueMethod == null) {

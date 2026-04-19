@@ -230,4 +230,50 @@ public class EnumValueFieldTest {
         Membership lenient = m.readValue("{\"user\":\"bob\",\"tier\":\"SILVER\"}", Membership.class);
         assertEquals(Tier.SILVER, lenient.tier);
     }
+
+    @Test
+    public void jacksonJsonValueRespectsUseJacksonAnnotationOptIn() {
+        // Default mapper (useJacksonAnnotation=false): writer emits enum.name(),
+        // reader's value-map does NOT include @JsonValue entries, so round-trip stays
+        // name-based. Asserting that the 'gold' label DOES NOT deserialize when the
+        // flag is off locks the opt-in contract.
+        ObjectMapper offMapper = ObjectMapper.builder().build();
+        Membership onName = offMapper.readValue("{\"tier\":\"SILVER\"}", Membership.class);
+        assertEquals(Tier.SILVER, onName.tier);
+
+        JSONException ex = assertThrows(JSONException.class,
+                () -> offMapper.readValue("{\"tier\":\"gold\"}", Membership.class));
+        assertTrue(ex.getMessage().contains("no enum constant"), ex.getMessage());
+    }
+
+    // ==================== Precise numeric match (no longValue() truncation) ====================
+
+    public enum Rate {
+        LOW(1.1),
+        HIGH(1.9);
+
+        private final double code;
+
+        Rate(double c) {
+            this.code = c;
+        }
+
+        @JSONField(value = true)
+        public double getCode() {
+            return code;
+        }
+    }
+
+    public static class Score {
+        public Rate rate;
+    }
+
+    @Test
+    public void fractionalEnumValuesDoNotCollapse() {
+        Score low = JSON.parse("{\"rate\":1.1}", Score.class);
+        assertEquals(Rate.LOW, low.rate);
+
+        Score high = JSON.parse("{\"rate\":1.9}", Score.class);
+        assertEquals(Rate.HIGH, high.rate);
+    }
 }

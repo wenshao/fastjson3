@@ -195,7 +195,7 @@ public final class ObjectReaderCreator {
                     jsonName, alternateNames,
                     TypeUtils.resolve(genericTypes[i], contextType), componentTypes[i],
                     ordinal, defaultValue, required,
-                    field, null, null, null, schema
+                    field, null, null, null, schema, 0, useJacksonAnnotation
             ));
         }
 
@@ -327,7 +327,7 @@ public final class ObjectReaderCreator {
                     jsonName, alternateNames,
                     TypeUtils.resolve(genericParamTypes[i], contextType), paramTypes[i],
                     ordinal, defaultValue, required,
-                    field, null, format, deserializeUsingClass, schema
+                    field, null, format, deserializeUsingClass, schema, 0, useJacksonAnnotation
             ));
         }
 
@@ -497,7 +497,7 @@ public final class ObjectReaderCreator {
                     jsonName, alternateNames,
                     TypeUtils.resolve(field.getGenericType(), contextType), field.getType(),
                     ordinal, defaultValue, required,
-                    field, null, format, deserializeUsingClass, schema
+                    field, null, format, deserializeUsingClass, schema, 0, useJacksonAnnotation
             ));
             processedNames.add(rawName);
         }
@@ -582,7 +582,7 @@ public final class ObjectReaderCreator {
                     jsonName, alternateNames,
                     TypeUtils.resolve(param.getParameterizedType(), contextType), param.getType(),
                     ordinal, defaultValue, required,
-                    null, method, null, null, schema
+                    null, method, null, null, schema, 0, useJacksonAnnotation
             ));
             processedNames.add(rawName);
         }
@@ -1277,9 +1277,18 @@ public final class ObjectReaderCreator {
                     if (peek == '"') {
                         // Read string and convert to enum constant via setObjectValue
                         reader.setObjectValue(instance, utf8.readStringDirect());
-                    } else if (peek >= '0' && peek <= '9') {
-                        // Ordinal-based enum lookup
-                        reader.setFieldValue(instance, reader.convertValue(utf8.readInt()));
+                    } else if (peek >= '0' && peek <= '9' || peek == '-') {
+                        // Numeric enum input. When the enum declares a value-method that
+                        // returns a fractional type (double/float/BigDecimal), a 1-char
+                        // readInt would truncate "1.1" to 1 and misroute through the
+                        // ordinal fallback, so consult readAny to preserve precision when
+                        // the enum has a value-map. Plain ordinal enums keep the original
+                        // fast path (readInt) to avoid allocation.
+                        if (reader.enumValueMap != null) {
+                            reader.setFieldValue(instance, reader.convertValue(utf8.readAny()));
+                        } else {
+                            reader.setFieldValue(instance, reader.convertValue(utf8.readInt()));
+                        }
                     } else {
                         Object val = utf8.readAny();
                         reader.setFieldValue(instance, reader.convertValue(val));
