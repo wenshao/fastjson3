@@ -74,21 +74,25 @@ public final class ObjectReaderCreator {
             return createRecordReader(type, contextType, mixIn, useJacksonAnnotation);
         }
 
+        // Resolve type-level @JSONType once, consulting the mix-in when the target
+        // class isn't annotated directly. Used by both the sealed path and the
+        // explicit @JSONType(seeAlso) path below so mix-in-only registrations work.
+        JSONType typeAnnotation = type.getAnnotation(JSONType.class);
+        if (typeAnnotation == null && mixIn != null) {
+            typeAnnotation = mixIn.getAnnotation(JSONType.class);
+        }
+
         // Sealed class/interface: auto-discover subtypes for polymorphic deserialization
         if (type.isSealed()) {
-            return createSealedReader(type, mixIn);
+            return createSealedReader(type, typeAnnotation, mixIn);
         }
 
         // @JSONType(seeAlso=...) on abstract class or interface: manual polymorphic
         // registration for non-sealed hierarchies. Reuses createSealedReader's logic
         // since that method already honours seeAlso; we just need to route here.
-        JSONType typeAnnotation = type.getAnnotation(JSONType.class);
-        if (typeAnnotation == null && mixIn != null) {
-            typeAnnotation = mixIn.getAnnotation(JSONType.class);
-        }
         if (typeAnnotation != null && typeAnnotation.seeAlso().length > 0
                 && (type.isInterface() || Modifier.isAbstract(type.getModifiers()))) {
-            return createSealedReader(type, mixIn);
+            return createSealedReader(type, typeAnnotation, mixIn);
         }
 
         // Jackson @JsonTypeInfo + @JsonSubTypes: polymorphic deserialization for non-sealed types
@@ -634,7 +638,21 @@ public final class ObjectReaderCreator {
      */
     @SuppressWarnings("unchecked")
     private static <T> ObjectReader<T> createSealedReader(Class<T> sealedType, Class<?> mixIn) {
+        // Overload retained for callers that haven't resolved mix-in metadata.
+        // The primary entry below accepts a pre-resolved JSONType so a mix-in-only
+        // polymorphic registration (addMixIn(Base.class, BaseMixIn.class) where
+        // BaseMixIn carries @JSONType(seeAlso=...)) routes through createSealedReader
+        // instead of getting dropped when sealedType.getAnnotation(JSONType.class)
+        // returns null.
         JSONType jsonType = sealedType.getAnnotation(JSONType.class);
+        if (jsonType == null && mixIn != null) {
+            jsonType = mixIn.getAnnotation(JSONType.class);
+        }
+        return createSealedReader(sealedType, jsonType, mixIn);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectReader<T> createSealedReader(Class<T> sealedType, JSONType jsonType, Class<?> mixIn) {
         String typeKey = (jsonType != null && !jsonType.typeKey().isEmpty()) ? jsonType.typeKey() : "@type";
 
         // Auto-discover permitted subtypes (includes seeAlso for manual overrides).

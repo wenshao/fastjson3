@@ -159,4 +159,42 @@ public class PolymorphismSeeAlsoTest {
         assertInstanceOf(FallbackA.class, back);
         assertEquals(42, back.x);
     }
+
+    // ==================== Mix-in-only polymorphic metadata ====================
+    //
+    // The @JSONType(seeAlso=...) registration lives only on the mix-in class, not
+    // on the third-party base class the user can't modify. The reader must consult
+    // the mix-in's @JSONType when resolving seeAlso + typeKey — otherwise valid
+    // payloads fail with "unknown type discriminator" because the resolved seeAlso
+    // list is empty.
+
+    public static abstract class ThirdPartyShape {
+        public int area;
+    }
+
+    public static class ThirdPartyCircle extends ThirdPartyShape {
+        public double radius;
+    }
+
+    public static class ThirdPartySquare extends ThirdPartyShape {
+        public int side;
+    }
+
+    @JSONType(seeAlso = {ThirdPartyCircle.class, ThirdPartySquare.class}, typeKey = "shape")
+    public interface ShapeMixIn {
+    }
+
+    @Test
+    public void mixInOnlySeeAlsoPolymorphism() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(ThirdPartyShape.class, ShapeMixIn.class)
+                .build();
+
+        ThirdPartyShape parsed = mapper.readValue(
+                "{\"shape\":\"ThirdPartyCircle\",\"area\":78,\"radius\":5.0}",
+                ThirdPartyShape.class);
+        assertInstanceOf(ThirdPartyCircle.class, parsed);
+        assertEquals(78, parsed.area);
+        assertEquals(5.0, ((ThirdPartyCircle) parsed).radius);
+    }
 }
