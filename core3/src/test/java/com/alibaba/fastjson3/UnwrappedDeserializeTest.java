@@ -492,4 +492,64 @@ public class UnwrappedDeserializeTest {
         assertEquals("A", back.name.first);
         assertEquals("Z", back.name.last);
     }
+
+    // ==================== required=true on unwrapped holder ====================
+
+    public static class ContactRequired {
+        public String user;
+
+        @JSONField(unwrapped = true, required = true)
+        public Name name;
+    }
+
+    @Test
+    public void requiredUnwrappedHolderWithFlattenedKeysPasses() {
+        ContactRequired back = JSON.parse(
+                "{\"user\":\"u1\",\"first\":\"A\",\"last\":\"Z\"}", ContactRequired.class);
+        assertEquals("u1", back.user);
+        assertNotNull(back.name);
+        assertEquals("A", back.name.first);
+    }
+
+    @Test
+    public void requiredUnwrappedHolderWithoutFlattenedKeysFails() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parse("{\"user\":\"u1\"}", ContactRequired.class));
+        assertTrue(ex.getMessage().contains("required"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("name"), ex.getMessage());
+    }
+
+    public record ContactRequiredRecord(
+            String user,
+            @JSONField(unwrapped = true, required = true) Name name
+    ) {
+    }
+
+    @Test
+    public void requiredUnwrappedRecordComponentWithoutFlattenedKeysFails() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parse("{\"user\":\"u\"}", ContactRequiredRecord.class));
+        assertTrue(ex.getMessage().contains("required"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("name"), ex.getMessage());
+    }
+
+    // ==================== defaultValue on unwrapped holder rejected ====================
+
+    public static class DefaultOnUnwrapped {
+        @JSONField(unwrapped = true, defaultValue = "x")
+        public Name name;
+    }
+
+    @Test
+    public void defaultValueOnUnwrappedHolderRejectedAtConstruction() {
+        // The creator raises "does not support defaultValue" when constructing the
+        // reader. ObjectMapper's auto-create path currently swallows that specific
+        // exception, surfacing it at parse time as the generic
+        // "no ObjectReader registered" fallback. Call the reader creator directly
+        // so the targeted error surfaces unchanged.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(DefaultOnUnwrapped.class));
+        assertTrue(ex.getMessage().contains("defaultValue"), ex.getMessage());
+    }
 }

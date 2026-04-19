@@ -152,7 +152,7 @@ public final class ObjectReaderCreator {
 
         return new ReflectionObjectReader<>(type, constructor, collection.fieldReaders,
                 collection.fieldReaderMap, collection.matcher, useUnsafeAlloc, anySetter, typeSchema,
-                collection.unwrappedEntries);
+                collection.unwrappedEntries, collection.requiredUnwrappedHolders);
     }
 
     @SuppressWarnings("unchecked")
@@ -189,6 +189,7 @@ public final class ObjectReaderCreator {
 
         List<FieldReader> fieldReaderList = new ArrayList<>();
         List<RecordUnwrappedEntry> recordUnwrapped = null;
+        List<Integer> recordRequiredIndices = null;
         for (int i = 0; i < componentNames.length; i++) {
             String rawName = componentNames[i];
             Field field = null;
@@ -214,10 +215,20 @@ public final class ObjectReaderCreator {
             // reader can stage a scratch inner into the canonical constructor slot.
             if (annotation != null && annotation.unwrapped()
                     && !componentTypes[i].isPrimitive()) {
+                if (!annotation.defaultValue().isEmpty()) {
+                    throw new JSONException("@JSONField(unwrapped=true) on record component '"
+                            + rawName + "' does not support defaultValue — the holder is a POJO");
+                }
                 if (recordUnwrapped == null) {
                     recordUnwrapped = new ArrayList<>();
                 }
                 expandRecordUnwrapped(i, componentTypes[i], useJacksonAnnotation, recordUnwrapped);
+                if (annotation.required()) {
+                    if (recordRequiredIndices == null) {
+                        recordRequiredIndices = new ArrayList<>();
+                    }
+                    recordRequiredIndices.add(i);
+                }
                 continue;
             }
 
@@ -273,7 +284,7 @@ public final class ObjectReaderCreator {
             }
         }
 
-        FieldReaderCollection collection = new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap, null);
+        FieldReaderCollection collection = new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap, null, null);
 
         // Build component index mapping: fieldReader index → constructor param index
         // After sorting, fieldReader order may differ from constructor param order
@@ -291,9 +302,13 @@ public final class ObjectReaderCreator {
             }
         }
 
+        int[] requiredIdx = recordRequiredIndices == null ? null
+                : recordRequiredIndices.stream().mapToInt(Integer::intValue).toArray();
+        String[] requiredNames = recordRequiredIndices == null ? null
+                : recordRequiredIndices.stream().map(ii -> componentNames[ii]).toArray(String[]::new);
         return new RecordObjectReader<>(type, constructor, collection.fieldReaders,
                 collection.fieldReaderMap, collection.matcher, componentTypes.length, paramMapping,
-                recordUnwrapped);
+                recordUnwrapped, requiredIdx, requiredNames);
     }
 
     /**
@@ -364,6 +379,8 @@ public final class ObjectReaderCreator {
         // Build FieldReaders from fields (in declaration order = constructor parameter order)
         List<FieldReader> fieldReaderList = new ArrayList<>();
         List<RecordUnwrappedEntry> ctorUnwrapped = null;
+        List<Integer> ctorRequiredIndices = null;
+        List<String> ctorRequiredNames = null;
         for (int i = 0; i < instanceFields.size() && i < paramTypes.length; i++) {
             Field field = instanceFields.get(i);
             field.setAccessible(true);
@@ -392,10 +409,22 @@ public final class ObjectReaderCreator {
             // as record components — skip the regular FieldReader and collect the
             // inner's FieldReaders into a side table keyed by parameter index.
             if (annotation != null && annotation.unwrapped() && !paramTypes[i].isPrimitive()) {
+                if (!annotation.defaultValue().isEmpty()) {
+                    throw new JSONException("@JSONField(unwrapped=true) on constructor param '"
+                            + rawName + "' does not support defaultValue — the holder is a POJO");
+                }
                 if (ctorUnwrapped == null) {
                     ctorUnwrapped = new ArrayList<>();
                 }
                 expandRecordUnwrapped(i, paramTypes[i], useJacksonAnnotation, ctorUnwrapped);
+                if (annotation.required()) {
+                    if (ctorRequiredIndices == null) {
+                        ctorRequiredIndices = new ArrayList<>();
+                        ctorRequiredNames = new ArrayList<>();
+                    }
+                    ctorRequiredIndices.add(i);
+                    ctorRequiredNames.add(rawName);
+                }
                 continue;
             }
 
@@ -458,7 +487,7 @@ public final class ObjectReaderCreator {
             }
         }
 
-        FieldReaderCollection collection = new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap, null);
+        FieldReaderCollection collection = new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap, null, null);
 
         // Build parameter mapping: fieldReader index → constructor parameter index
         int[] paramMapping = new int[fieldReaders.length];
@@ -474,9 +503,13 @@ public final class ObjectReaderCreator {
             }
         }
 
+        int[] ctorRequiredIdx = ctorRequiredIndices == null ? null
+                : ctorRequiredIndices.stream().mapToInt(Integer::intValue).toArray();
+        String[] ctorRequiredNameArr = ctorRequiredNames == null ? null
+                : ctorRequiredNames.toArray(new String[0]);
         return new RecordObjectReader<>(type, constructor, collection.fieldReaders,
                 collection.fieldReaderMap, collection.matcher, paramTypes.length, paramMapping,
-                ctorUnwrapped);
+                ctorUnwrapped, ctorRequiredIdx, ctorRequiredNameArr);
     }
 
     /**
@@ -491,14 +524,20 @@ public final class ObjectReaderCreator {
         // nested POJO; holds the outer accessor + the inner FieldReader to delegate
         // into. Null when no unwrapped fields are declared on the type.
         final List<UnwrappedEntry> unwrappedEntries;
+        // Outer holder fields marked @JSONField(unwrapped=true, required=true). Post-parse
+        // check: the field must be non-null (at least one flattened inner key populated
+        // it) or a required-field error is raised. Null when no such holders declared.
+        final List<Field> requiredUnwrappedHolders;
 
         FieldReaderCollection(FieldReader[] fieldReaders, FieldNameMatcher matcher,
                               Map<String, FieldReader> fieldReaderMap,
-                              List<UnwrappedEntry> unwrappedEntries) {
+                              List<UnwrappedEntry> unwrappedEntries,
+                              List<Field> requiredUnwrappedHolders) {
             this.fieldReaders = fieldReaders;
             this.matcher = matcher;
             this.fieldReaderMap = fieldReaderMap;
             this.unwrappedEntries = unwrappedEntries;
+            this.requiredUnwrappedHolders = requiredUnwrappedHolders;
         }
     }
 
@@ -624,6 +663,11 @@ public final class ObjectReaderCreator {
         List<FieldReader> fieldReaderList = new ArrayList<>();
         Set<String> processedNames = new HashSet<>();
         List<UnwrappedEntry> unwrappedEntries = null;
+        // Holders annotated @JSONField(unwrapped=true, required=true). Tracked
+        // separately because the unwrapped expansion skips creating a regular
+        // FieldReader for these, so the normal applyDefaults required-field
+        // enforcement won't see them. Null when no such holders declared.
+        List<Field> requiredUnwrappedHolders = null;
 
         // Collect from fields
         for (Field field : getDeclaredFields(type)) {
@@ -669,11 +713,26 @@ public final class ObjectReaderCreator {
             // Placed AFTER the eligibility filters (ignores/includes/transient/visibility)
             // so an excluded holder field never contributes routes.
             if (annotation != null && annotation.unwrapped() && !field.getType().isPrimitive()) {
+                if (!annotation.defaultValue().isEmpty()) {
+                    // The holder is a POJO; a single-string defaultValue can't stand
+                    // in for an arbitrary inner object. Reject explicitly so the user
+                    // hears the constraint at construction time rather than the
+                    // metadata being silently dropped.
+                    throw new JSONException("@JSONField(unwrapped=true) on " + type.getName() + "."
+                            + field.getName() + " does not support defaultValue — the holder is a POJO");
+                }
                 if (unwrappedEntries == null) {
                     unwrappedEntries = new ArrayList<>();
                 }
                 expandUnwrappedField(field, mixIn, useJacksonAnnotation, unwrappedEntries, processedNames);
                 processedNames.add(field.getName());
+                if (annotation.required()) {
+                    if (requiredUnwrappedHolders == null) {
+                        requiredUnwrappedHolders = new ArrayList<>();
+                    }
+                    field.setAccessible(true);
+                    requiredUnwrappedHolders.add(field);
+                }
                 continue;
             }
 
@@ -849,7 +908,7 @@ public final class ObjectReaderCreator {
             }
         }
 
-        return new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap, unwrappedEntries);
+        return new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap, unwrappedEntries, requiredUnwrappedHolders);
     }
 
     /**
@@ -1078,6 +1137,11 @@ public final class ObjectReaderCreator {
         // Null when the type declares no unwrapped fields (the common case — zero overhead).
         private final java.util.Map<String, UnwrappedEntry> unwrappedByName;
 
+        // Outer holders marked @JSONField(unwrapped=true, required=true). After parse, each
+        // holder.get(instance) must be non-null (at least one flattened inner key populated
+        // it). Null when no such holders — keeps the hot path empty.
+        private final Field[] requiredUnwrappedHolders;
+
         // Pre-resolved ObjectReaders for POJO and List element types
         // Lazily initialized on first use
         private volatile boolean fieldReadersResolved;
@@ -1096,7 +1160,8 @@ public final class ObjectReaderCreator {
                 boolean useUnsafeAlloc,
                 Method anySetterMethod,
                 JSONSchema typeSchema,
-                List<UnwrappedEntry> unwrappedEntries
+                List<UnwrappedEntry> unwrappedEntries,
+                List<Field> requiredUnwrappedHolders
         ) {
             this.objectClass = objectClass;
             this.constructor = constructor;
@@ -1118,12 +1183,17 @@ public final class ObjectReaderCreator {
             } else {
                 this.unwrappedByName = null;
             }
+            this.requiredUnwrappedHolders = (requiredUnwrappedHolders == null || requiredUnwrappedHolders.isEmpty())
+                    ? null : requiredUnwrappedHolders.toArray(new Field[0]);
             // Pre-compute: skip applyDefaults if no fields have required or defaultValue
-            boolean hasDR = false;
-            for (FieldReader fr : fieldReaders) {
-                if (fr.required || (fr.defaultValue != null && !fr.defaultValue.isEmpty())) {
-                    hasDR = true;
-                    break;
+            // AND no unwrapped holder is required-flagged.
+            boolean hasDR = this.requiredUnwrappedHolders != null;
+            if (!hasDR) {
+                for (FieldReader fr : fieldReaders) {
+                    if (fr.required || (fr.defaultValue != null && !fr.defaultValue.isEmpty())) {
+                        hasDR = true;
+                        break;
+                    }
                 }
             }
             this.hasDefaultsOrRequired = hasDR;
@@ -2335,6 +2405,23 @@ public final class ObjectReaderCreator {
                     fr.setFieldValue(instance, defaultVal);
                 }
             }
+            // An @JSONField(unwrapped=true, required=true) holder is "present" only if
+            // at least one flattened inner key populated it — otherwise the holder
+            // remains null. The normal fieldReader loop above skips it because the
+            // holder never got a FieldReader; check holders directly here.
+            if (requiredUnwrappedHolders != null) {
+                for (Field holder : requiredUnwrappedHolders) {
+                    try {
+                        if (holder.get(instance) == null) {
+                            throw new JSONException("required field '" + holder.getName()
+                                    + "' is missing in " + objectClass.getName()
+                                    + " (unwrapped holder — at least one flattened inner key must appear)");
+                        }
+                    } catch (IllegalAccessException e) {
+                        throw new JSONException("cannot read unwrapped holder '" + holder.getName() + "'", e);
+                    }
+                }
+            }
         }
 
         @Override
@@ -2448,6 +2535,11 @@ public final class ObjectReaderCreator {
         private final int componentCount;
         private final int[] paramMapping; // fieldReader index → constructor param index
         private final Map<String, RecordUnwrappedEntry> unwrappedByName; // null when no unwrapped components
+        // Component indices whose @JSONField(unwrapped=true, required=true) holder must
+        // be non-null after parse (at least one flattened inner key populated it).
+        // Null when no such components — post-parse check skipped.
+        private final int[] requiredUnwrappedIndices;
+        private final String[] requiredUnwrappedNames;
 
         private volatile boolean fieldReadersResolved;
         private ObjectReader<?>[] fieldObjectReaders;
@@ -2461,7 +2553,9 @@ public final class ObjectReaderCreator {
                 FieldNameMatcher matcher,
                 int componentCount,
                 int[] paramMapping,
-                List<RecordUnwrappedEntry> unwrappedEntries
+                List<RecordUnwrappedEntry> unwrappedEntries,
+                int[] requiredUnwrappedIndices,
+                String[] requiredUnwrappedNames
         ) {
             this.objectClass = objectClass;
             this.constructor = constructor;
@@ -2482,6 +2576,8 @@ public final class ObjectReaderCreator {
                 }
                 this.unwrappedByName = map;
             }
+            this.requiredUnwrappedIndices = requiredUnwrappedIndices;
+            this.requiredUnwrappedNames = requiredUnwrappedNames;
         }
 
         /**
@@ -2808,6 +2904,20 @@ public final class ObjectReaderCreator {
                                     + ": required " + paramTypes[slot].getName()
                                     + " field '" + fieldName + "' is missing or null"
                     );
+                }
+            }
+            // @JSONField(unwrapped=true, required=true) on a component: the slot
+            // stays null when NO flattened inner key appears in the JSON. Enforce
+            // here because the unwrapped expansion skipped creating a regular
+            // FieldReader, so the normal per-field required check can't see it.
+            if (requiredUnwrappedIndices != null) {
+                for (int i = 0; i < requiredUnwrappedIndices.length; i++) {
+                    int slot = requiredUnwrappedIndices[i];
+                    if (values[slot] == null) {
+                        throw new JSONException("required field '" + requiredUnwrappedNames[i]
+                                + "' is missing in " + objectClass.getName()
+                                + " (unwrapped component — at least one flattened inner key must appear)");
+                    }
                 }
             }
             try {
