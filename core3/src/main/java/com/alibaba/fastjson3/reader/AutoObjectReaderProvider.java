@@ -88,6 +88,7 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
         if (ASM_AVAILABLE && isSimplePOJO(type)
                 && !hasAnySetter(type)
                 && !hasBuiltinCodecField(type)
+                && !hasUnwrappedField(type)
                 && countSerializableFields(type) <= 15) {
             try {
                 return ObjectReaderCreatorASM.createObjectReader(type);
@@ -97,8 +98,45 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
             }
         }
 
-        // Default to reflection (handles anySetter, BuiltinCodecs fields, etc.)
+        // Default to reflection (handles anySetter, BuiltinCodecs fields,
+        // @JSONField(unwrapped=true), etc.)
         return ObjectReaderCreator.createObjectReader(type);
+    }
+
+    /**
+     * Check if any field (on this class or a superclass) carries
+     * {@code @JSONField(unwrapped=true)}. The ASM reader's generated dispatch
+     * emits the outer's direct FieldReader list only and has no hook for the
+     * inner-routing side table populated by {@code expandUnwrappedField}, so
+     * beans that declare unwrapped must fall back to reflection until ASM
+     * gains native support.
+     */
+    private static boolean hasUnwrappedField(Class<?> type) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field field : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+                com.alibaba.fastjson3.annotation.JSONField jf =
+                        field.getAnnotation(com.alibaba.fastjson3.annotation.JSONField.class);
+                if (jf != null && jf.unwrapped()) {
+                    return true;
+                }
+            }
+            // Setter-side: @JSONField(unwrapped=true) on a 1-arg method also triggers
+            // the unwrapped-expansion path and isn't reflected in the FieldReader array.
+            for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+                if (java.lang.reflect.Modifier.isStatic(m.getModifiers()) || m.getParameterCount() != 1) {
+                    continue;
+                }
+                com.alibaba.fastjson3.annotation.JSONField jf =
+                        m.getAnnotation(com.alibaba.fastjson3.annotation.JSONField.class);
+                if (jf != null && jf.unwrapped()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

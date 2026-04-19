@@ -410,4 +410,86 @@ public class UnwrappedDeserializeTest {
         assertNotNull(direct.money());
         assertEquals(new java.math.BigDecimal("42.50"), direct.money().amount);
     }
+
+    // ==================== Inner type's mix-in honoured by unwrapped expansion ====================
+    //
+    // Mix-in on the inner type must survive through the unwrapped expansion. A
+    // user who registers `addMixIn(Address.class, AddressMixIn.class)` and has
+    // @JSONField(unwrapped=true) on a field of type Address should see the
+    // mix-in's renamed properties fire for the flattened inner keys.
+
+    public static class AddressUnwrapped {
+        public String street;
+    }
+
+    public static abstract class AddressMixIn {
+        @JSONField(name = "street_name")
+        public String street;
+    }
+
+    public static class PersonWithAddress {
+        @JSONField(unwrapped = true)
+        public AddressUnwrapped address;
+        public int age;
+    }
+
+    @Test
+    public void innerMixInHonouredDuringUnwrappedExpansion() {
+        ObjectMapper m = ObjectMapper.builder()
+                .addMixIn(AddressUnwrapped.class, AddressMixIn.class)
+                .build();
+
+        PersonWithAddress back = m.readValue(
+                "{\"street_name\":\"Main\",\"age\":5}", PersonWithAddress.class);
+        assertEquals(5, back.age);
+        assertNotNull(back.address);
+        assertEquals("Main", back.address.street);
+    }
+
+    // ==================== Setter-backed unwrapped with inherited holder field ====================
+
+    public static class BaseHolder {
+        protected Name name;
+
+        public Name getName() {
+            return name;
+        }
+    }
+
+    public static class ChildHolder extends BaseHolder {
+        public int age;
+
+        @JSONField(unwrapped = true)
+        public void setName(Name n) {
+            this.name = n;
+        }
+    }
+
+    @Test
+    public void setterBackedUnwrappedFindsInheritedField() {
+        ChildHolder back = JSON.parse("{\"first\":\"I\",\"last\":\"F\",\"age\":8}", ChildHolder.class);
+        assertEquals(8, back.age);
+        assertNotNull(back.getName());
+        assertEquals("I", back.getName().first);
+        assertEquals("F", back.getName().last);
+    }
+
+    // ==================== ASM-provider AUTO mapper falls back to reflection ====================
+
+    @Test
+    public void autoModeFallsBackToReflectionForUnwrappedField() {
+        // The AUTO provider must not pick the ASM reader for a type that declares
+        // an unwrapped field — the generated reader has no routing side table and
+        // would silently drop the flattened inner keys.
+        ObjectMapper autoMapper = ObjectMapper.builder()
+                .readerProvider(com.alibaba.fastjson3.reader.AutoObjectReaderProvider.INSTANCE)
+                .build();
+
+        Person back = autoMapper.readValue(
+                "{\"first\":\"A\",\"last\":\"Z\",\"age\":13}", Person.class);
+        assertEquals(13, back.age);
+        assertNotNull(back.name);
+        assertEquals("A", back.name.first);
+        assertEquals("Z", back.name.last);
+    }
 }

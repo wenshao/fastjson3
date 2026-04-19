@@ -21,6 +21,20 @@ public final class ObjectReaderCreator {
     private ObjectReaderCreator() {
     }
 
+    /**
+     * Per-call mix-in cache, scoped by {@link ObjectMapper#getObjectReader}. Allows
+     * helpers deep in the creation pipeline (e.g. inner-POJO expansion for
+     * {@code @JSONField(unwrapped=true)}) to resolve a mix-in for a type other
+     * than the top-level target without threading the entire mixInCache through
+     * every overload. {@code null} outside a mapper-driven creation call.
+     */
+    public static final ThreadLocal<java.util.Map<Class<?>, Class<?>>> MIXIN_CONTEXT = new ThreadLocal<>();
+
+    static Class<?> resolveMixIn(Class<?> type) {
+        java.util.Map<Class<?>, Class<?>> ctx = MIXIN_CONTEXT.get();
+        return ctx != null ? ctx.get(type) : null;
+    }
+
     public static <T> ObjectReader<T> createObjectReader(Class<T> type) {
         return createObjectReader(type, null, false);
     }
@@ -295,7 +309,11 @@ public final class ObjectReaderCreator {
             throw new JSONException("@JSONField(unwrapped=true) at component #" + componentIdx
                     + ": inner type " + innerClass.getName() + " must be a concrete POJO");
         }
-        FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, null, useJacksonAnnotation);
+        // Honour a user-registered mix-in for the inner type so renamed properties,
+        // alternate names, ignores/includes rules etc. apply to flattened inner keys
+        // the same way they would when reading the inner as a top-level target.
+        Class<?> innerMixIn = resolveMixIn(innerClass);
+        FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, innerMixIn, useJacksonAnnotation);
         for (FieldReader innerFr : innerCollection.fieldReaders) {
             sink.add(new RecordUnwrappedEntry(componentIdx, innerClass, innerFr));
         }
@@ -761,12 +779,12 @@ public final class ObjectReaderCreator {
             if (annotation != null && annotation.unwrapped()) {
                 Class<?> paramType = method.getParameterTypes()[0];
                 if (!paramType.isPrimitive()) {
-                    Field holderField = null;
-                    try {
-                        holderField = type.getDeclaredField(rawName);
-                    } catch (NoSuchFieldException ignored) {
-                    }
-                    if (holderField != null && !Modifier.isStatic(holderField.getModifiers())) {
+                    // Walk the class hierarchy — the holder field may live on a
+                    // superclass (common JavaBean shape: `class Child extends
+                    // Base { ... }` where Base declares the holder). Rejecting
+                    // inherited fields narrows the feature unnecessarily.
+                    Field holderField = findInstanceFieldInHierarchy(type, rawName);
+                    if (holderField != null) {
                         if (unwrappedEntries == null) {
                             unwrappedEntries = new ArrayList<>();
                         }
@@ -857,7 +875,11 @@ public final class ObjectReaderCreator {
         Field[] directChain = {outerField};
         Class<?>[] directClasses = {innerClass};
 
-        FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, null, useJacksonAnnotation);
+        // Honour a user-registered mix-in for the inner type so renamed properties,
+        // alternate names, ignores/includes rules etc. apply to flattened inner
+        // keys the same way they would when reading the inner as a top-level target.
+        Class<?> innerMixIn = resolveMixIn(innerClass);
+        FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, innerMixIn, useJacksonAnnotation);
         for (FieldReader innerFr : innerCollection.fieldReaders) {
             // Outer fields take precedence on name collision — skip any inner name
             // that has already been processed at the outer level.
@@ -2927,6 +2949,26 @@ public final class ObjectReaderCreator {
      * Excludes static, transient, and synthetic fields.
      * Used by constructor-based readers where parameter order matches parent-first field order.
      */
+    /**
+     * Find an instance (non-static) field by name in the class hierarchy. Walks
+     * {@code type} then each superclass, returning the first match. Used by the
+     * setter-backed {@code @JSONField(unwrapped=true)} branch so an inherited
+     * holder field satisfies the backing-field requirement the same way
+     * declared-on-current-class fields do.
+     */
+    private static Field findInstanceFieldInHierarchy(Class<?> type, String name) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                Field f = c.getDeclaredField(name);
+                if (!Modifier.isStatic(f.getModifiers())) {
+                    return f;
+                }
+            } catch (NoSuchFieldException ignored) {
+            }
+        }
+        return null;
+    }
+
     private static List<Field> getInstanceFieldsParentFirst(Class<?> type) {
         List<Class<?>> hierarchy = new ArrayList<>();
         Class<?> current = type;
