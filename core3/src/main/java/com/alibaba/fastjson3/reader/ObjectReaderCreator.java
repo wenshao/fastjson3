@@ -838,6 +838,11 @@ public final class ObjectReaderCreator {
             if (annotation != null && annotation.unwrapped()) {
                 Class<?> paramType = method.getParameterTypes()[0];
                 if (!paramType.isPrimitive()) {
+                    if (!annotation.defaultValue().isEmpty()) {
+                        throw new JSONException("@JSONField(unwrapped=true) on setter "
+                                + type.getName() + "." + method.getName()
+                                + " does not support defaultValue — the holder is a POJO");
+                    }
                     // Walk the class hierarchy — the holder field may live on a
                     // superclass (common JavaBean shape: `class Child extends
                     // Base { ... }` where Base declares the holder). Rejecting
@@ -849,6 +854,17 @@ public final class ObjectReaderCreator {
                         }
                         expandUnwrappedField(holderField, mixIn, useJacksonAnnotation, unwrappedEntries, processedNames);
                         processedNames.add(rawName);
+                        if (annotation.required()) {
+                            // Mirror the field-backed branch: register the backing
+                            // field so applyDefaults validates it post-parse. Without
+                            // this, @JSONField(unwrapped=true, required=true) on a
+                            // setter silently became a no-op.
+                            if (requiredUnwrappedHolders == null) {
+                                requiredUnwrappedHolders = new ArrayList<>();
+                            }
+                            holderField.setAccessible(true);
+                            requiredUnwrappedHolders.add(holderField);
+                        }
                         continue;
                     }
                     // No backing field — the unwrapped semantics can't be lazily
@@ -2842,7 +2858,11 @@ public final class ObjectReaderCreator {
             }
             if (obj instanceof Map<?, ?> map) {
                 Object[] values = new Object[componentCount];
-                java.util.Set<String> consumed = (unwrappedByName == null) ? null : new java.util.HashSet<>();
+                boolean errorOnUnknown = (features & ReadFeature.ErrorOnUnknownProperties.mask) != 0;
+                // Track consumed keys when either unwrapped routing needs a second pass
+                // or ErrorOnUnknownProperties needs to diff normal fields from unknowns.
+                java.util.Set<String> consumed = (unwrappedByName != null || errorOnUnknown)
+                        ? new java.util.HashSet<>() : null;
                 for (FieldReader fr : fieldReaders) {
                     Object value = map.get(fr.fieldName);
                     if (value != null) {
@@ -2866,20 +2886,26 @@ public final class ObjectReaderCreator {
                     }
                 }
                 // Second pass — staged flattened keys go into scratch inners then feed the
-                // canonical constructor at their component index.
-                if (unwrappedByName != null) {
+                // canonical constructor at their component index. When errorOnUnknown is
+                // enabled, any key that matches neither a normal field nor an unwrapped
+                // entry raises the same error as the streaming path.
+                if (unwrappedByName != null || errorOnUnknown) {
                     for (Map.Entry<?, ?> e : map.entrySet()) {
                         String key = String.valueOf(e.getKey());
                         if (consumed.contains(key)) {
                             continue;
                         }
-                        RecordUnwrappedEntry ue = unwrappedByName.get(key);
-                        if (ue == null) {
+                        RecordUnwrappedEntry ue = unwrappedByName == null ? null : unwrappedByName.get(key);
+                        if (ue != null) {
+                            Object scratch = ensureRecordScratch(values, ue);
+                            Object assigned = applyRecordUnwrappedValueFromMap(ue, e.getValue(), features);
+                            ue.innerReader.setFieldValue(scratch, assigned);
                             continue;
                         }
-                        Object scratch = ensureRecordScratch(values, ue);
-                        Object assigned = applyRecordUnwrappedValueFromMap(ue, e.getValue(), features);
-                        ue.innerReader.setFieldValue(scratch, assigned);
+                        if (errorOnUnknown) {
+                            throw new JSONException("unknown property '" + key
+                                    + "' in " + objectClass.getName());
+                        }
                     }
                 }
                 return constructRecord(values);

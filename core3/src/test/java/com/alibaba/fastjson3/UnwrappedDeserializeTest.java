@@ -552,4 +552,61 @@ public class UnwrappedDeserializeTest {
                         .createObjectReader(DefaultOnUnwrapped.class));
         assertTrue(ex.getMessage().contains("defaultValue"), ex.getMessage());
     }
+
+    // ==================== Setter-backed required unwrapped ====================
+
+    public static class SetterRequiredHolder {
+        private Name name;
+        public int age;
+
+        @JSONField(unwrapped = true, required = true)
+        public void setName(Name n) {
+            this.name = n;
+        }
+
+        public Name getName() {
+            return name;
+        }
+    }
+
+    @Test
+    public void setterBackedRequiredUnwrappedWithFlattenedKeysPasses() {
+        SetterRequiredHolder back = JSON.parse(
+                "{\"first\":\"a\",\"last\":\"b\",\"age\":7}", SetterRequiredHolder.class);
+        assertEquals(7, back.age);
+        assertNotNull(back.getName());
+    }
+
+    @Test
+    public void setterBackedRequiredUnwrappedWithoutFlattenedKeysFails() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parse("{\"age\":8}", SetterRequiredHolder.class));
+        assertTrue(ex.getMessage().contains("required"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("name"), ex.getMessage());
+    }
+
+    // ==================== ErrorOnUnknownProperties honoured in record map-fallback ====================
+
+    @Test
+    public void recordMapFallbackHonoursErrorOnUnknownProperties() {
+        // Keys that match neither a real component nor an unwrapped entry must
+        // raise under ErrorOnUnknownProperties even when the parser took the
+        // record map-fallback path. Previously silently ignored.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject(
+                        "{\"age\":7,\"first\":\"a\",\"last\":\"b\",\"unexpected\":\"oops\"}",
+                        RecordPerson.class, ReadFeature.ErrorOnUnknownProperties));
+        assertTrue(ex.getMessage().contains("unknown"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("unexpected"), ex.getMessage());
+    }
+
+    @Test
+    public void recordMapFallbackAcceptsUnwrappedInnerUnderErrorOnUnknown() {
+        // Positive case: flattened inner keys shouldn't trigger the unknown error.
+        RecordPerson back = JSON.parseObject(
+                "{\"age\":9,\"first\":\"a\",\"last\":\"b\"}",
+                RecordPerson.class, ReadFeature.ErrorOnUnknownProperties);
+        assertEquals(9, back.age());
+        assertEquals("a", back.name().first);
+    }
 }
