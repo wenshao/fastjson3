@@ -137,7 +137,8 @@ public final class ObjectReaderCreator {
         JSONSchema typeSchema = parseTypeSchema(type);
 
         return new ReflectionObjectReader<>(type, constructor, collection.fieldReaders,
-                collection.fieldReaderMap, collection.matcher, useUnsafeAlloc, anySetter, typeSchema);
+                collection.fieldReaderMap, collection.matcher, useUnsafeAlloc, anySetter, typeSchema,
+                collection.unwrappedEntries);
     }
 
     @SuppressWarnings("unchecked")
@@ -244,7 +245,7 @@ public final class ObjectReaderCreator {
             }
         }
 
-        FieldReaderCollection collection = new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap);
+        FieldReaderCollection collection = new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap, null);
 
         // Build component index mapping: fieldReader index → constructor param index
         // After sorting, fieldReader order may differ from constructor param order
@@ -376,7 +377,7 @@ public final class ObjectReaderCreator {
             }
         }
 
-        FieldReaderCollection collection = new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap);
+        FieldReaderCollection collection = new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap, null);
 
         // Build parameter mapping: fieldReader index → constructor parameter index
         int[] paramMapping = new int[fieldReaders.length];
@@ -404,12 +405,35 @@ public final class ObjectReaderCreator {
         final FieldReader[] fieldReaders;
         final FieldNameMatcher matcher;
         final Map<String, FieldReader> fieldReaderMap;
+        // One entry per JSON field name coming from an @JSONField(unwrapped=true)
+        // nested POJO; holds the outer accessor + the inner FieldReader to delegate
+        // into. Null when no unwrapped fields are declared on the type.
+        final List<UnwrappedEntry> unwrappedEntries;
 
         FieldReaderCollection(FieldReader[] fieldReaders, FieldNameMatcher matcher,
-                              Map<String, FieldReader> fieldReaderMap) {
+                              Map<String, FieldReader> fieldReaderMap,
+                              List<UnwrappedEntry> unwrappedEntries) {
             this.fieldReaders = fieldReaders;
             this.matcher = matcher;
             this.fieldReaderMap = fieldReaderMap;
+            this.unwrappedEntries = unwrappedEntries;
+        }
+    }
+
+    /**
+     * Routing info for one JSON field name that maps into an unwrapped nested POJO.
+     * Populated at collection time so the read loop can dispatch unknown outer-level
+     * names into the nested object's FieldReader after constructing the inner instance.
+     */
+    static final class UnwrappedEntry {
+        final Field outerField;      // the @JSONField(unwrapped=true) holder on the parent
+        final Class<?> innerClass;   // erased type of outerField — used to construct the inner
+        final FieldReader innerReader; // resolves the inner field this name targets
+
+        UnwrappedEntry(Field outerField, Class<?> innerClass, FieldReader innerReader) {
+            this.outerField = outerField;
+            this.innerClass = innerClass;
+            this.innerReader = innerReader;
         }
     }
 
@@ -453,6 +477,7 @@ public final class ObjectReaderCreator {
 
         List<FieldReader> fieldReaderList = new ArrayList<>();
         Set<String> processedNames = new HashSet<>();
+        List<UnwrappedEntry> unwrappedEntries = null;
 
         // Collect from fields
         for (Field field : getDeclaredFields(type)) {
@@ -462,6 +487,21 @@ public final class ObjectReaderCreator {
                 annotation = findMixInFieldAnnotation(mixIn, field.getName(), JSONField.class);
             }
             if (annotation != null && !annotation.deserialize()) {
+                continue;
+            }
+
+            // @JSONField(unwrapped=true) on deserialization: don't register this field
+            // as a top-level reader. Instead, expand the inner POJO's FieldReaders and
+            // route by their JSON names via the unwrappedEntries side table so the read
+            // loop can lazily construct the inner and delegate field writes.
+            if (annotation != null && annotation.unwrapped()
+                    && !Modifier.isStatic(field.getModifiers())
+                    && !field.getType().isPrimitive()) {
+                if (unwrappedEntries == null) {
+                    unwrappedEntries = new ArrayList<>();
+                }
+                expandUnwrappedField(field, mixIn, useJacksonAnnotation, unwrappedEntries, processedNames);
+                processedNames.add(field.getName());
                 continue;
             }
 
@@ -632,7 +672,38 @@ public final class ObjectReaderCreator {
             }
         }
 
-        return new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap);
+        return new FieldReaderCollection(fieldReaders, matcher, fieldReaderMap, unwrappedEntries);
+    }
+
+    /**
+     * For an outer field annotated {@code @JSONField(unwrapped=true)}, resolve the
+     * inner POJO's FieldReaders and register each under its JSON name in the
+     * unwrapped side table. The outer field itself becomes the holder slot; the
+     * inner FieldReaders target the inner's layout so {@code setObjectValue(inner, …)}
+     * works unchanged.
+     */
+    private static void expandUnwrappedField(Field outerField, Class<?> mixIn, boolean useJacksonAnnotation,
+                                             List<UnwrappedEntry> entries, Set<String> processedNames) {
+        Class<?> innerClass = outerField.getType();
+        // Guard rails: unwrapping only makes sense for regular bean POJOs. Reject
+        // interfaces, abstracts, and records (records need the canonical constructor
+        // pattern, which doesn't compose with the outer's reader).
+        if (innerClass.isInterface() || Modifier.isAbstract(innerClass.getModifiers())
+                || JDKUtils.isRecord(innerClass)) {
+            throw new JSONException("@JSONField(unwrapped=true) on " + outerField.getName()
+                    + ": inner type " + innerClass.getName() + " must be a concrete POJO");
+        }
+        outerField.setAccessible(true);
+
+        FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, null, useJacksonAnnotation);
+        for (FieldReader innerFr : innerCollection.fieldReaders) {
+            // Outer fields take precedence on name collision — skip any inner name
+            // that has already been processed at the outer level.
+            if (processedNames.contains(innerFr.fieldName)) {
+                continue;
+            }
+            entries.add(new UnwrappedEntry(outerField, innerClass, innerFr));
+        }
     }
 
     // ==================== Internal ObjectReader implementation ====================
@@ -765,6 +836,10 @@ public final class ObjectReaderCreator {
         private final JSONSchema typeSchema; // nullable, from @JSONType(schema=)
         private final boolean hasDefaultsOrRequired; // skip applyDefaults when false
 
+        // @JSONField(unwrapped=true) routing: inner-POJO field names → (outer holder, inner reader).
+        // Null when the type declares no unwrapped fields (the common case — zero overhead).
+        private final java.util.Map<String, UnwrappedEntry> unwrappedByName;
+
         // Pre-resolved ObjectReaders for POJO and List element types
         // Lazily initialized on first use
         private volatile boolean fieldReadersResolved;
@@ -782,7 +857,8 @@ public final class ObjectReaderCreator {
                 FieldNameMatcher matcher,
                 boolean useUnsafeAlloc,
                 Method anySetterMethod,
-                JSONSchema typeSchema
+                JSONSchema typeSchema,
+                List<UnwrappedEntry> unwrappedEntries
         ) {
             this.objectClass = objectClass;
             this.constructor = constructor;
@@ -792,6 +868,18 @@ public final class ObjectReaderCreator {
             this.useUnsafeAlloc = useUnsafeAlloc;
             this.anySetterMethod = anySetterMethod;
             this.typeSchema = typeSchema;
+            if (unwrappedEntries != null && !unwrappedEntries.isEmpty()) {
+                java.util.Map<String, UnwrappedEntry> map = HashMap.newHashMap(unwrappedEntries.size() * 2);
+                for (UnwrappedEntry ue : unwrappedEntries) {
+                    map.putIfAbsent(ue.innerReader.fieldName, ue);
+                    for (String alt : ue.innerReader.alternateNames) {
+                        map.putIfAbsent(alt, ue);
+                    }
+                }
+                this.unwrappedByName = map;
+            } else {
+                this.unwrappedByName = null;
+            }
             // Pre-compute: skip applyDefaults if no fields have required or defaultValue
             boolean hasDR = false;
             for (FieldReader fr : fieldReaders) {
@@ -1103,23 +1191,46 @@ public final class ObjectReaderCreator {
                         fieldSetMask |= (1L << fi);
                     }
                 } else {
-                    if (anySetterMethod != null) {
-                        // Re-read field name from saved offset (miss path is inherently slow)
+                    boolean handled = false;
+                    if (unwrappedByName != null) {
+                        // Re-read field name to look up in the @JSONField(unwrapped=true)
+                        // side table. A hit delegates the value write to the inner POJO
+                        // (lazily constructed on first hit and stashed on the outer holder).
                         utf8.setOffset(fieldStartOff);
                         String fname = utf8.readFieldName();
-                        Object fvalue = utf8.readAny();
-                        off = utf8.getOffset();
-                        try {
-                            anySetterMethod.invoke(instance, fname, fvalue);
-                        } catch (Exception e) {
-                            throw new JSONException("anySetter error for '" + fname + "'", e);
+                        UnwrappedEntry entry = unwrappedByName.get(fname);
+                        if (entry != null) {
+                            Object inner = ensureUnwrappedTarget(instance, entry);
+                            Object fvalue = utf8.readAny();
+                            Object converted = entry.innerReader.convertValue(fvalue);
+                            entry.innerReader.setFieldValue(inner, converted);
+                            off = utf8.getOffset();
+                            handled = true;
+                        } else {
+                            // Miss — reset so the unknown-property branches below re-read
+                            // from fieldStartOff.
+                            utf8.setOffset(fieldStartOff);
                         }
-                    } else if (errorOnUnknown) {
-                        throw new JSONException("unknown property in " + objectClass.getName());
-                    } else {
-                        utf8.setOffset(off);
-                        utf8.skipValue();
-                        off = utf8.getOffset();
+                    }
+                    if (!handled) {
+                        if (anySetterMethod != null) {
+                            // Re-read field name from saved offset (miss path is inherently slow)
+                            utf8.setOffset(fieldStartOff);
+                            String fname = utf8.readFieldName();
+                            Object fvalue = utf8.readAny();
+                            off = utf8.getOffset();
+                            try {
+                                anySetterMethod.invoke(instance, fname, fvalue);
+                            } catch (Exception e) {
+                                throw new JSONException("anySetter error for '" + fname + "'", e);
+                            }
+                        } else if (errorOnUnknown) {
+                            throw new JSONException("unknown property in " + objectClass.getName());
+                        } else {
+                            utf8.setOffset(off);
+                            utf8.skipValue();
+                            off = utf8.getOffset();
+                        }
                     }
                 }
 
@@ -1139,6 +1250,26 @@ public final class ObjectReaderCreator {
             }
             utf8.setOffset(off);
             return fieldSetMask;
+        }
+
+        /**
+         * Lazily create the inner POJO instance for a {@code @JSONField(unwrapped=true)}
+         * holder field and attach it to the outer. Subsequent hits return the cached
+         * instance so multiple JSON keys collapsed from the same inner-type populate
+         * a single inner object.
+         */
+        private Object ensureUnwrappedTarget(Object outer, UnwrappedEntry entry) {
+            try {
+                Object inner = entry.outerField.get(outer);
+                if (inner == null) {
+                    inner = entry.innerClass.getDeclaredConstructor().newInstance();
+                    entry.outerField.set(outer, inner);
+                }
+                return inner;
+            } catch (ReflectiveOperationException e) {
+                throw new JSONException("cannot construct unwrapped inner " + entry.innerClass.getName()
+                        + " for field '" + entry.outerField.getName() + "': " + e.getMessage(), e);
+            }
         }
 
         private T readObjectGeneric(JSONParser parser, long features) {
