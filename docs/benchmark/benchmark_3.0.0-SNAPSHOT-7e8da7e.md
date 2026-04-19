@@ -13,7 +13,7 @@ Git commit: `7e8da7e` — extends [`benchmark_3.0.0-SNAPSHOT-94414d5.md`](benchm
 
 Generated: `2026-04-19T13:30Z`
 
-**Headline:** fastjson3 wins or ties on 25 of 30 cells (5 machines × 6 benchmarks). The 5 sub-100% cells are all `UsersParseUTF8Bytes` (22-field POJO) at 92–98% — the same persistent ASM-vs-fastjson2 gap on this shape that was tagged "do not retry" in PR #102's session, structural and not yet closed.
+**Headline:** fastjson3 wins or ties on 25 of 30 cells (5 machines × 6 benchmarks). The 5 sub-100% cells are 4× `UsersParseUTF8Bytes` (x86_64 92.1%, aarch64 16c 92.5%, arm4 93.7%, RISC-V 97.8%) plus 1× `ClientsParseUTF8Bytes` on x86_64 (99.96% — within error of parity). `UsersParseUTF8Bytes` on arm3 sits at 108%, the only above-parity cell on that benchmark; the rest is the persistent ASM-vs-fastjson2 22-field gap tagged "do not retry" in PR #102's session, structural and not yet closed.
 
 ## Scope
 
@@ -56,7 +56,9 @@ Generated: `2026-04-19T13:30Z`
 
 ¹ x86_64 EishayWrite was re-run in isolation because the first combined run produced an anomalous fastjson2 measurement (`17840 ±548` clean re-run vs `14470 ±4429` first run, > 30% error bar — the box scheduled a noisy neighbor at the same time).
 
-**25 of 30 cells ≥ 100%.** The 5 sub-100% cells are all `UsersParseUTF8Bytes`, sitting at 92–98%. arm3 is the lone exception above parity at 108% — the OrangePi 5+'s big.LITTLE A76 cores apparently get a different JIT cliff vs the bigger aarch64 box.
+**25 of 30 cells ≥ 100%.** Sub-parity breakdown:
+- `UsersParseUTF8Bytes` — 4 of 5 machines below parity (92–98%); arm3 the lone outlier at 108%, presumably because the OrangePi 5+'s A76 big.LITTLE cores hit a different JIT cliff than the bigger aarch64 box.
+- `ClientsParseUTF8Bytes` on x86_64 — 99.96%, within error of parity.
 
 ## Key changes since the previous report (`94414d5`)
 
