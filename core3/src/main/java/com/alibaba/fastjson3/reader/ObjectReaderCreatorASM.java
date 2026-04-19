@@ -2879,6 +2879,17 @@ public final class ObjectReaderCreatorASM {
             mw.chain()
                     .iconst_m1()
                     .ireturn();
+
+            // Without an explicit visitMaxs the method's max-stack/max-locals
+            // stay at the constructor defaults, and the JVM verifier rejects
+            // the loaded class with `VerifyError: Operand stack overflow` on
+            // any prefix-unique 22-field bean (the path PR #114 newly routes
+            // here). Worst-case stack is 4 — String field's `aload(4) +
+            // getstatic foN (long, 2 slots) + aload(7)` before the
+            // `invokestatic putObject` — but bumping to 6 leaves headroom for
+            // future per-type emit growth without going back to recompute.
+            // Worst-case locals is slot 7 (String tmp), so 8.
+            mw.visitMaxs(6, 8);
         }
     }
 
