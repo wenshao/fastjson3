@@ -95,6 +95,11 @@ public final class FieldReader implements Comparable<FieldReader> {
     // Cached enum constants for enum fields (null for non-enum fields)
     public final Object[] enumConstants;
 
+    // Inverse map for enums whose declaring class has a @JSONField(value=true) / @JsonValue
+    // accessor. Maps the value-method's return (String/Integer/...) back to the enum constant.
+    // null when the enum has no value method or the field is not an enum.
+    public final java.util.Map<Object, Object> enumValueMap;
+
     // Optional: field-level deserialization features (from @JSONField(deserializeFeatures=))
     public final long fieldFeatures;
 
@@ -188,6 +193,26 @@ public final class FieldReader implements Comparable<FieldReader> {
             String schema,
             long fieldFeatures
     ) {
+        this(fieldName, alternateNames, fieldType, fieldClass, ordinal, defaultValue,
+                required, field, setter, format, deserializeUsingClass, schema, fieldFeatures, false);
+    }
+
+    public FieldReader(
+            String fieldName,
+            String[] alternateNames,
+            Type fieldType,
+            Class<?> fieldClass,
+            int ordinal,
+            String defaultValue,
+            boolean required,
+            Field field,
+            Method setter,
+            String format,
+            Class<?> deserializeUsingClass,
+            String schema,
+            long fieldFeatures,
+            boolean useJacksonAnnotation
+    ) {
         this.fieldName = fieldName;
         this.alternateNames = alternateNames != null ? alternateNames : new String[0];
         this.fieldType = fieldType;
@@ -250,6 +275,7 @@ public final class FieldReader implements Comparable<FieldReader> {
 
         // Cache enum constants for enum fields
         this.enumConstants = fieldClass.isEnum() ? fieldClass.getEnumConstants() : null;
+        this.enumValueMap = fieldClass.isEnum() ? buildEnumValueMap(fieldClass, useJacksonAnnotation) : null;
         this.fieldFeatures = fieldFeatures;
 
         // Resolve Unsafe field offset (look up corresponding field if we only have a setter)
@@ -433,8 +459,11 @@ public final class FieldReader implements Comparable<FieldReader> {
      * Set a reference-type value directly via Unsafe, skipping primitive type checks.
      */
     public void setObjectValue(Object bean, Object value) {
-        if (enumConstants != null && value instanceof String name) {
-            value = resolveEnumValue(name);
+        if (enumConstants != null && value != null && !fieldClass.isInstance(value)) {
+            // String name from JSON → enum constant (or, when the enum has a
+            // @JSONField(value=true) method, a String/Number produced by that
+            // method → enum constant via the inverse map).
+            value = resolveEnumValue(value);
         }
         if (jsonSchema != null && value != null) {
             jsonSchema.assertValidate(value);
@@ -633,9 +662,42 @@ public final class FieldReader implements Comparable<FieldReader> {
         // String/Number → Enum conversion
         if (enumConstants != null) {
             if (value instanceof String name) {
+                if (enumValueMap != null) {
+                    Object mapped = enumValueMap.get(name);
+                    if (mapped != null) {
+                        return mapped;
+                    }
+                }
                 return resolveEnumValue(name);
             }
             if (value instanceof Number number) {
+                // When the enum has a numeric @JSONField(value=true) accessor, try value-map first
+                // (e.g. Priority.HIGH has getCode() == 1, so JSON 1 must map back to HIGH, not ordinal(1)).
+                // Use a non-throwing probe so a value-map miss still falls through to the
+                // ordinal fallback below — callers that historically sent enum ordinals
+                // must keep working even when the enum grows a value-method.
+                if (enumValueMap != null) {
+                    Object mapped = enumValueMap.get(number);
+                    if (mapped == null) {
+                        // Cross-compat for mismatched numeric boxings (e.g. JSON arrives
+                        // as Long, map key is Integer). Compare by exact numeric value via
+                        // BigDecimal.compareTo so 1.1 and 1.9 do not both collapse to 1.
+                        java.math.BigDecimal probe = toBigDecimal(number);
+                        for (java.util.Map.Entry<Object, Object> e : enumValueMap.entrySet()) {
+                            Object k = e.getKey();
+                            if (k instanceof Number kn) {
+                                java.math.BigDecimal kd = toBigDecimal(kn);
+                                if (kd != null && probe != null && kd.compareTo(probe) == 0) {
+                                    mapped = e.getValue();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (mapped != null) {
+                        return mapped;
+                    }
+                }
                 int ordinal = number.intValue();
                 if (ordinal >= 0 && ordinal < enumConstants.length) {
                     return enumConstants[ordinal];
@@ -677,15 +739,132 @@ public final class FieldReader implements Comparable<FieldReader> {
     }
 
     /**
-     * Resolve an enum constant by name using Java's optimized Enum.valueOf lookup.
+     * Resolve an enum constant from a JSON value. When the enum declares a
+     * {@code @JSONField(value=true)} accessor, the value-map built at construction
+     * is consulted first; otherwise falls back to {@code Enum.valueOf} (by name).
      */
     @SuppressWarnings({"rawtypes", "unchecked"})
-    private Object resolveEnumValue(String name) {
-        try {
-            return Enum.valueOf((Class) fieldClass, name);
-        } catch (IllegalArgumentException e) {
-            throw new JSONException("no enum constant " + fieldClass.getName() + "." + name, e);
+    private Object resolveEnumValue(Object value) {
+        if (enumValueMap != null) {
+            Object found = enumValueMap.get(value);
+            if (found != null) {
+                return found;
+            }
+            // Numeric cross-compat: JSON number arrives as Long/Integer/BigDecimal;
+            // map keys may have been stored as the value-method's declared return type.
+            // Compare by exact numeric value so 1.1 and 1.9 don't both match 1.
+            if (value instanceof Number n) {
+                java.math.BigDecimal probe = toBigDecimal(n);
+                for (java.util.Map.Entry<Object, Object> e : enumValueMap.entrySet()) {
+                    Object k = e.getKey();
+                    if (k instanceof Number kn) {
+                        java.math.BigDecimal kd = toBigDecimal(kn);
+                        if (kd != null && probe != null && kd.compareTo(probe) == 0) {
+                            return e.getValue();
+                        }
+                    }
+                }
+            }
         }
+        if (value instanceof String name) {
+            try {
+                return Enum.valueOf((Class) fieldClass, name);
+            } catch (IllegalArgumentException e) {
+                throw new JSONException("no enum constant " + fieldClass.getName() + "." + name, e);
+            }
+        }
+        throw new JSONException("cannot resolve enum " + fieldClass.getName() + " from value: " + value);
+    }
+
+    /**
+     * Normalise any {@link Number} to a {@link java.math.BigDecimal} for exact value
+     * comparison in the enum value-map cross-compat branches. Integer / Long / Short /
+     * Byte keep integer precision; Double / Float convert through {@code toString()}
+     * to avoid the binary-fraction drift {@code new BigDecimal(double)} introduces.
+     */
+    private static java.math.BigDecimal toBigDecimal(Number n) {
+        if (n == null) {
+            return null;
+        }
+        if (n instanceof java.math.BigDecimal bd) {
+            return bd;
+        }
+        if (n instanceof java.math.BigInteger bi) {
+            return new java.math.BigDecimal(bi);
+        }
+        if (n instanceof Integer || n instanceof Long || n instanceof Short || n instanceof Byte
+                || n instanceof java.util.concurrent.atomic.AtomicInteger
+                || n instanceof java.util.concurrent.atomic.AtomicLong) {
+            return java.math.BigDecimal.valueOf(n.longValue());
+        }
+        if (n instanceof Double || n instanceof Float) {
+            return new java.math.BigDecimal(n.toString());
+        }
+        // Fallback for uncommon Number subclasses — toString keeps textual precision.
+        try {
+            return new java.math.BigDecimal(n.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Inspect the enum class for a {@code @JSONField(value=true)} or Jackson {@code @JsonValue}
+     * accessor. If present, invoke it on each enum constant and build the inverse lookup map.
+     * Returns null when the enum has no value method.
+     */
+    private static java.util.Map<Object, Object> buildEnumValueMap(Class<?> enumClass, boolean useJacksonAnnotation) {
+        java.lang.reflect.Method valueMethod = null;
+        for (java.lang.reflect.Method m : enumClass.getMethods()) {
+            if (m.getParameterCount() != 0 || java.lang.reflect.Modifier.isStatic(m.getModifiers())
+                    || m.getDeclaringClass() == Object.class) {
+                continue;
+            }
+            com.alibaba.fastjson3.annotation.JSONField jf = m.getAnnotation(
+                    com.alibaba.fastjson3.annotation.JSONField.class);
+            if (jf != null && jf.value()) {
+                valueMethod = m;
+                break;
+            }
+            // Jackson @JsonValue is respected only when the owning ObjectMapper has
+            // Jackson-annotation support enabled, mirroring the writer's
+            // findValueWriter(useJacksonAnnotation=true) opt-in so reader and writer
+            // stay consistent on the same flag.
+            if (useJacksonAnnotation) {
+                try {
+                    com.alibaba.fastjson3.annotation.JacksonAnnotationSupport.FieldInfo ji
+                            = com.alibaba.fastjson3.annotation.JacksonAnnotationSupport.getFieldInfo(m.getAnnotations());
+                    if (ji != null && ji.isValue()) {
+                        valueMethod = m;
+                        break;
+                    }
+                } catch (Throwable ignored) {
+                    // Jackson annotations off the classpath — skip silently.
+                }
+            }
+        }
+        if (valueMethod == null) {
+            return null;
+        }
+        try {
+            valueMethod.setAccessible(true);
+        } catch (Exception ignored) {
+        }
+        Object[] constants = enumClass.getEnumConstants();
+        if (constants == null || constants.length == 0) {
+            return null;
+        }
+        java.util.Map<Object, Object> map = new java.util.HashMap<>(constants.length * 2);
+        for (Object c : constants) {
+            try {
+                Object v = valueMethod.invoke(c);
+                if (v != null) {
+                    map.put(v, c);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return map.isEmpty() ? null : map;
     }
 
     private Object parseWithFormatter(String str) {
