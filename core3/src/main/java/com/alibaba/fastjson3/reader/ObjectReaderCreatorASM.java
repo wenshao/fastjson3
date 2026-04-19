@@ -112,6 +112,38 @@ public final class ObjectReaderCreatorASM {
     }
 
     /**
+     * Field count above which the fast-path's {@code lookupswitch}+inline body
+     * shape blows C2's {@code FreqInlineSize=325} budget (measured 2151 bytes
+     * for 22 fields, 1179 for the batched non-fast-path shape). At or below
+     * this threshold {@link #canUseFastPath} dominates; above it the non-fast-path
+     * batched emission — which already exists for non-fast-path large beans —
+     * wins on large POJOs like {@code jjb.Users.User}.
+     */
+    private static final int FAST_PATH_INLINE_BUDGET_FIELDS = 15;
+
+    /**
+     * Signature of the extracted generic-fallback method (see
+     * {@link #generateReadFieldsFallback}):
+     * {@code Object readFieldsFallback(JSONParser$UTF8 utf8, long features, Object instance)}.
+     * Called from {@code readObjectUTF8} on speculation miss so that the
+     * fallback's per-field lookupswitch body no longer inflates the outer
+     * method past C2's FreqInlineSize.
+     */
+    private static final String DESC_READ_FIELDS_FALLBACK =
+            "(" + DESC_JSON_PARSER_UTF8 + "JLjava/lang/Object;)Ljava/lang/Object;";
+
+    /**
+     * Should this bean use the fast-path (inline lookupswitch) or the batched
+     * non-fast-path for readObjectUTF8? Combines the prefix-uniqueness check
+     * with the inline-budget field-count cap so both the readObjectUTF8 body
+     * generator and the batch-method generator agree on the same decision.
+     */
+    private static boolean useFastPath(FieldReader[] fieldReaders) {
+        return canUseFastPath(fieldReaders)
+                && fieldReaders.length <= FAST_PATH_INLINE_BUDGET_FIELDS;
+    }
+
+    /**
      * Compute the 4-byte native-order int that the runtime will see at
      * {@code this.offset} after {@code advanceAfterNameOpeningQuote()}.
      * For names of length &ge;4 this is the first 4 name bytes; for shorter
@@ -298,10 +330,20 @@ public final class ObjectReaderCreatorASM {
         generateReadObject(cw, classInternalName);
         generateReadObjectUTF8(cw, classInternalName, beanInternalName, fieldReaders);
 
-        // Generate batch methods for large POJOs (>8 fields, non-fastPath)
-        if (!canUseFastPath(fieldReaders) && fieldReaders.length > 8) {
+        // Generate batch methods for large POJOs (>8 fields, non-fastPath).
+        // useFastPath demotes prefix-unique beans > FAST_PATH_INLINE_BUDGET_FIELDS
+        // to the non-fast-path too, so they get the batched helpers instead of
+        // a 2000+ byte monolithic readObjectUTF8 that C2 refuses to inline.
+        if (!useFastPath(fieldReaders) && fieldReaders.length > 8) {
             generateReadFieldsBatches(cw, classInternalName, fieldReaders, 8);
         }
+
+        // Always generate the generic-fallback method so readObjectUTF8 can
+        // delegate on speculation miss instead of inlining the full per-field
+        // lookupswitch body. Extracting it drops readObjectUTF8 from ~1179 to
+        // ~300 bytes for 22-field beans, below C2's FreqInlineSize so the
+        // method can inline into hot callers like readListPojoUTF8.
+        generateReadFieldsFallback(cw, classInternalName, beanInternalName, fieldReaders);
 
         byte[] bytecode = cw.toByteArray();
         // Optional: dump generated class to disk for bytecode-level analysis.
@@ -657,7 +699,13 @@ public final class ObjectReaderCreatorASM {
         Label genericLoopTop = new Label();
         Label returnInstance = new Label();
 
-        boolean fastPath = canUseFastPath(fieldReaders);
+        // Fast-path's lookupswitch + inline case bodies grow linearly with field count.
+        // For 22-field Users.User the monolithic readObjectUTF8 hits 2151 bytes and
+        // C2's FreqInlineSize=325 budget is blown through: REFLECT's compact
+        // readFieldsLoop outperforms by ~1pp on x86. Defer to the non-fast-path
+        // route (which emits method-split `readFieldsBatchN` helpers for beans
+        // > 8 fields) when we're above the inline-budget threshold.
+        boolean fastPath = useFastPath(fieldReaders);
 
         if (fastPath) {
             // ==================== Fast Path Speculation (PR #2 of parse-stage1) ====================
@@ -856,11 +904,78 @@ public final class ObjectReaderCreatorASM {
                     .areturn();
         }
 
-        // ==================== Generic Fallback Loop ====================
-        // this.offset was set by tryMatchFieldHeaderOff on mismatch
+        // ==================== Generic Fallback Trampoline ====================
+        // Instead of inlining the per-field lookupswitch body (previously ~900
+        // bytes for 22 fields), emit a thin delegation to readFieldsFallback.
+        // Keeps readObjectUTF8 small enough to clear C2's FreqInlineSize and
+        // inline into hot callers (readListPojoUTF8, readValue, …).
         mw.visitLabel(genericLoopTop);
+        mw.chain()
+                .aload(0)  // this
+                .aload(1)  // utf8
+                .lload(2)  // features
+                .aload(4)  // instance
+                .invokevirtual(classInternalName, "readFieldsFallback", DESC_READ_FIELDS_FALLBACK)
+                .areturn();
 
-        // Read field name hash
+        // Error: expected '{'
+        mw.visitLabel(errorOpen);
+        mw.chain()
+                .new_(TYPE_JSON_EXCEPTION)
+                .dup()
+                .visitLdcInsn("expected '{'")
+                .invokespecial(TYPE_JSON_EXCEPTION, "<init>", "(Ljava/lang/String;)V")
+                .athrow();
+
+        // Locals 13–14 reserved for Phase B3 list inline (itemReader, list);
+        // stack 12 covers the ArrayList.add(aload this, ...).
+        mw.visitMaxs(12, 15);
+    }
+
+    // ==================== readFieldsFallback (extracted generic loop) ====================
+
+    /**
+     * Emit the generic per-field-hash fallback loop as a standalone private
+     * method. Pre-extract state: {@code readObjectUTF8} previously inlined this
+     * body at the {@code genericLoopTop} label, pushing its bytecode past C2's
+     * inline budget and preventing hot callers (e.g. {@code readListPojoUTF8})
+     * from inlining readObjectUTF8. With the body in its own method, the
+     * trampoline in readObjectUTF8 is {@code ~12 bytes} — small enough that the
+     * outer method itself becomes inline-eligible.
+     *
+     * <p>Signature: {@code Object readFieldsFallback(JSONParser.UTF8 utf8,
+     * long features, Object instance)}. Returns {@code instance} when the
+     * {@code '}'} terminator is consumed; throws {@link com.alibaba.fastjson3.JSONException}
+     * on a malformed separator.
+     */
+    private static void generateReadFieldsFallback(
+            ClassWriter cw,
+            String classInternalName,
+            String beanInternalName,
+            FieldReader[] fieldReaders
+    ) {
+        MethodWriter mw = cw.visitMethod(0x0002 /* ACC_PRIVATE */, "readFieldsFallback",
+                DESC_READ_FIELDS_FALLBACK, 1024);
+        // Locals: 0=this, 1=utf8, 2-3=features, 4=instance, 5=temp, 6-7=hash,
+        //         8=reader, 9=sep/fi, 10=matcher, 11=frArray
+        // Matches the slot layout readObjectUTF8 used internally so
+        // generateFieldCase (which reads `aload 4 / aload 11`) works verbatim.
+
+        // matcher = this.matcher
+        mw.chain()
+                .aload(0)
+                .getfield(classInternalName, "matcher", DESC_FIELD_NAME_MATCHER)
+                .astore(10);
+        // frArray = this.fieldReaders
+        mw.chain()
+                .aload(0)
+                .getfield(classInternalName, "fieldReaders", "[" + DESC_FIELD_READER)
+                .astore(11);
+
+        Label loopTop = new Label();
+        mw.visitLabel(loopTop);
+
+        // long hash = this.usePLHV ? utf8.readFieldNameHashPLHV() : utf8.readFieldNameHash(matcher);
         mw.chain()
                 .aload(0)
                 .getfield(classInternalName, "usePLHV", "Z");
@@ -880,25 +995,23 @@ public final class ObjectReaderCreatorASM {
         mw.visitLabel(afterHash);
         mw.lstore(6);
 
-        // reader = matcher.match(hash)
+        // FieldReader reader = matcher.match(hash);
         mw.chain()
                 .aload(10)
                 .lload(6);
-        mw.invokevirtual(TYPE_FIELD_NAME_MATCHER, "match",
-                "(J)" + DESC_FIELD_READER);
+        mw.invokevirtual(TYPE_FIELD_NAME_MATCHER, "match", "(J)" + DESC_FIELD_READER);
         mw.astore(8);
 
+        // if (reader == null) skipValue; else dispatch by fi.
         mw.aload(8);
         Label skipValue = new Label();
         mw.ifnull(skipValue);
 
-        // fi = reader.index
         mw.chain()
                 .aload(8)
                 .getfield(TYPE_FIELD_READER, "index", "I")
                 .istore(9);
 
-        // lookupswitch on fi
         Label afterField = new Label();
         Label defaultCase = new Label();
         int[] keys = new int[fieldReaders.length];
@@ -938,7 +1051,7 @@ public final class ObjectReaderCreatorASM {
                 .invokevirtual(TYPE_JSON_PARSER_UTF8, "readFieldSeparator", "()I")
                 .istore(9)
                 .iload(9)
-                .ifeq(genericLoopTop)
+                .ifeq(loopTop)
                 .iload(9)
                 .iconst_1();
         Label errorSep = new Label();
@@ -947,7 +1060,6 @@ public final class ObjectReaderCreatorASM {
                 .aload(4)
                 .areturn();
 
-        // Error: expected ',' or '}'
         mw.visitLabel(errorSep);
         mw.chain()
                 .new_(TYPE_JSON_EXCEPTION)
@@ -956,17 +1068,6 @@ public final class ObjectReaderCreatorASM {
                 .invokespecial(TYPE_JSON_EXCEPTION, "<init>", "(Ljava/lang/String;)V")
                 .athrow();
 
-        // Error: expected '{'
-        mw.visitLabel(errorOpen);
-        mw.chain()
-                .new_(TYPE_JSON_EXCEPTION)
-                .dup()
-                .visitLdcInsn("expected '{'")
-                .invokespecial(TYPE_JSON_EXCEPTION, "<init>", "(Ljava/lang/String;)V")
-                .athrow();
-
-        // Locals 13–14 reserved for Phase B3 list inline (itemReader, list);
-        // stack 12 covers the ArrayList.add(aload this, ...).
         mw.visitMaxs(12, 15);
     }
 
