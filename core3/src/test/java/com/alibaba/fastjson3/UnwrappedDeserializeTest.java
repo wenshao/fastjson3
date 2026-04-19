@@ -351,4 +351,63 @@ public class UnwrappedDeserializeTest {
         assertEquals("C1", back.getName().first);
         assertEquals("C2", back.getName().last);
     }
+
+    // ==================== JSONObject / map-fallback paths honour deserializeUsing ====================
+    //
+    // Polymorphic readFromJSONObject and record readRecordGeneric's map branch
+    // used to fall through to convertValue, silently skipping custom codecs on
+    // unwrapped inner fields. Verify @JSONField(deserializeUsing=) fires on these
+    // non-streaming paths.
+
+    public static class SealedMoneyInner {
+        @JSONField(deserializeUsing = MoneyReader.class)
+        public java.math.BigDecimal amount;
+    }
+
+    // Sealed hierarchy triggers createSealedReader which uses readFromJSONObject.
+    public sealed interface SealedPayload permits SealedInvoice {
+    }
+
+    @com.alibaba.fastjson3.annotation.JSONType(typeName = "invoice")
+    public static final class SealedInvoice implements SealedPayload {
+        public String id;
+
+        @JSONField(unwrapped = true)
+        public SealedMoneyInner money;
+    }
+
+    @Test
+    public void unwrappedDeserializeUsingAcrossJsonObjectFastPath() {
+        // Sealed interface routes through createSealedReader → readFromJSONObject.
+        // The unwrapped inner's deserializeUsing must still fire through that path.
+        SealedPayload back = JSON.parse(
+                "{\"@type\":\"invoice\",\"id\":\"i1\",\"amount\":\"$100.50\"}", SealedPayload.class);
+        assertInstanceOf(SealedInvoice.class, back);
+        SealedInvoice parsed = (SealedInvoice) back;
+        assertEquals("i1", parsed.id);
+        assertNotNull(parsed.money);
+        assertEquals(new java.math.BigDecimal("100.50"), parsed.money.amount);
+    }
+
+    public static class RecordMoneyInner {
+        @JSONField(deserializeUsing = MoneyReader.class)
+        public java.math.BigDecimal amount;
+    }
+
+    public record RecordInvoice(
+            String id,
+            @JSONField(unwrapped = true) RecordMoneyInner money
+    ) {
+    }
+
+    @Test
+    public void recordUnwrappedDeserializeUsingOnMapFallback() {
+        // The record generic path goes through readRecordGeneric's map branch when
+        // invoked via parser.readObject() first. The '$'-prefix value must still be
+        // routed through MoneyReader rather than converted blindly via convertValue.
+        RecordInvoice direct = JSON.parse("{\"id\":\"r1\",\"amount\":\"$42.50\"}", RecordInvoice.class);
+        assertEquals("r1", direct.id());
+        assertNotNull(direct.money());
+        assertEquals(new java.math.BigDecimal("42.50"), direct.money().amount);
+    }
 }

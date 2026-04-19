@@ -888,6 +888,40 @@ public final class ObjectReaderCreator {
         }
     }
 
+    // ==================== Unwrapped map-fallback helpers ====================
+
+    /**
+     * Convert an already-parsed value (Map / Number / String / etc. from a JSONObject or
+     * record-generic map-fallback path) to the inner field's target type, honouring any
+     * {@code @JSONField(deserializeUsing=)} declared on the inner field. When a custom
+     * reader is present, serialise the value back to JSON and feed it to the custom
+     * reader's streaming entry so it sees the same shape it would in the live-parser path.
+     * Without this detour the JSONObject / record-map paths silently fall through to
+     * {@code convertValue}, producing divergent values depending on entry point.
+     */
+    static Object applyUnwrappedValueFromMap(UnwrappedEntry entry, Object rawValue, long features) {
+        ObjectReader<?> custom = entry.resolveCustomReader();
+        if (custom == null || rawValue == null) {
+            return entry.innerReader.convertValue(rawValue);
+        }
+        String json = com.alibaba.fastjson3.JSON.toJSONString(rawValue);
+        try (JSONParser p = JSONParser.of(json)) {
+            return custom.readObject(p, entry.innerReader.fieldType, entry.innerReader.fieldName, features);
+        }
+    }
+
+    /** Record-side variant of {@link #applyUnwrappedValueFromMap}. */
+    static Object applyRecordUnwrappedValueFromMap(RecordUnwrappedEntry entry, Object rawValue, long features) {
+        ObjectReader<?> custom = entry.resolveCustomReader();
+        if (custom == null || rawValue == null) {
+            return entry.innerReader.convertValue(rawValue);
+        }
+        String json = com.alibaba.fastjson3.JSON.toJSONString(rawValue);
+        try (JSONParser p = JSONParser.of(json)) {
+            return custom.readObject(p, entry.innerReader.fieldType, entry.innerReader.fieldName, features);
+        }
+    }
+
     // ==================== Internal ObjectReader implementation ====================
 
     /**
@@ -2241,13 +2275,8 @@ public final class ObjectReaderCreator {
                         UnwrappedEntry ue = unwrappedByName.get(key);
                         if (ue != null) {
                             Object target = ensureUnwrappedTarget(instance, ue);
-                            // This path feeds already-parsed values, so custom
-                            // deserialiseUsing classes that expect a live parser can't
-                            // participate here — the conversion goes through
-                            // FieldReader.convertValue which already handles Map→POJO
-                            // via toJSONString/parseObject for nested types.
-                            Object converted = ue.innerReader.convertValue(entry.getValue());
-                            ue.innerReader.setFieldValue(target, converted);
+                            Object assigned = applyUnwrappedValueFromMap(ue, entry.getValue(), features);
+                            ue.innerReader.setFieldValue(target, assigned);
                             continue;
                         }
                     }
@@ -2731,8 +2760,8 @@ public final class ObjectReaderCreator {
                             continue;
                         }
                         Object scratch = ensureRecordScratch(values, ue);
-                        Object converted = ue.innerReader.convertValue(e.getValue());
-                        ue.innerReader.setFieldValue(scratch, converted);
+                        Object assigned = applyRecordUnwrappedValueFromMap(ue, e.getValue(), features);
+                        ue.innerReader.setFieldValue(scratch, assigned);
                     }
                 }
                 return constructRecord(values);
