@@ -125,6 +125,7 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
     }
 
     private static boolean scanForUnwrapped(Class<?> type) {
+        // Walk superclass chain — fields live on concrete classes.
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             for (java.lang.reflect.Field field : c.getDeclaredFields()) {
                 if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
@@ -147,6 +148,31 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
                 if (jf != null && jf.unwrapped()) {
                     return true;
                 }
+            }
+        }
+        // Walk the full interface closure — a mix-in interface extending another
+        // mix-in interface that carries @JSONField(unwrapped=true) on a setter
+        // method must still flip the ASM gate.
+        java.util.Set<Class<?>> visited = new java.util.HashSet<>();
+        java.util.Deque<Class<?>> stack = new java.util.ArrayDeque<>();
+        stack.push(type);
+        while (!stack.isEmpty()) {
+            Class<?> c = stack.pop();
+            for (Class<?> iface : c.getInterfaces()) {
+                if (!visited.add(iface)) {
+                    continue;
+                }
+                for (java.lang.reflect.Method m : iface.getDeclaredMethods()) {
+                    if (m.getParameterCount() != 1) {
+                        continue;
+                    }
+                    com.alibaba.fastjson3.annotation.JSONField jf =
+                            m.getAnnotation(com.alibaba.fastjson3.annotation.JSONField.class);
+                    if (jf != null && jf.unwrapped()) {
+                        return true;
+                    }
+                }
+                stack.push(iface);
             }
         }
         return false;

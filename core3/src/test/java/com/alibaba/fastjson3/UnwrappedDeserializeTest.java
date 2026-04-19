@@ -723,4 +723,82 @@ public class UnwrappedDeserializeTest {
         assertNotNull(back.getName().handle);
         assertEquals("P", back.getName().handle.nick);
     }
+
+    // ==================== Inherited mix-in setter annotation ====================
+
+    public static class InheritedSetterTarget {
+        private Name name;
+        public int age;
+
+        public void setName(Name n) {
+            this.name = n;
+        }
+
+        public Name getName() {
+            return name;
+        }
+    }
+
+    public interface BaseSetterMixIn {
+        @JSONField(unwrapped = true)
+        void setName(Name n);
+    }
+
+    // Empty child — the annotation is inherited from BaseSetterMixIn.
+    public interface ChildSetterMixIn extends BaseSetterMixIn {
+    }
+
+    @Test
+    public void inheritedSetterMixInUnwrapped() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(InheritedSetterTarget.class, ChildSetterMixIn.class)
+                .build();
+
+        InheritedSetterTarget back = mapper.readValue(
+                "{\"first\":\"A\",\"last\":\"B\",\"age\":3}", InheritedSetterTarget.class);
+        assertEquals(3, back.age);
+        assertNotNull(back.getName());
+        assertEquals("A", back.getName().first);
+        assertEquals("B", back.getName().last);
+    }
+
+    // ==================== Inherited mix-in interface blocks ASM selection ====================
+
+    public static class SimpleInheritTarget {
+        public String id;
+        public Name name;
+        public int age;
+    }
+
+    public interface BaseUnwrappedMixIn {
+        @JSONField(unwrapped = true)
+        Name getName();
+
+        @JSONField(unwrapped = true)
+        void setName(Name n);
+    }
+
+    public interface ChildUnwrappedMixIn extends BaseUnwrappedMixIn {
+    }
+
+    @Test
+    public void autoProviderRejectsAsmForInheritedMixInUnwrapped() {
+        // hasUnwrappedField must recurse through interface inheritance so a
+        // mix-in interface that inherits @JSONField(unwrapped=true) from a
+        // parent still flips the ASM gate.
+        java.util.Map<Class<?>, Class<?>> ctx = new java.util.HashMap<>();
+        ctx.put(SimpleInheritTarget.class, ChildUnwrappedMixIn.class);
+        com.alibaba.fastjson3.reader.ObjectReaderCreator.MIXIN_CONTEXT.set(ctx);
+        try {
+            com.alibaba.fastjson3.ObjectReader<?> reader =
+                    com.alibaba.fastjson3.reader.AutoObjectReaderProvider.INSTANCE
+                            .getObjectReader(SimpleInheritTarget.class);
+            assertNotNull(reader);
+            assertFalse(reader.getClass().getName().contains(".gen."),
+                    "ASM provider must fall back to reflection for inherited mix-in unwrapped, got "
+                            + reader.getClass().getName());
+        } finally {
+            com.alibaba.fastjson3.reader.ObjectReaderCreator.MIXIN_CONTEXT.remove();
+        }
+    }
 }

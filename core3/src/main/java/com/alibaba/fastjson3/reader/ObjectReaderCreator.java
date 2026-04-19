@@ -3355,27 +3355,79 @@ public final class ObjectReaderCreator {
 
     /**
      * Find annotation on the corresponding setter method in the mixin class.
+     * Walks the mix-in's inheritance chain (superclass + full interface closure) so
+     * a {@code ChildMixIn extends BaseMixIn} pattern surfaces annotations declared
+     * on BaseMixIn. Without this, any-setter / unwrapped / etc. annotations coming
+     * from a parent mix-in are silently lost.
      */
     static <A extends java.lang.annotation.Annotation> A findMixInSetterAnnotation(
             Class<?> mixIn, Method targetMethod, String propertyName, Class<A> annotationType) {
-        // Try matching by exact method signature
-        for (Method m : mixIn.getDeclaredMethods()) {
+        String setterName = "set" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1);
+        Class<?>[] targetParams = targetMethod.getParameterTypes();
+
+        // Primary search: exact signature match on any class / interface in the mix-in
+        // inheritance closure. getMethods() covers public inherited methods first.
+        for (Method m : mixIn.getMethods()) {
             if (m.getName().equals(targetMethod.getName())
-                    && m.getParameterCount() == targetMethod.getParameterCount()
-                    && java.util.Arrays.equals(m.getParameterTypes(), targetMethod.getParameterTypes())) {
+                    && java.util.Arrays.equals(m.getParameterTypes(), targetParams)) {
                 A ann = m.getAnnotation(annotationType);
                 if (ann != null) {
                     return ann;
                 }
             }
         }
-        // Try matching by setter naming convention
-        String setterName = "set" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1);
-        for (Method m : mixIn.getDeclaredMethods()) {
+        // Non-public inherited methods: walk the mix-in's superclasses + interfaces.
+        for (Class<?> c = mixIn; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Method m : c.getDeclaredMethods()) {
+                if (m.getName().equals(targetMethod.getName())
+                        && java.util.Arrays.equals(m.getParameterTypes(), targetParams)) {
+                    A ann = m.getAnnotation(annotationType);
+                    if (ann != null) {
+                        return ann;
+                    }
+                }
+            }
+        }
+        for (Class<?> iface : collectAllInterfaces(mixIn)) {
+            for (Method m : iface.getDeclaredMethods()) {
+                if (m.getName().equals(targetMethod.getName())
+                        && java.util.Arrays.equals(m.getParameterTypes(), targetParams)) {
+                    A ann = m.getAnnotation(annotationType);
+                    if (ann != null) {
+                        return ann;
+                    }
+                }
+            }
+        }
+
+        // Secondary: setter-naming fallback — mix-in may name its setter differently
+        // from the target (e.g. via @JSONField(name=...)). Matches by name alone,
+        // 1-arg only, walking the same inheritance closure.
+        for (Method m : mixIn.getMethods()) {
             if (m.getName().equals(setterName) && m.getParameterCount() == 1) {
                 A ann = m.getAnnotation(annotationType);
                 if (ann != null) {
                     return ann;
+                }
+            }
+        }
+        for (Class<?> c = mixIn; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Method m : c.getDeclaredMethods()) {
+                if (m.getName().equals(setterName) && m.getParameterCount() == 1) {
+                    A ann = m.getAnnotation(annotationType);
+                    if (ann != null) {
+                        return ann;
+                    }
+                }
+            }
+        }
+        for (Class<?> iface : collectAllInterfaces(mixIn)) {
+            for (Method m : iface.getDeclaredMethods()) {
+                if (m.getName().equals(setterName) && m.getParameterCount() == 1) {
+                    A ann = m.getAnnotation(annotationType);
+                    if (ann != null) {
+                        return ann;
+                    }
                 }
             }
         }
