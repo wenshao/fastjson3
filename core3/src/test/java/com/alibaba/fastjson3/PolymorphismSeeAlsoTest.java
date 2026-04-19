@@ -370,4 +370,53 @@ public class PolymorphismSeeAlsoTest {
         assertTrue(msg.contains("seeAlso") || msg.contains("sealed") || msg.contains("JsonTypeInfo"),
                 "must point at remedies: " + msg);
     }
+
+    // ==================== Lazy guard — abstract element type with no JSONObject items ====================
+    //
+    // The guard must only raise when an actual JSONObject node needs materialisation
+    // AND no reader is available. Empty collections, null-only inputs, and cases
+    // where the runtime items are already assignment-compatible (Number into
+    // Number.class, String into CharSequence.class) must succeed unchanged.
+
+    @Test
+    public void numberBaseClassAcceptsAlreadyAssignableElements() {
+        List<Number> back = JSON.parseList("[1,2,3]", Number.class);
+        assertEquals(3, back.size());
+        assertEquals(1, back.get(0).intValue());
+        assertEquals(3, back.get(2).intValue());
+    }
+
+    @Test
+    public void charSequenceInterfaceAcceptsStrings() {
+        List<CharSequence> back = JSON.parseList("[\"a\",\"b\"]", CharSequence.class);
+        assertEquals("a", back.get(0).toString());
+        assertEquals("b", back.get(1).toString());
+    }
+
+    @Test
+    public void emptyListOfAbstractSucceeds() {
+        List<NoRegBase> back = JSON.parseList("[]", NoRegBase.class);
+        assertTrue(back.isEmpty());
+    }
+
+    @Test
+    public void nullOnlyListOfAbstractSucceeds() {
+        List<NoRegBase> back = JSON.parseList("[null,null]", NoRegBase.class);
+        assertEquals(2, back.size());
+        assertNull(back.get(0));
+        assertNull(back.get(1));
+    }
+
+    @Test
+    public void emptyMapOfAbstractValueSucceeds() {
+        java.util.Map<String, NoRegBase> back = JSON.parseMap("{}", NoRegBase.class);
+        assertTrue(back.isEmpty());
+    }
+
+    @Test
+    public void nullValueMapOfAbstractSucceeds() {
+        java.util.Map<String, NoRegBase> back = JSON.parseMap("{\"a\":null}", NoRegBase.class);
+        assertEquals(1, back.size());
+        assertNull(back.get("a"));
+    }
 }

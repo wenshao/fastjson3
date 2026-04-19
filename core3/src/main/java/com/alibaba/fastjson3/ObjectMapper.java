@@ -824,7 +824,6 @@ public final class ObjectMapper {
                 return null;
             }
             ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
-            assertElementTypeDeserializable(type, objectReader);
             List<T> list = new ArrayList<>(array.size());
             for (int i = 0, size = array.size(); i < size; i++) {
                 Object item = array.get(i);
@@ -839,7 +838,7 @@ public final class ObjectMapper {
                         list.add(objectReader.readObject(itemParser, type, null, features));
                     }
                 } else {
-                    list.add((T) item);
+                    list.add(coerceElement(type, item));
                 }
             }
             return list;
@@ -847,23 +846,27 @@ public final class ObjectMapper {
     }
 
     /**
-     * When the element / value type is abstract or interface and no reader was
-     * registered, the collection path would otherwise silently emit raw
-     * {@code JSONObject} values that later fail with {@code ClassCastException}.
-     * Raise a targeted error at the point of failure so users get the actionable
-     * polymorphic-registration hint instead. Shared by {@code readList},
-     * {@code readSet}, and {@code readMap}.
+     * Assignment-fallback for the collection read paths. When the raw JSON element
+     * isn't assignable to the declared element type AND we don't have an
+     * ObjectReader for materialisation, the only remaining option is the unchecked
+     * cast — but for the specific case of a {@code JSONObject} node targeted at an
+     * abstract or interface element type, that unchecked cast silently succeeds and
+     * surfaces later as a confusing {@code ClassCastException}. Raise the targeted
+     * polymorphic-registration error at the point of first hit so users get an
+     * actionable message; otherwise preserve the pre-existing unchecked-cast
+     * behaviour (empty collections, Number/CharSequence supertypes, null-only, etc.
+     * already handled by the caller's fast branches).
      */
-    private static void assertElementTypeDeserializable(Class<?> type, ObjectReader<?> reader) {
-        if (reader != null) {
-            return;
-        }
-        if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
+    @SuppressWarnings("unchecked")
+    private static <T> T coerceElement(Class<T> type, Object item) {
+        if (item instanceof JSONObject
+                && (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers()))) {
             throw new JSONException("cannot deserialize collection values of "
                     + (type.isInterface() ? "interface" : "abstract class") + " " + type.getName()
                     + ": register subtypes via @JSONType(seeAlso=..., typeKey=...),"
                     + " make the type sealed, or use Jackson @JsonTypeInfo + @JsonSubTypes");
         }
+        return (T) item;
     }
 
     /**
@@ -887,7 +890,6 @@ public final class ObjectMapper {
                 return null;
             }
             ObjectReader<T> objectReader = (ObjectReader<T>) getObjectReader(type);
-            assertElementTypeDeserializable(type, objectReader);
             List<T> list = new ArrayList<>(array.size());
             for (int i = 0, size = array.size(); i < size; i++) {
                 Object item = array.get(i);
@@ -901,7 +903,7 @@ public final class ObjectMapper {
                         list.add(objectReader.readObject(itemParser, type, null, features));
                     }
                 } else {
-                    list.add((T) item);
+                    list.add(coerceElement(type, item));
                 }
             }
             return list;
@@ -973,7 +975,6 @@ public final class ObjectMapper {
                 return null;
             }
             ObjectReader<V> objectReader = (ObjectReader<V>) getObjectReader(valueType);
-            assertElementTypeDeserializable(valueType, objectReader);
             java.util.Map<String, V> map = new java.util.LinkedHashMap<>(object.size());
             for (String key : object.keySet()) {
                 Object item = object.get(key);
@@ -987,7 +988,7 @@ public final class ObjectMapper {
                         map.put(key, objectReader.readObject(itemParser, valueType, null, features));
                     }
                 } else {
-                    map.put(key, (V) item);
+                    map.put(key, coerceElement(valueType, item));
                 }
             }
             return map;
@@ -1014,7 +1015,6 @@ public final class ObjectMapper {
                 return null;
             }
             ObjectReader<V> objectReader = (ObjectReader<V>) getObjectReader(valueType);
-            assertElementTypeDeserializable(valueType, objectReader);
             java.util.Map<String, V> map = new java.util.LinkedHashMap<>(object.size());
             for (String key : object.keySet()) {
                 Object item = object.get(key);
@@ -1028,7 +1028,7 @@ public final class ObjectMapper {
                         map.put(key, objectReader.readObject(itemParser, valueType, null, features));
                     }
                 } else {
-                    map.put(key, (V) item);
+                    map.put(key, coerceElement(valueType, item));
                 }
             }
             return map;
