@@ -135,6 +135,15 @@ public final class ObjectReaderCreator {
             return null;
         }
 
+        // Static @JSONCreator / Jackson @JsonCreator factory method takes precedence
+        // over constructor resolution — Jackson-style immutable-wrapper classes
+        // (Money of(BigDecimal v), Optional-like wrappers, value-object factories)
+        // often expose only a static factory rather than a public constructor.
+        Method staticFactory = resolveStaticFactoryMethod(type, mixIn, useJacksonAnnotation);
+        if (staticFactory != null) {
+            return createStaticFactoryReader(type, contextType, staticFactory, mixIn, useJacksonAnnotation);
+        }
+
         Constructor<T> constructor = resolveConstructor(type, mixIn, useJacksonAnnotation);
         constructor.setAccessible(true);
 
@@ -319,7 +328,9 @@ public final class ObjectReaderCreator {
                 : recordRequiredIndices.stream().mapToInt(Integer::intValue).toArray();
         String[] requiredNames = recordRequiredIndices == null ? null
                 : recordRequiredIndices.stream().map(ii -> componentNames[ii]).toArray(String[]::new);
-        return new RecordObjectReader<>(type, constructor, collection.fieldReaders,
+        Constructor<T> ctor = constructor;
+        InstanceInvoker<T> invoker = values -> ctor.newInstance(values);
+        return new RecordObjectReader<>(type, invoker, ctor.getParameterTypes(), collection.fieldReaders,
                 collection.fieldReaderMap, collection.matcher, componentTypes.length, paramMapping,
                 recordUnwrapped, requiredIdx, requiredNames);
     }
@@ -552,7 +563,9 @@ public final class ObjectReaderCreator {
                 : ctorRequiredIndices.stream().mapToInt(Integer::intValue).toArray();
         String[] ctorRequiredNameArr = ctorRequiredNames == null ? null
                 : ctorRequiredNames.toArray(new String[0]);
-        return new RecordObjectReader<>(type, constructor, collection.fieldReaders,
+        Constructor<T> ctor = constructor;
+        InstanceInvoker<T> invoker = values -> ctor.newInstance(values);
+        return new RecordObjectReader<>(type, invoker, paramTypes, collection.fieldReaders,
                 collection.fieldReaderMap, collection.matcher, paramTypes.length, paramMapping,
                 ctorUnwrapped, ctorRequiredIdx, ctorRequiredNameArr);
     }
@@ -2813,9 +2826,23 @@ public final class ObjectReaderCreator {
      * This reader uses Unsafe to allocate the instance and set fields directly,
      * then validates that all required fields were provided.
      */
+    /**
+     * Invokes either a constructor or a static factory method to materialise
+     * the record / constructor-based POJO instance from the filled values[]
+     * array. Abstracted so a static `@JSONCreator` / `@JsonCreator`-annotated
+     * factory method (e.g. {@code static F of(int v) { … }}) can slot into the
+     * same parsing machinery as a canonical constructor without duplicating
+     * the read loops.
+     */
+    @FunctionalInterface
+    interface InstanceInvoker<T> {
+        T invoke(Object[] values) throws Exception;
+    }
+
     private static final class RecordObjectReader<T> implements ObjectReader<T> {
         private final Class<T> objectClass;
-        private final Constructor<T> constructor;
+        private final InstanceInvoker<T> instanceInvoker;
+        private final Class<?>[] parameterTypes;
         private final FieldReader[] fieldReaders;
         private final Map<String, FieldReader> fieldReaderMap;
         private final FieldNameMatcher matcher;
@@ -2834,7 +2861,8 @@ public final class ObjectReaderCreator {
 
         RecordObjectReader(
                 Class<T> objectClass,
-                Constructor<T> constructor,
+                InstanceInvoker<T> instanceInvoker,
+                Class<?>[] parameterTypes,
                 FieldReader[] fieldReaders,
                 Map<String, FieldReader> fieldReaderMap,
                 FieldNameMatcher matcher,
@@ -2845,7 +2873,8 @@ public final class ObjectReaderCreator {
                 String[] requiredUnwrappedNames
         ) {
             this.objectClass = objectClass;
-            this.constructor = constructor;
+            this.instanceInvoker = instanceInvoker;
+            this.parameterTypes = parameterTypes;
             this.fieldReaders = fieldReaders;
             this.fieldReaderMap = fieldReaderMap;
             this.matcher = matcher;
@@ -3236,13 +3265,12 @@ public final class ObjectReaderCreator {
             // from sun.invoke.util.ValueConversions.primitiveConversion with
             // zero user-facing context. Catch it at the source and report the
             // missing field name.
-            Class<?>[] paramTypes = constructor.getParameterTypes();
             for (int slot = 0; slot < values.length; slot++) {
-                if (values[slot] == null && paramTypes[slot].isPrimitive()) {
+                if (values[slot] == null && parameterTypes[slot].isPrimitive()) {
                     String fieldName = findFieldNameForSlot(slot);
                     throw new JSONException(
                             "cannot construct record " + objectClass.getName()
-                                    + ": required " + paramTypes[slot].getName()
+                                    + ": required " + parameterTypes[slot].getName()
                                     + " field '" + fieldName + "' is missing or null"
                     );
                 }
@@ -3262,10 +3290,18 @@ public final class ObjectReaderCreator {
                 }
             }
             try {
-                return constructor.newInstance(values);
+                return instanceInvoker.invoke(values);
             } catch (Exception e) {
+                // Unwrap reflection wrappers — InvocationTargetException /
+                // UndeclaredThrowableException obscure the actual user-thrown
+                // cause so the message reader sees comes from the creator
+                // itself, not from the reflective-call scaffolding.
+                Throwable root = e;
+                if (e instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null) {
+                    root = ite.getCause();
+                }
                 throw new JSONException(
-                        "cannot construct record " + objectClass.getName() + ": " + e.getMessage(), e
+                        "cannot construct " + objectClass.getName() + ": " + root.getMessage(), root
                 );
             }
         }
@@ -3300,6 +3336,153 @@ public final class ObjectReaderCreator {
     }
 
     // ==================== Helper methods ====================
+
+    /**
+     * Locate a {@code static} factory method annotated with {@code @JSONCreator}
+     * (or Jackson {@code @JsonCreator} when {@code useJacksonAnnotation} is on)
+     * that returns an instance of {@code type}. Mirrors Jackson's behaviour
+     * where a class like {@code Money { static Money of(BigDecimal v) {...} }}
+     * is deserialised through the factory rather than through a constructor.
+     *
+     * <p>Returns {@code null} when no eligible factory is declared — the caller
+     * falls through to constructor resolution.</p>
+     */
+    private static Method resolveStaticFactoryMethod(Class<?> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        Method chosen = scanStaticFactory(type, type, useJacksonAnnotation);
+        if (chosen == null && mixIn != null) {
+            chosen = scanStaticFactory(type, mixIn, useJacksonAnnotation);
+        }
+        return chosen;
+    }
+
+    private static Method scanStaticFactory(Class<?> owner, Class<?> annotationHost, boolean useJacksonAnnotation) {
+        for (Method m : annotationHost.getDeclaredMethods()) {
+            if (!Modifier.isStatic(m.getModifiers())) {
+                continue;
+            }
+            if (!owner.isAssignableFrom(m.getReturnType())) {
+                continue;
+            }
+            boolean marked = m.isAnnotationPresent(JSONCreator.class)
+                    || (useJacksonAnnotation && JacksonAnnotationSupport.hasJsonCreator(m));
+            if (marked) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Build a reader that invokes a {@code static} factory method to materialise
+     * the instance. Structurally identical to {@link #createConstructorReader}
+     * except the creator lambda calls {@code factory.invoke(null, values)}
+     * instead of {@code constructor.newInstance(values)}. All parameter-matching,
+     * unwrapped-expansion, and required-field machinery is shared through the
+     * single {@link RecordObjectReader} implementation.
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectReader<T> createStaticFactoryReader(
+            Class<T> type, java.lang.reflect.Type contextType, Method factory, Class<?> mixIn, boolean useJacksonAnnotation
+    ) {
+        factory.setAccessible(true);
+        Class<?>[] paramTypes = factory.getParameterTypes();
+        java.lang.reflect.Type[] genericParamTypes = factory.getGenericParameterTypes();
+
+        List<Field> instanceFields = getInstanceFieldsParentFirst(type);
+
+        JSONType jsonType = type.getAnnotation(JSONType.class);
+        if (jsonType == null && mixIn != null) {
+            jsonType = mixIn.getAnnotation(JSONType.class);
+        }
+        NamingStrategy naming = jsonType != null ? jsonType.naming() : NamingStrategy.NoneStrategy;
+        if (useJacksonAnnotation && naming == NamingStrategy.NoneStrategy) {
+            JacksonAnnotationSupport.BeanInfo jackson = JacksonAnnotationSupport.getBeanInfo(type);
+            if (jackson != null && jackson.naming() != null) {
+                naming = jackson.naming();
+            }
+        }
+
+        // Parameter-name source: @JSONCreator(parameterNames=) override first,
+        // then @JSONField(name=…) on each parameter, then the parameter's
+        // compiled name (requires -parameters on javac; falls back to arg0/arg1
+        // otherwise, which still works if every parameter carries @JSONField).
+        JSONCreator creatorAnn = factory.getAnnotation(JSONCreator.class);
+        String[] overrideNames = (creatorAnn != null) ? creatorAnn.parameterNames() : new String[0];
+        Parameter[] parameters = factory.getParameters();
+
+        List<FieldReader> fieldReaderList = new ArrayList<>();
+        for (int i = 0; i < paramTypes.length; i++) {
+            Parameter p = parameters[i];
+            JSONField annotation = p.getAnnotation(JSONField.class);
+
+            String rawName;
+            if (overrideNames.length > i && !overrideNames[i].isEmpty()) {
+                rawName = overrideNames[i];
+            } else if (annotation != null && !annotation.name().isEmpty()) {
+                rawName = annotation.name();
+            } else {
+                rawName = p.getName();
+            }
+
+            String jsonName = resolveFieldName(rawName, annotation, naming);
+            String[] alternateNames = annotation != null ? annotation.alternateNames() : new String[0];
+            int ordinal = annotation != null ? annotation.ordinal() : 0;
+            String defaultValue = annotation != null ? annotation.defaultValue() : "";
+            boolean required = annotation != null && annotation.required();
+            String format = (annotation != null && !annotation.format().isEmpty()) ? annotation.format() : null;
+            Class<?> deserializeUsingClass = (annotation != null && annotation.deserializeUsing() != Void.class)
+                    ? annotation.deserializeUsing() : null;
+            String schema = (annotation != null && !annotation.schema().isEmpty()) ? annotation.schema() : null;
+
+            fieldReaderList.add(new FieldReader(
+                    jsonName, alternateNames,
+                    TypeUtils.resolve(genericParamTypes[i], contextType), paramTypes[i],
+                    ordinal, defaultValue, required,
+                    null, null, format, deserializeUsingClass, schema, 0, useJacksonAnnotation
+            ));
+        }
+
+        Collections.sort(fieldReaderList);
+        FieldReader[] fieldReaders = fieldReaderList.toArray(new FieldReader[0]);
+        FieldNameMatcher matcher = FieldNameMatcher.build(fieldReaders);
+
+        Map<String, FieldReader> fieldReaderMap = HashMap.newHashMap(fieldReaders.length * 2);
+        for (int i = 0; i < fieldReaders.length; i++) {
+            fieldReaders[i].index = i;
+            fieldReaderMap.put(fieldReaders[i].fieldName, fieldReaders[i]);
+            for (String alt : fieldReaders[i].alternateNames) {
+                fieldReaderMap.put(alt, fieldReaders[i]);
+            }
+        }
+
+        // paramMapping: fieldReader index → factory parameter slot. Parameters
+        // are filled positionally, so the fieldReader's *parameter index* (its
+        // declared order in the factory signature) is the slot.
+        int[] paramMapping = new int[fieldReaders.length];
+        for (int i = 0; i < fieldReaders.length; i++) {
+            String name = fieldReaders[i].fieldName;
+            for (int j = 0; j < paramTypes.length; j++) {
+                String pName;
+                if (overrideNames.length > j && !overrideNames[j].isEmpty()) {
+                    pName = overrideNames[j];
+                } else {
+                    JSONField pAnn = parameters[j].getAnnotation(JSONField.class);
+                    pName = (pAnn != null && !pAnn.name().isEmpty())
+                            ? pAnn.name()
+                            : applyNamingStrategy(parameters[j].getName(), naming);
+                }
+                if (pName.equals(name) || parameters[j].getName().equals(name)) {
+                    paramMapping[i] = j;
+                    break;
+                }
+            }
+        }
+
+        InstanceInvoker<T> invoker = values -> (T) factory.invoke(null, values);
+        return new RecordObjectReader<>(type, invoker, paramTypes, fieldReaders,
+                fieldReaderMap, matcher, paramTypes.length, paramMapping,
+                null, null, null);
+    }
 
     @SuppressWarnings("unchecked")
     private static <T> Constructor<T> resolveConstructor(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
