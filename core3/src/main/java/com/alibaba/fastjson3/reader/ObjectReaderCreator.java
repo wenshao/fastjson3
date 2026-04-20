@@ -3559,12 +3559,20 @@ public final class ObjectReaderCreator {
                     ? genericParamTypes[i]
                     : bindMethodScopedTypeVariable(genericParamTypes[i], methodBindings);
             java.lang.reflect.Type resolvedType = TypeUtils.resolve(boundGeneric, contextType);
+            // Narrow `fieldClass` whenever the binding gives us a strictly
+            // more specific type than the erased paramTypes[i]. Round 4 only
+            // narrowed when paramTypes[i] was literally Object.class — but a
+            // BOUNDED TypeVariable like `<T extends Bean>` erases to Bean,
+            // not Object, so the narrow skipped and resolvedClass stayed at
+            // Bean, silently dropping SubBean-only fields for a target of
+            // Box<SubBean>. The widened check (isAssignableFrom) covers both
+            // cases without regressing the Object→Anything path.
             Class<?> resolvedClass = paramTypes[i];
-            if (paramTypes[i] == Object.class && resolvedType instanceof Class<?> rc) {
+            if (resolvedType instanceof Class<?> rc && paramTypes[i].isAssignableFrom(rc)) {
                 resolvedClass = rc;
-            } else if (paramTypes[i] == Object.class
-                    && resolvedType instanceof ParameterizedType rpt
-                    && rpt.getRawType() instanceof Class<?> rawRc) {
+            } else if (resolvedType instanceof ParameterizedType rpt
+                    && rpt.getRawType() instanceof Class<?> rawRc
+                    && paramTypes[i].isAssignableFrom(rawRc)) {
                 resolvedClass = rawRc;
             }
             fieldReaderList.add(new FieldReader(

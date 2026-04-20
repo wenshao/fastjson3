@@ -347,4 +347,43 @@ public class StaticFactoryCreatorTest {
                 "expected Address, got " + (box.value == null ? "null" : box.value.getClass().getName()));
         assertEquals("SF", box.value.city);
     }
+
+    // Round-5: bounded TypeVariable `<T extends Bean>` erases paramTypes[i]
+    // to Bean.class, not Object.class — the R4 narrowing guard only matched
+    // Object.class so fieldClass stayed Bean even when the target bound T
+    // to a more specific SubBean, dropping SubBean-only fields.
+
+    public static class Bean {
+        public String name;
+    }
+
+    public static class SubBean extends Bean {
+        public int age;
+    }
+
+    public static final class BoundedBox<T extends Bean> {
+        public T value;
+
+        private BoundedBox(T v) {
+            this.value = v;
+        }
+
+        @JSONCreator
+        public static <T extends Bean> BoundedBox<T> of(@JSONField(name = "value") T value) {
+            return new BoundedBox<>(value);
+        }
+    }
+
+    @Test
+    public void boundedTypeVariableResolvesToActualSubtype() {
+        BoundedBox<SubBean> box = JSON.parseObject(
+                "{\"value\":{\"name\":\"n\",\"age\":3}}",
+                new TypeReference<BoundedBox<SubBean>>() {});
+        assertNotNull(box.value);
+        assertInstanceOf(SubBean.class, box.value,
+                "expected SubBean, got " + (box.value == null ? "null" : box.value.getClass().getName()));
+        assertEquals("n", box.value.name);
+        // Subtype-only field must survive the narrowing:
+        assertEquals(3, ((SubBean) box.value).age);
+    }
 }
