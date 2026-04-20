@@ -170,4 +170,49 @@ public class AnyGetterSetterTest {
                 "{\"name\":\"test\",\"unknown\":\"val\"}", AnySetterBean.class);
         assertEquals("val", bean.getExtra().get("unknown"));
     }
+
+    // ==================== Jackson @JsonAnyGetter ====================
+    // Round-3 usability audit F5: the writer emitted BOTH the getter's nested
+    // {"extras":{...}} slot AND the flattened inner keys, producing duplicate
+    // payload. The getter must be suppressed when @JsonAnyGetter is in play,
+    // mirroring the existing @JSONField(anyGetter=true) branch.
+
+    public static class JacksonAnyGetterBean {
+        public String id = "X";
+        private final Map<String, Object> extras = new LinkedHashMap<>();
+
+        public JacksonAnyGetterBean() {
+            extras.put("k1", "v1");
+            extras.put("k2", 99);
+        }
+
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+    }
+
+    @Test
+    public void jacksonAnyGetterSuppressesWrappingField() {
+        ObjectMapper jacksonMapper = ObjectMapper.builder()
+                .useJacksonAnnotation(true)
+                .build();
+        String json = jacksonMapper.writeValueAsString(new JacksonAnyGetterBean());
+        // Must NOT contain the getter's property name as a top-level key.
+        assertFalse(json.contains("\"extras\":"),
+                "getter name must be suppressed under @JsonAnyGetter: " + json);
+        // Must contain the flattened inner keys.
+        assertTrue(json.contains("\"k1\":\"v1\""), json);
+        assertTrue(json.contains("\"k2\":99"), json);
+        assertTrue(json.contains("\"id\":\"X\""), json);
+    }
+
+    @Test
+    public void jacksonAnyGetterIgnoredWithoutOptIn() {
+        // Without useJacksonAnnotation, @JsonAnyGetter is not interpreted —
+        // the getter produces a regular "extras":{...} slot. Documenting the
+        // opt-in contract so the suppression test above isn't misread.
+        String json = JSON.toJSONString(new JacksonAnyGetterBean());
+        assertTrue(json.contains("\"extras\":"), json);
+    }
 }

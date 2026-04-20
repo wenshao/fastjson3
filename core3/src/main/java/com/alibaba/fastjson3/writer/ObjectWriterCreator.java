@@ -307,8 +307,15 @@ public final class ObjectWriterCreator {
             if (jsonField != null && !jsonField.serialize()) {
                 continue;
             }
-            // Skip anyGetter methods — they're handled separately
+            // Skip anyGetter methods — they're handled separately by
+            // findAnyGetterMethod / the anyGetter-aware writer wrapper. Without
+            // this branch, a getter like `@JsonAnyGetter Map<String,Object>
+            // getExtras()` would produce both a nested `"extras":{…}` slot AND
+            // flattened inline keys, duplicating the payload.
             if (jsonField != null && jsonField.anyGetter()) {
+                continue;
+            }
+            if (useJacksonAnnotation && isJacksonAnyGetter(method)) {
                 continue;
             }
 
@@ -1110,6 +1117,15 @@ public final class ObjectWriterCreator {
             }
         }
         return null;
+    }
+
+    private static boolean isJacksonAnyGetter(Method method) {
+        for (java.lang.annotation.Annotation ann : method.getAnnotations()) {
+            if ("com.fasterxml.jackson.annotation.JsonAnyGetter".equals(ann.annotationType().getName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
