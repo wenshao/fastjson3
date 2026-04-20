@@ -307,4 +307,81 @@ class NumberEdgeCaseTest {
         assertEquals(BigInteger.valueOf(42), obj.getBigInteger("val"));
     }
 
+    // ==================== Top-level BigDecimal / BigInteger target ====================
+
+    @Test
+    void topLevelBigDecimal_fromFloatLiteral() {
+        // parseObject("3.14", BigDecimal.class) used to throw
+        // ClassCastException: Double cannot be cast to BigDecimal
+        BigDecimal bd = JSON.parseObject("3.14", BigDecimal.class);
+        assertEquals(new BigDecimal("3.14"), bd);
+    }
+
+    @Test
+    void topLevelBigDecimal_preservesPrecision() {
+        // Round-tripping via Double would truncate to 15–17 significant digits.
+        BigDecimal bd = JSON.parseObject("3.141592653589793238462643383279", BigDecimal.class);
+        assertEquals(new BigDecimal("3.141592653589793238462643383279"), bd);
+    }
+
+    @Test
+    void topLevelBigDecimal_null() {
+        assertNull(JSON.parseObject("null", BigDecimal.class));
+    }
+
+    @Test
+    void topLevelBigInteger_fromInt() {
+        assertEquals(BigInteger.valueOf(42), JSON.parseObject("42", BigInteger.class));
+    }
+
+    @Test
+    void topLevelBigInteger_fromLargeInt() {
+        BigInteger bi = JSON.parseObject("12345678901234567890", BigInteger.class);
+        assertEquals(new BigInteger("12345678901234567890"), bi);
+    }
+
+    @Test
+    void topLevelBigInteger_truncatesFloat() {
+        // Match Jackson tolerance: 3.14 on a BigInteger target rounds down to 3.
+        BigInteger bi = JSON.parseObject("3.14", BigInteger.class);
+        assertEquals(BigInteger.valueOf(3), bi);
+    }
+
+    // ==================== Record / POJO component BigDecimal + BigInteger ====================
+
+    public record MoneyRec(BigDecimal price, BigInteger txId) {
+    }
+
+    public static class MoneyPojo {
+        public BigDecimal price;
+        public BigInteger txId;
+    }
+
+    @Test
+    void recordBigDecimalBigIntegerFields() {
+        // Record canonical-ctor path; used to throw "argument type mismatch"
+        // because convertValue produced a Double for a BigDecimal component.
+        MoneyRec r = JSON.parseObject(
+                "{\"price\":99.95,\"txId\":12345678901234567890}", MoneyRec.class);
+        assertEquals(new BigDecimal("99.95"), r.price);
+        assertEquals(new BigInteger("12345678901234567890"), r.txId);
+    }
+
+    @Test
+    void pojoBigDecimalBigIntegerFields() {
+        MoneyPojo p = JSON.parseObject(
+                "{\"price\":99.95,\"txId\":12345678901234567890}", MoneyPojo.class);
+        assertEquals(new BigDecimal("99.95"), p.price);
+        assertEquals(new BigInteger("12345678901234567890"), p.txId);
+    }
+
+    @Test
+    void pojoBigDecimalFromStringValue() {
+        // "99.95" as a quoted string still produces the decimal value — common
+        // in APIs that return money amounts as strings to dodge JS precision.
+        MoneyPojo p = JSON.parseObject("{\"price\":\"99.95\",\"txId\":\"42\"}", MoneyPojo.class);
+        assertEquals(new BigDecimal("99.95"), p.price);
+        assertEquals(BigInteger.valueOf(42), p.txId);
+    }
+
 }

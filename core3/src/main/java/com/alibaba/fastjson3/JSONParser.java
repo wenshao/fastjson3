@@ -877,14 +877,16 @@ public abstract sealed class JSONParser implements Closeable
             return (T) Boolean.valueOf(readBoolean());
         }
         if (type == BigDecimal.class) {
-            return (T) readNumber();
+            if (readNull()) {
+                return null;
+            }
+            return (T) readBigDecimalLiteral();
         }
         if (type == BigInteger.class) {
-            Number num = readNumber();
-            if (num instanceof BigInteger) {
-                return (T) num;
+            if (readNull()) {
+                return null;
             }
-            return (T) BigInteger.valueOf(num.longValue());
+            return (T) readBigIntegerLiteral();
         }
         if (type == JSONObject.class) {
             return (T) readObject();
@@ -1109,6 +1111,48 @@ public abstract sealed class JSONParser implements Closeable
     }
 
     // ==================== Number parsing ====================
+
+    /**
+     * Scan a number literal and return it as a {@link BigDecimal}, preserving full
+     * precision. Used by the typed-target path ({@code parse("3.14", BigDecimal.class)})
+     * and by the POJO field path where the declared type is {@code BigDecimal}.
+     * Reading through {@link #readNumber()} and then casting would blow up: that
+     * method returns {@code Double} for floats unless {@code UseBigDecimalForDoubles}
+     * is set, so {@code (BigDecimal) readNumber()} throws ClassCastException.
+     */
+    public java.math.BigDecimal readBigDecimalLiteral() {
+        skipWhitespace();
+        int start = offset;
+        scanNumber();
+        int numLen = offset - start;
+        if (numLen > MAX_NUMBER_LENGTH) {
+            throw new JSONException("number length " + numLen + " exceeds maximum " + MAX_NUMBER_LENGTH
+                    + " at " + locationAt(start));
+        }
+        return new java.math.BigDecimal(extractString(start, offset));
+    }
+
+    /**
+     * Scan a number literal and return it as a {@link BigInteger}. Truncates any
+     * fractional / exponent part via {@code BigDecimal.toBigInteger()} so the
+     * input {@code "3.14"} rounds down to {@code 3}, matching Jackson's
+     * tolerance for float-shaped input on a {@code BigInteger} target.
+     */
+    public BigInteger readBigIntegerLiteral() {
+        skipWhitespace();
+        int start = offset;
+        boolean isFloat = scanNumber();
+        int numLen = offset - start;
+        if (numLen > MAX_NUMBER_LENGTH) {
+            throw new JSONException("number length " + numLen + " exceeds maximum " + MAX_NUMBER_LENGTH
+                    + " at " + locationAt(start));
+        }
+        String numStr = extractString(start, offset);
+        if (isFloat) {
+            return new java.math.BigDecimal(numStr).toBigInteger();
+        }
+        return new BigInteger(numStr);
+    }
 
     protected Number readNumber() {
         skipWhitespace();

@@ -137,6 +137,12 @@ public final class BuiltinCodecs {
         if (type == Boolean.class || type == boolean.class) {
             return (ObjectReader<T>) BOOLEAN_READER;
         }
+        if (type == java.math.BigDecimal.class) {
+            return (ObjectReader<T>) BIG_DECIMAL_READER;
+        }
+        if (type == java.math.BigInteger.class) {
+            return (ObjectReader<T>) BIG_INTEGER_READER;
+        }
 
         // Guava immutable collections (zero-dependency, reflection-based)
         ObjectReader<?> guavaReader = GuavaSupport.getReader(type);
@@ -679,5 +685,41 @@ public final class BuiltinCodecs {
                     return null;
                 }
                 return parser.readBoolean();
+            };
+
+    private static final ObjectReader<java.math.BigDecimal> BIG_DECIMAL_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                // APIs commonly emit money amounts as quoted strings to dodge
+                // JS Number precision — accept `"3.14"` as well as `3.14`.
+                parser.skipWS();
+                int peek = parser.charAt(parser.getOffset());
+                if (peek == '"' || peek == '\'') {
+                    String s = parser.readString();
+                    return s == null || s.isEmpty() ? null : new java.math.BigDecimal(s);
+                }
+                return parser.readBigDecimalLiteral();
+            };
+
+    private static final ObjectReader<java.math.BigInteger> BIG_INTEGER_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                parser.skipWS();
+                int peek = parser.charAt(parser.getOffset());
+                if (peek == '"' || peek == '\'') {
+                    String s = parser.readString();
+                    if (s == null || s.isEmpty()) {
+                        return null;
+                    }
+                    if (s.indexOf('.') >= 0 || s.indexOf('e') >= 0 || s.indexOf('E') >= 0) {
+                        return new java.math.BigDecimal(s).toBigInteger();
+                    }
+                    return new java.math.BigInteger(s);
+                }
+                return parser.readBigIntegerLiteral();
             };
 }

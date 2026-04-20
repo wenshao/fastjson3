@@ -576,6 +576,23 @@ public final class FieldReader implements Comparable<FieldReader> {
             if (fieldClass == AtomicLong.class) {
                 return new AtomicLong(number.longValue());
             }
+            if (fieldClass == java.math.BigDecimal.class) {
+                return toBigDecimal(number);
+            }
+            if (fieldClass == java.math.BigInteger.class) {
+                // Accept fractional sources (3.14 → 3) by routing through
+                // BigDecimal, matching the typed-target parse path. An integer
+                // Number is returned directly without lossy string conversion.
+                if (number instanceof java.math.BigInteger bi) {
+                    return bi;
+                }
+                if (number instanceof Integer || number instanceof Long
+                        || number instanceof Short || number instanceof Byte
+                        || number instanceof AtomicInteger || number instanceof AtomicLong) {
+                    return java.math.BigInteger.valueOf(number.longValue());
+                }
+                return toBigDecimal(number).toBigInteger();
+            }
             // Number → temporal type conversion (millis timestamp)
             long millis = number.longValue();
             if (fieldClass == Date.class) {
@@ -638,6 +655,16 @@ public final class FieldReader implements Comparable<FieldReader> {
             // String → JDK types (builtin codecs)
             if (fieldClass == UUID.class) {
                 return UUID.fromString(str);
+            }
+            if (fieldClass == java.math.BigDecimal.class) {
+                return new java.math.BigDecimal(str);
+            }
+            if (fieldClass == java.math.BigInteger.class) {
+                // Same float-tolerance as the numeric branch above: "3.14" → 3.
+                if (str.indexOf('.') >= 0 || str.indexOf('e') >= 0 || str.indexOf('E') >= 0) {
+                    return new java.math.BigDecimal(str).toBigInteger();
+                }
+                return new java.math.BigInteger(str);
             }
             if (fieldClass == Duration.class) {
                 return Duration.parse(str);
