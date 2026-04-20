@@ -692,14 +692,13 @@ public final class BuiltinCodecs {
                 if (parser.readNull()) {
                     return null;
                 }
-                // APIs commonly emit money amounts as quoted strings to dodge
-                // JS Number precision — accept `"3.14"` as well as `3.14`.
-                parser.skipWS();
-                int peek = parser.charAt(parser.getOffset());
-                if (peek == '"' || peek == '\'') {
-                    String s = parser.readString();
-                    return s == null || s.isEmpty() ? null : new java.math.BigDecimal(s);
-                }
+                // readBigDecimalLiteral itself handles both the bare-literal
+                // and the quoted-string shapes (see JSONParser round-1 fix).
+                // Earlier this ObjectReader duplicated the quoted-string peek
+                // inline with an unguarded charAt — whitespace-only input blew
+                // past end() and threw AIOOBE; single-quote bypassed the
+                // AllowSingleQuotes feature check. Delegating cleanly fixes
+                // both without re-implementing the quote-peek protocol.
                 return parser.readBigDecimalLiteral();
             };
 
@@ -707,18 +706,6 @@ public final class BuiltinCodecs {
             (parser, fieldType, fieldName, features) -> {
                 if (parser.readNull()) {
                     return null;
-                }
-                parser.skipWS();
-                int peek = parser.charAt(parser.getOffset());
-                if (peek == '"' || peek == '\'') {
-                    String s = parser.readString();
-                    if (s == null || s.isEmpty()) {
-                        return null;
-                    }
-                    if (s.indexOf('.') >= 0 || s.indexOf('e') >= 0 || s.indexOf('E') >= 0) {
-                        return new java.math.BigDecimal(s).toBigInteger();
-                    }
-                    return new java.math.BigInteger(s);
                 }
                 return parser.readBigIntegerLiteral();
             };

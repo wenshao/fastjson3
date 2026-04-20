@@ -416,4 +416,25 @@ class NumberEdgeCaseTest {
         assertEquals(BigInteger.valueOf(3), bi);
     }
 
+    // Round-2 audit: BuiltinCodecs previously duplicated the quote-peek with
+    // an unguarded charAt, so whitespace-only input blew past end() with
+    // AIOOBE, and single-quote bypassed the AllowSingleQuotes feature check.
+
+    @Test
+    void whitespaceOnlyInputRaisesCleanJsonException() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("   ", BigDecimal.class));
+        assertTrue(ex.getMessage().toLowerCase().contains("unexpected")
+                        || ex.getMessage().toLowerCase().contains("number"),
+                "expected clean number-parse error, got: " + ex.getMessage());
+    }
+
+    @Test
+    void singleQuoteInputRejectedWithoutAllowSingleQuotesFeature() {
+        // readString rejects single quotes without the feature; BuiltinCodecs
+        // must not bypass that gate with its own quote-peek.
+        assertThrows(Exception.class,
+                () -> JSON.parseObject("'3.14'", BigDecimal.class));
+    }
+
 }
