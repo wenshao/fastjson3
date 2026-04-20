@@ -1219,8 +1219,31 @@ public final class ObjectWriterCreator {
     }
 
     private static boolean findMixInJacksonAnyGetter(Class<?> mixIn, Method targetMethod) {
+        // Walk the mix-in's superclass + interface chain — a common Jackson
+        // pattern is `class UserMixIn extends BaseMixIn` where @JsonAnyGetter
+        // lives on BaseMixIn. `getDeclaredMethod` on UserMixIn alone misses
+        // the annotation, silently dropping the anyGetter and emitting both
+        // the wrapping slot AND the flattened keys. The native @JSONField
+        // path already walks the chain via findMixInAnnotation; the Jackson
+        // branch was asymmetric.
+        for (Class<?> host = mixIn; host != null && host != Object.class; host = host.getSuperclass()) {
+            if (checkMixInHostForJacksonAnyGetter(host, targetMethod)) {
+                return true;
+            }
+        }
+        // Mix-in interfaces can also host the annotation (default methods or
+        // abstract method declarations with @JsonAnyGetter).
+        for (Class<?> iface : mixIn.getInterfaces()) {
+            if (checkMixInHostForJacksonAnyGetter(iface, targetMethod)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean checkMixInHostForJacksonAnyGetter(Class<?> host, Method targetMethod) {
         try {
-            Method mixInMethod = mixIn.getDeclaredMethod(targetMethod.getName(), targetMethod.getParameterTypes());
+            Method mixInMethod = host.getDeclaredMethod(targetMethod.getName(), targetMethod.getParameterTypes());
             return isJacksonAnyGetter(mixInMethod);
         } catch (NoSuchMethodException ignored) {
             return false;

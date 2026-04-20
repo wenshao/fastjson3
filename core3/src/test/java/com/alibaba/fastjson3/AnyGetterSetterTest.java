@@ -391,4 +391,44 @@ public class AnyGetterSetterTest {
         assertTrue(root.getMessage().contains("extrasA") && root.getMessage().contains("extrasB"),
                 "expected both method names in: " + root.getMessage());
     }
+
+    // Round-5: mix-in inheritance for Jackson @JsonAnyGetter. Previous
+    // `mixIn.getDeclaredMethod` missed the annotation when it lived on a
+    // parent mix-in class — a common Jackson pattern:
+    //   class UserMixIn extends BaseMixIn
+    //   BaseMixIn: @JsonAnyGetter public abstract Map<...> getExtras();
+
+    public abstract static class BaseMixInWithAnyGetter {
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        public abstract Map<String, Object> getExtras();
+    }
+
+    public abstract static class UserMixInExtendsBase extends BaseMixInWithAnyGetter {
+    }
+
+    public static class InheritedMixInTarget {
+        public String name = "bob";
+        public Map<String, Object> extras = new LinkedHashMap<>();
+
+        public InheritedMixInTarget() {
+            extras.put("k", "v");
+        }
+
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+    }
+
+    @Test
+    public void mixInJacksonAnyGetterInheritedFromParent() {
+        ObjectMapper jackson = ObjectMapper.builder()
+                .useJacksonAnnotation(true)
+                .addMixIn(InheritedMixInTarget.class, UserMixInExtendsBase.class)
+                .build();
+        String json = jackson.writeValueAsString(new InheritedMixInTarget());
+        assertFalse(json.contains("\"extras\":"),
+                "inherited mix-in @JsonAnyGetter must be recognised: " + json);
+        assertTrue(json.contains("\"k\":\"v\""), json);
+        assertTrue(json.contains("\"name\":\"bob\""), json);
+    }
 }
