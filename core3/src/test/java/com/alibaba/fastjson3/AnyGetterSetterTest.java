@@ -215,4 +215,29 @@ public class AnyGetterSetterTest {
         String json = JSON.toJSONString(new JacksonAnyGetterBean());
         assertTrue(json.contains("\"extras\":"), json);
     }
+
+    // Round-1 audit: @JsonAnyGetter on a non-Map getter must NOT suppress
+    // the field. findAnyGetterMethod rejects non-Map returns, so suppressing
+    // at the getter-collection step too would silently drop the field.
+
+    public static class NonMapAnyGetterBean {
+        public String id = "Z";
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        public String getLabel() {
+            return "labelval";
+        }
+    }
+
+    @Test
+    public void nonMapJacksonAnyGetterDoesNotSuppressField() {
+        ObjectMapper jacksonMapper = ObjectMapper.builder()
+                .useJacksonAnnotation(true)
+                .build();
+        String json = jacksonMapper.writeValueAsString(new NonMapAnyGetterBean());
+        assertTrue(json.contains("\"id\":\"Z\""), json);
+        // Non-Map @JsonAnyGetter is a user error; field must still serialise
+        // as a regular getter rather than vanish.
+        assertTrue(json.contains("\"label\":\"labelval\""),
+                "non-Map @JsonAnyGetter must not suppress the field: " + json);
+    }
 }

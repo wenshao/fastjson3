@@ -315,7 +315,13 @@ public final class ObjectWriterCreator {
             if (jsonField != null && jsonField.anyGetter()) {
                 continue;
             }
-            if (useJacksonAnnotation && isJacksonAnyGetter(method)) {
+            if (useJacksonAnnotation && isJacksonAnyGetter(method)
+                    && java.util.Map.class.isAssignableFrom(method.getReturnType())) {
+                // Only suppress when the return type is actually a Map —
+                // findAnyGetterMethod requires Map to adopt it as the anyGetter.
+                // A non-Map @JsonAnyGetter is a user error; let it fall through
+                // to the normal getter path so the annotation becomes a no-op
+                // instead of silently dropping the field.
                 continue;
             }
 
