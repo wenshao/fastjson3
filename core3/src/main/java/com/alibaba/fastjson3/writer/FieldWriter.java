@@ -64,6 +64,12 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     // For TYPE_OBJECT / TYPE_LIST_OBJECT: cached ObjectWriter + class guard
     private volatile ObjectWriter<Object> cachedWriter;
     private volatile Class<?> cachedWriterClass;
+    // Separate cache for @JSONField(unwrapped=true): we need a FieldWriter[] to
+    // iterate, and ASM writers don't expose theirs. Populated from a dedicated
+    // ReflectObjectWriter so the unwrap path works regardless of what kind of
+    // writer the global mapper cached for the inner type.
+    private volatile FieldWriter[] cachedUnwrapFieldWriters;
+    private volatile Class<?> cachedUnwrapFieldWritersClass;
 
     // For TYPE_LIST_STRING / TYPE_LIST_OBJECT: element class
     public final Class<?> elementClass;
@@ -689,15 +695,14 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && isEmpty(value)) {
             return;
         }
-        // Unwrapped: write nested object's fields directly into parent (no field name, no braces)
+        // Unwrapped: write nested object's fields directly into parent (no field name, no braces).
+        // We need a concrete FieldWriter[] to iterate; ASM writers don't publish theirs, so we
+        // bypass the mapper's type→writer cache (which may have stored an ASM writer) and build
+        // a reflection writer dedicated to the unwrapping use case. Cached per FieldWriter
+        // instance so the recursive per-write creation only happens once per inner class.
         if (unwrapped) {
-            ObjectWriter<Object> writer = resolveObjectWriter(generator, value.getClass());
-            if (writer instanceof ObjectWriterCreator.ReflectObjectWriter row) {
-                ObjectWriterCreator.writeFields(generator, row.writers, value, features);
-            } else {
-                throw new JSONException("@JSONField(unwrapped=true) requires a POJO type; "
-                        + value.getClass().getName() + " is not supported");
-            }
+            FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(value.getClass());
+            ObjectWriterCreator.writeFields(generator, innerFieldWriters, value, features);
             return;
         }
         if (generator.notWriteEmptyArray) {
@@ -1050,6 +1055,36 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         return writer;
     }
 
+    /**
+     * Resolve the inner type's {@link FieldWriter} array for unwrap-time
+     * emission. Always goes through {@link ObjectWriterCreator} so we get a
+     * {@link ObjectWriterCreator.ReflectObjectWriter} — the only writer kind
+     * that publishes its {@code writers} array. Bypasses the mapper's
+     * {@code type→writer} cache because that cache may hold an ASM-generated
+     * writer that conceals its internal field writers.
+     */
+    private FieldWriter[] resolveUnwrapFieldWriters(Class<?> valueClass) {
+        FieldWriter[] writers = cachedUnwrapFieldWriters;
+        if (writers == null || cachedUnwrapFieldWritersClass != valueClass) {
+            ObjectWriter<?> w = ObjectWriterCreator.createObjectWriter(valueClass);
+            if (w instanceof ObjectWriterCreator.ReflectObjectWriter row) {
+                writers = row.writers;
+                cachedUnwrapFieldWriters = writers;
+                cachedUnwrapFieldWritersClass = valueClass;
+            } else {
+                // Inner type uses a custom @JSONType(serializer=…) / @JsonAnyGetter
+                // lambda path — no accessible FieldWriter[] to flatten. Reject
+                // at write time with a clear message; nested serialisation
+                // isn't a meaningful fallback because it would break round-trip
+                // with the unwrap-aware reader on the other side.
+                throw new JSONException("@JSONField(unwrapped=true) on " + fieldName
+                        + ": inner type " + valueClass.getName()
+                        + " uses a custom serializer or anyGetter and cannot be flattened");
+            }
+        }
+        return writers;
+    }
+
     // ==================== Filter-aware write ====================
 
     /**
@@ -1151,13 +1186,8 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         // Unwrapped: write nested fields directly (no name, no braces)
         if (unwrapped) {
-            ObjectWriter<Object> writer = resolveObjectWriter(generator, value.getClass());
-            if (writer instanceof ObjectWriterCreator.ReflectObjectWriter row) {
-                ObjectWriterCreator.writeFields(generator, row.writers, value, features);
-            } else {
-                throw new JSONException("@JSONField(unwrapped=true) requires a POJO type; "
-                        + value.getClass().getName() + " is not supported");
-            }
+            FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(value.getClass());
+            ObjectWriterCreator.writeFields(generator, innerFieldWriters, value, features);
             return;
         }
         generator.writeName(name);

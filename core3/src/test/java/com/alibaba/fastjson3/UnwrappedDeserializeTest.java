@@ -1188,4 +1188,67 @@ public class UnwrappedDeserializeTest {
         assertInstanceOf(SchemaAdultCat.class, parsed);
         assertEquals(3, ((SchemaAdultCat) parsed).age);
     }
+
+    // ==================== Writer round-trip when inner uses ASM writer ====================
+    // Round-3 usability audit F6: the writer's @JSONField(unwrapped=true) path
+    // used to accept only ReflectObjectWriter, crashing with "requires a POJO
+    // type; InnerC is not supported" whenever the inner class was ASM-compiled
+    // (which is the majority of POJOs). After the fix, the writer resolves a
+    // dedicated ReflectObjectWriter for the inner type regardless of what the
+    // global mapper cached, making round-trip symmetric with the reader.
+
+    public static class InnerAddr {
+        public String city;
+        public String zip;
+    }
+
+    public static class OuterWithAddr {
+        @JSONField(unwrapped = true)
+        public InnerAddr addr;
+        public String name;
+    }
+
+    @Test
+    public void writerUnwrapsAsmInnerRoundTrip() {
+        OuterWithAddr o = new OuterWithAddr();
+        o.addr = new InnerAddr();
+        o.addr.city = "SF";
+        o.addr.zip = "94103";
+        o.name = "alice";
+
+        // Write via JSON.toJSONString — the global mapper will typically
+        // produce ASM writers for the inner type. Must NOT crash.
+        String json = JSON.toJSONString(o);
+        assertTrue(json.contains("\"city\":\"SF\""), json);
+        assertTrue(json.contains("\"zip\":\"94103\""), json);
+        assertTrue(json.contains("\"name\":\"alice\""), json);
+        assertFalse(json.contains("\"addr\":"), "inner should be flattened, not wrapped: " + json);
+
+        OuterWithAddr back = JSON.parse(json, OuterWithAddr.class);
+        assertEquals("alice", back.name);
+        assertNotNull(back.addr);
+        assertEquals("SF", back.addr.city);
+        assertEquals("94103", back.addr.zip);
+    }
+
+    @Test
+    public void writerRejectsRecordInnerAtConstruction() {
+        // Writer-side mirror of the reader's guard: emitting flattened keys
+        // from a record inner would produce a payload the reader rejects,
+        // so the writer rejects at construction time instead of silently
+        // producing un-round-trippable JSON.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.toJSONString(new RecordInnerHost(new RecordInner("a"))));
+        assertTrue(ex.getMessage().toLowerCase().contains("record"), ex.getMessage());
+    }
+
+    public record RecordInner(String tag) {}
+
+    public static class RecordInnerHost {
+        @JSONField(unwrapped = true)
+        public RecordInner leaf;
+
+        public RecordInnerHost() {}
+        public RecordInnerHost(RecordInner leaf) { this.leaf = leaf; }
+    }
 }

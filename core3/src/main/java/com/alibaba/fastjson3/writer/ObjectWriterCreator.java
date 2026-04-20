@@ -411,6 +411,13 @@ public final class ObjectWriterCreator {
             // Prefer backing field for Unsafe direct access (avoids Method.invoke overhead)
             Type fieldType = method.getGenericReturnType();
             Class<?> fieldClass = method.getReturnType();
+            if (unwrapped) {
+                // Match the reader-side @JSONField(unwrapped=true) rules so a round-trip
+                // is always reconstructible. Emitting flattened keys from an inner type
+                // the reader can't recombine would produce un-parseable payloads for
+                // any consumer that relies on the same annotations.
+                rejectNonPojoUnwrappedInner(type, propertyName, fieldClass);
+            }
             if (customWriter == null && fieldClass.isEnum()) {
                 // Enum type declares @JSONField(value=true) / @JsonValue on one of its methods —
                 // route the field through that single-value writer instead of TYPE_ENUM's
@@ -518,6 +525,9 @@ public final class ObjectWriterCreator {
             boolean unwrapped = jsonField != null && jsonField.unwrapped();
 
             Class<?> publicFieldClass = field.getType();
+            if (unwrapped) {
+                rejectNonPojoUnwrappedInner(type, field.getName(), publicFieldClass);
+            }
             if (customWriter == null && publicFieldClass.isEnum()) {
                 customWriter = findValueWriter(publicFieldClass, null, useJacksonAnnotation);
             }
@@ -1110,6 +1120,41 @@ public final class ObjectWriterCreator {
             }
         }
         return null;
+    }
+
+    /**
+     * Writer-side mirror of the reader's {@code rejectNonPojoUnwrapHolder}.
+     * Catches configurations where the writer would emit flattened keys that
+     * the reader cannot reconstitute — an interface / abstract / record /
+     * Collection / Map / enum / array inner type, or a primitive. Failing at
+     * construction time gives a clear message instead of letting the write
+     * succeed and then die on parse.
+     */
+    private static void rejectNonPojoUnwrappedInner(Class<?> outerType, String fieldName, Class<?> innerClass) {
+        String reason = null;
+        if (innerClass.isPrimitive()) {
+            reason = "primitive";
+        } else if (innerClass.isArray()) {
+            reason = "array";
+        } else if (innerClass.isEnum()) {
+            reason = "enum";
+        } else if (java.util.Collection.class.isAssignableFrom(innerClass)) {
+            reason = "Collection";
+        } else if (java.util.Map.class.isAssignableFrom(innerClass)) {
+            reason = "Map";
+        } else if (innerClass.isInterface()) {
+            reason = "interface";
+        } else if (Modifier.isAbstract(innerClass.getModifiers())) {
+            reason = "abstract class";
+        } else if (com.alibaba.fastjson3.util.JDKUtils.isRecord(innerClass)) {
+            reason = "record";
+        }
+        if (reason != null) {
+            throw new com.alibaba.fastjson3.JSONException(
+                    "@JSONField(unwrapped=true) on " + outerType.getName() + "." + fieldName
+                            + ": inner type " + innerClass.getName()
+                            + " (" + reason + ") is not a concrete POJO and cannot be unwrapped");
+        }
     }
 
     /**
