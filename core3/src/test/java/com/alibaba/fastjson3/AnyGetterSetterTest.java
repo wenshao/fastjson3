@@ -240,4 +240,24 @@ public class AnyGetterSetterTest {
         assertTrue(json.contains("\"label\":\"labelval\""),
                 "non-Map @JsonAnyGetter must not suppress the field: " + json);
     }
+
+    // Round-2 audit: the fj3-native @JSONField(anyGetter=true) branch had
+    // the same latent drop-data bug that round 1 fixed on the Jackson branch.
+
+    public static class NonMapNativeAnyGetterBean {
+        public String id = "N";
+
+        @JSONField(anyGetter = true)
+        public String getLabel() {
+            return "nativeval";
+        }
+    }
+
+    @Test
+    public void nonMapNativeAnyGetterDoesNotSuppressField() {
+        String json = MAPPER.writeValueAsString(new NonMapNativeAnyGetterBean());
+        assertTrue(json.contains("\"id\":\"N\""), json);
+        assertTrue(json.contains("\"label\":\"nativeval\""),
+                "non-Map @JSONField(anyGetter=true) must not suppress the field: " + json);
+    }
 }
