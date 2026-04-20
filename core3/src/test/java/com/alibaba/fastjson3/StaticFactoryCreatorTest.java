@@ -246,4 +246,41 @@ public class StaticFactoryCreatorTest {
         assertTrue(ex.getMessage().contains("unwrapped"), ex.getMessage());
         assertTrue(ex.getMessage().contains("not supported"), ex.getMessage());
     }
+
+    // ==================== Ambiguity across class + mix-in ====================
+
+    public static class HostClassFactory {
+        public int v;
+
+        @JSONCreator
+        public static HostClassFactory fromClass(@JSONField(name = "v") int v) {
+            HostClassFactory h = new HostClassFactory();
+            h.v = v;
+            return h;
+        }
+    }
+
+    public static class HostMixInFactory {
+        @JSONCreator
+        public static HostClassFactory fromMixIn(@JSONField(name = "v") int v) {
+            HostClassFactory h = new HostClassFactory();
+            h.v = v;
+            return h;
+        }
+    }
+
+    @Test
+    public void crossHostFactoryAmbiguityRejected() {
+        // One factory on the target class, another on a mix-in — neither is
+        // objectively preferable. The first round of the fix only detected
+        // ambiguity within a single host; this test ensures class + mix-in
+        // competitors also surface a diagnostic.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(HostClassFactory.class, HostMixInFactory.class));
+        assertTrue(ex.getMessage().contains("multiple"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("fromClass")
+                        && ex.getMessage().contains("fromMixIn"),
+                "expected both method names in: " + ex.getMessage());
+    }
 }

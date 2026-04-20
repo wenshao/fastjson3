@@ -3352,15 +3352,19 @@ public final class ObjectReaderCreator {
      * falls through to constructor resolution.</p>
      */
     private static Method resolveStaticFactoryMethod(Class<?> type, Class<?> mixIn, boolean useJacksonAnnotation) {
-        Method chosen = scanStaticFactory(type, type, useJacksonAnnotation);
-        if (chosen == null && mixIn != null) {
-            chosen = scanStaticFactory(type, mixIn, useJacksonAnnotation);
+        // Ambiguity must be detected ACROSS the class + mix-in boundary too —
+        // a factory declared on the class and another on the mix-in is just as
+        // non-deterministic as two on the same class. Thread the first hit
+        // through so the second scan throws if it finds a competitor.
+        Method chosen = scanStaticFactory(type, type, useJacksonAnnotation, null);
+        if (mixIn != null) {
+            chosen = scanStaticFactory(type, mixIn, useJacksonAnnotation, chosen);
         }
         return chosen;
     }
 
-    private static Method scanStaticFactory(Class<?> owner, Class<?> annotationHost, boolean useJacksonAnnotation) {
-        Method chosen = null;
+    private static Method scanStaticFactory(Class<?> owner, Class<?> annotationHost,
+                                            boolean useJacksonAnnotation, Method chosen) {
         for (Method m : annotationHost.getDeclaredMethods()) {
             if (!Modifier.isStatic(m.getModifiers())) {
                 continue;
@@ -3377,10 +3381,14 @@ public final class ObjectReaderCreator {
                 // Declared-method order is JVM-unspecified, so silently picking
                 // "first found" would be non-deterministic. Match Jackson's
                 // behaviour (InvalidDefinitionException on conflicting creators)
-                // so the ambiguity surfaces at construction time with both names.
-                throw new JSONException("multiple @JSONCreator factory methods on "
-                        + annotationHost.getName() + ": " + chosen.getName()
-                        + " and " + m.getName() + " — mark only one");
+                // — with both names and their declaring class so a class-vs-mix-in
+                // clash is attributable.
+                throw new JSONException("multiple @JSONCreator factory methods for "
+                        + owner.getName() + ": "
+                        + chosen.getDeclaringClass().getSimpleName() + "." + chosen.getName()
+                        + " and "
+                        + m.getDeclaringClass().getSimpleName() + "." + m.getName()
+                        + " — mark only one");
             }
             chosen = m;
         }
