@@ -110,6 +110,11 @@ public final class ObjectWriterCreator {
         String[] componentNames = com.alibaba.fastjson3.util.JDKUtils.getRecordComponentNames(type);
         java.lang.reflect.Method[] accessors = com.alibaba.fastjson3.util.JDKUtils.getRecordComponentAccessors(type);
 
+        // Records are field bags just like POJOs on the write side — the
+        // anyGetter lookup that createPojoWriter does must also run here or
+        // a record accessor annotated @JsonAnyGetter becomes a silent no-op.
+        Method anyGetterMethod = findAnyGetterMethod(type, mixIn, useJacksonAnnotation);
+
         Map<String, FieldWriter> writerMap = new LinkedHashMap<>();
         for (int i = 0; i < componentNames.length; i++) {
             String propertyName = componentNames[i];
@@ -119,6 +124,15 @@ public final class ObjectWriterCreator {
                 continue;
             }
             if (ignores.contains(propertyName)) {
+                continue;
+            }
+
+            // Skip the accessor adopted as anyGetter — its Map is emitted
+            // inline by the anyGetter wrapper. Without this skip, the record
+            // writer emits both a nested {"extras":{…}} slot AND the flattened
+            // inline keys, duplicating the payload (same shape PR #124 fixed
+            // for createPojoWriter).
+            if (anyGetterMethod != null && accessor.equals(anyGetterMethod)) {
                 continue;
             }
 
@@ -232,7 +246,7 @@ public final class ObjectWriterCreator {
                 }
             }
         }
-        return buildObjectWriter(writers, null, typeName, typeKey);
+        return buildObjectWriter(writers, anyGetterMethod, typeName, typeKey);
     }
 
     private static <T> ObjectWriter<T> createPojoWriter(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
@@ -274,6 +288,12 @@ public final class ObjectWriterCreator {
 
         // Collect field writers keyed by property name to deduplicate getter vs field
         Map<String, FieldWriter> writerMap = new LinkedHashMap<>();
+        // Property names suppressed by the getter loop (e.g., anyGetter methods)
+        // so the public-field fallback below doesn't pick them up — a public
+        // `Map<String,Object> extras` paired with `@JsonAnyGetter getExtras()`
+        // would otherwise produce both a nested "extras":{...} slot AND the
+        // flattened inline keys.
+        Set<String> suppressedNames = new java.util.HashSet<>();
 
         // 0. Check for @JSONField(value = true) — single-value serialization
         ObjectWriter<T> valueWriter = findValueWriter(type, mixIn, useJacksonAnnotation);
@@ -318,12 +338,19 @@ public final class ObjectWriterCreator {
             // user error; suppressing it here would silently drop the field.
             // Fall through to the normal getter path in that case — the
             // annotation becomes a no-op, and the value keeps serialising.
+            // jsonField may already be the mix-in annotation here (line above
+            // promotes it from mixIn when the direct method annotation is null),
+            // so the anyGetter check covers both cases in one branch.
             if (jsonField != null && jsonField.anyGetter()
                     && java.util.Map.class.isAssignableFrom(method.getReturnType())) {
+                suppressedNames.add(propertyName);
                 continue;
             }
-            if (useJacksonAnnotation && isJacksonAnyGetter(method)
+            if (useJacksonAnnotation
+                    && (isJacksonAnyGetter(method)
+                            || (mixIn != null && findMixInJacksonAnyGetter(mixIn, method)))
                     && java.util.Map.class.isAssignableFrom(method.getReturnType())) {
+                suppressedNames.add(propertyName);
                 continue;
             }
 
@@ -477,7 +504,7 @@ public final class ObjectWriterCreator {
             }
 
             String propertyName = field.getName();
-            if (writerMap.containsKey(propertyName)) {
+            if (writerMap.containsKey(propertyName) || suppressedNames.contains(propertyName)) {
                 continue;
             }
 
@@ -1138,8 +1165,17 @@ public final class ObjectWriterCreator {
 
     /**
      * Scan all methods for {@code @JSONField(anyGetter = true)} or Jackson {@code @JsonAnyGetter}.
+     * When the annotation isn't on the target method directly, consult the
+     * registered mix-in — a common Jackson pattern is to apply anyGetter
+     * through a mix-in rather than edit the target class.
+     *
+     * <p>{@code getMethods()} order is JVM-unspecified, so first-wins would
+     * be non-deterministic when two methods are annotated. Throw at
+     * construction with both method names — matches Jackson's behaviour
+     * and the sibling @JSONCreator ambiguity detector in PR #123.
      */
     private static Method findAnyGetterMethod(Class<?> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        Method chosen = null;
         for (Method method : type.getMethods()) {
             if (method.getDeclaringClass() == Object.class || method.getParameterCount() != 0
                     || java.lang.reflect.Modifier.isStatic(method.getModifiers())) {
@@ -1148,21 +1184,47 @@ public final class ObjectWriterCreator {
             if (!java.util.Map.class.isAssignableFrom(method.getReturnType())) {
                 continue;
             }
+            boolean match = false;
             JSONField jsonField = method.getAnnotation(JSONField.class);
-            if (jsonField != null && jsonField.anyGetter()) {
-                method.setAccessible(true);
-                return method;
+            if (jsonField == null && mixIn != null) {
+                // Mix-in JSONField(anyGetter=true): a method declared on the
+                // target picks up the annotation from a matching mix-in method.
+                jsonField = findMixInAnnotation(mixIn, method,
+                        extractPropertyName(method.getName(), method.getReturnType()),
+                        JSONField.class);
             }
-            if (useJacksonAnnotation) {
-                for (java.lang.annotation.Annotation ann : method.getAnnotations()) {
-                    if ("com.fasterxml.jackson.annotation.JsonAnyGetter".equals(ann.annotationType().getName())) {
-                        method.setAccessible(true);
-                        return method;
-                    }
+            if (jsonField != null && jsonField.anyGetter()) {
+                match = true;
+            } else if (useJacksonAnnotation) {
+                if (isJacksonAnyGetter(method)
+                        || (mixIn != null && findMixInJacksonAnyGetter(mixIn, method))) {
+                    match = true;
                 }
             }
+            if (!match) {
+                continue;
+            }
+            if (chosen != null && !chosen.equals(method)) {
+                throw new com.alibaba.fastjson3.JSONException(
+                        "multiple anyGetter methods on " + type.getName()
+                                + ": " + chosen.getName() + " and " + method.getName()
+                                + " — mark only one");
+            }
+            chosen = method;
         }
-        return null;
+        if (chosen != null) {
+            chosen.setAccessible(true);
+        }
+        return chosen;
+    }
+
+    private static boolean findMixInJacksonAnyGetter(Class<?> mixIn, Method targetMethod) {
+        try {
+            Method mixInMethod = mixIn.getDeclaredMethod(targetMethod.getName(), targetMethod.getParameterTypes());
+            return isJacksonAnyGetter(mixInMethod);
+        } catch (NoSuchMethodException ignored) {
+            return false;
+        }
     }
 
     private static String resolveLabel(JSONField jsonField, Field backingField, Class<?> mixIn) {

@@ -260,4 +260,135 @@ public class AnyGetterSetterTest {
         assertTrue(json.contains("\"label\":\"nativeval\""),
                 "non-Map @JSONField(anyGetter=true) must not suppress the field: " + json);
     }
+
+    // Round-4: record path had no @JsonAnyGetter wiring — silent no-op.
+
+    public record JacksonAnyGetterRecord(String id,
+                                         @com.fasterxml.jackson.annotation.JsonAnyGetter Map<String, Object> extras) {}
+
+    @Test
+    public void recordJacksonAnyGetterFlattens() {
+        Map<String, Object> extras = new LinkedHashMap<>();
+        extras.put("k1", "v1");
+        extras.put("k2", 99);
+        JacksonAnyGetterRecord r = new JacksonAnyGetterRecord("X", extras);
+
+        ObjectMapper jackson = ObjectMapper.builder().useJacksonAnnotation(true).build();
+        String json = jackson.writeValueAsString(r);
+        assertFalse(json.contains("\"extras\":"),
+                "record accessor must be suppressed under @JsonAnyGetter: " + json);
+        assertTrue(json.contains("\"id\":\"X\""), json);
+        assertTrue(json.contains("\"k1\":\"v1\""), json);
+        assertTrue(json.contains("\"k2\":99"), json);
+    }
+
+    public record NativeAnyGetterRecord(String id,
+                                        @JSONField(anyGetter = true) Map<String, Object> extras) {}
+
+    @Test
+    public void recordNativeAnyGetterFlattens() {
+        Map<String, Object> extras = new LinkedHashMap<>();
+        extras.put("color", "red");
+        NativeAnyGetterRecord r = new NativeAnyGetterRecord("R", extras);
+
+        String json = MAPPER.writeValueAsString(r);
+        assertFalse(json.contains("\"extras\":"), json);
+        assertTrue(json.contains("\"id\":\"R\""), json);
+        assertTrue(json.contains("\"color\":\"red\""), json);
+    }
+
+    // Round-4: public field + @JsonAnyGetter getter same-named produced
+    // a duplicate slot; field loop now honours the getter suppression.
+
+    public static class PublicFieldWithAnyGetter {
+        public String id = "F";
+        public Map<String, Object> extras = new LinkedHashMap<>();
+
+        public PublicFieldWithAnyGetter() {
+            extras.put("k", "v");
+        }
+
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+    }
+
+    @Test
+    public void publicFieldWithJacksonAnyGetterNoDuplicateSlot() {
+        ObjectMapper jackson = ObjectMapper.builder().useJacksonAnnotation(true).build();
+        String json = jackson.writeValueAsString(new PublicFieldWithAnyGetter());
+        assertFalse(json.contains("\"extras\":"),
+                "field loop must honour the getter suppression: " + json);
+        assertTrue(json.contains("\"k\":\"v\""), json);
+        assertTrue(json.contains("\"id\":\"F\""), json);
+    }
+
+    // Round-4: mix-in @JsonAnyGetter not recognised.
+
+    public static class MixInTarget {
+        public String id = "M";
+        public Map<String, Object> extras = new LinkedHashMap<>();
+
+        public MixInTarget() {
+            extras.put("x", 1);
+        }
+
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+    }
+
+    public abstract static class MixInSource {
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        public abstract Map<String, Object> getExtras();
+    }
+
+    @Test
+    public void mixInJacksonAnyGetterRecognised() {
+        ObjectMapper jackson = ObjectMapper.builder()
+                .useJacksonAnnotation(true)
+                .addMixIn(MixInTarget.class, MixInSource.class)
+                .build();
+        String json = jackson.writeValueAsString(new MixInTarget());
+        assertFalse(json.contains("\"extras\":"),
+                "mix-in @JsonAnyGetter must be recognised: " + json);
+        assertTrue(json.contains("\"x\":1"), json);
+        assertTrue(json.contains("\"id\":\"M\""), json);
+    }
+
+    // Round-4: two @JsonAnyGetter methods — reject at construction.
+
+    public static class TwoAnyGetters {
+        public String id = "T";
+
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        public Map<String, Object> extrasA() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("a", 1);
+            return m;
+        }
+
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        public Map<String, Object> extrasB() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("b", 2);
+            return m;
+        }
+    }
+
+    @Test
+    public void multipleAnyGetterMethodsRejected() {
+        ObjectMapper jackson = ObjectMapper.builder().useJacksonAnnotation(true).build();
+        Throwable ex = assertThrows(RuntimeException.class,
+                () -> jackson.writeValueAsString(new TwoAnyGetters()));
+        Throwable root = ex;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        assertTrue(root.getMessage().contains("multiple"),
+                "expected 'multiple' in: " + root.getMessage());
+        assertTrue(root.getMessage().contains("extrasA") && root.getMessage().contains("extrasB"),
+                "expected both method names in: " + root.getMessage());
+    }
 }
