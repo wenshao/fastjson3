@@ -939,9 +939,15 @@ public abstract sealed class JSONParser implements Closeable
             return (T) readBigIntegerLiteral();
         }
         if (type == JSONObject.class) {
+            if (readNull()) {
+                return null;
+            }
             return (T) readObject();
         }
         if (type == JSONArray.class) {
+            if (readNull()) {
+                return null;
+            }
             return (T) readArray();
         }
         if (type == AtomicInteger.class) {

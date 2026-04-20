@@ -336,7 +336,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<UUID> UUID_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : UUID.fromString(str);
             };
 
@@ -349,7 +349,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<Duration> DURATION_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : Duration.parse(str);
             };
 
@@ -360,7 +360,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<Period> PERIOD_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : Period.parse(str);
             };
 
@@ -386,7 +386,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<YearMonth> YEAR_MONTH_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : YearMonth.parse(str);
             };
 
@@ -397,7 +397,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<MonthDay> MONTH_DAY_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : MonthDay.parse(str);
             };
 
@@ -410,7 +410,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<URI> URI_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : URI.create(str);
             };
 
@@ -421,7 +421,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<Path> PATH_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : Path.of(str);
             };
 
@@ -434,7 +434,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<LocalDate> LOCAL_DATE_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : com.alibaba.fastjson3.util.DateUtils.parseLocalDate(str);
             };
 
@@ -445,7 +445,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<LocalDateTime> LOCAL_DATE_TIME_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : com.alibaba.fastjson3.util.DateUtils.parseLocalDateTime(str);
             };
 
@@ -456,7 +456,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<LocalTime> LOCAL_TIME_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : LocalTime.parse(str);
             };
 
@@ -467,7 +467,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<Instant> INSTANT_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : Instant.parse(str);
             };
 
@@ -478,7 +478,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<ZonedDateTime> ZONED_DATE_TIME_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : ZonedDateTime.parse(str);
             };
 
@@ -489,7 +489,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<OffsetDateTime> OFFSET_DATE_TIME_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : OffsetDateTime.parse(str);
             };
 
@@ -500,7 +500,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<OffsetTime> OFFSET_TIME_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : OffsetTime.parse(str);
             };
 
@@ -511,7 +511,7 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<Date> DATE_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
+                String str = parser.readNullableString();
                 return str == null ? null : Date.from(Instant.parse(str));
             };
 
@@ -621,7 +621,7 @@ public final class BuiltinCodecs {
     // ==================== String ====================
 
     private static final ObjectReader<String> STRING_READER =
-            (parser, fieldType, fieldName, features) -> parser.readString();
+            (parser, fieldType, fieldName, features) -> parser.readNullableString();
 
     // ==================== Primitive wrapper types ====================
 
@@ -643,8 +643,8 @@ public final class BuiltinCodecs {
 
     private static final ObjectReader<Character> CHARACTER_READER =
             (parser, fieldType, fieldName, features) -> {
-                String str = parser.readString();
-                return str == null ? null : str.charAt(0);
+                String str = parser.readNullableString();
+                return str == null || str.isEmpty() ? null : str.charAt(0);
             };
 
     private static final ObjectReader<Integer> INTEGER_READER =
