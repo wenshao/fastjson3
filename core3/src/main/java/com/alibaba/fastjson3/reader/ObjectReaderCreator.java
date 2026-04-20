@@ -562,15 +562,18 @@ public final class ObjectReaderCreator {
         // nested POJO; holds the outer accessor + the inner FieldReader to delegate
         // into. Null when no unwrapped fields are declared on the type.
         final List<UnwrappedEntry> unwrappedEntries;
-        // Outer holder fields marked @JSONField(unwrapped=true, required=true). Post-parse
-        // check: the field must be non-null (at least one flattened inner key populated
-        // it) or a required-field error is raised. Null when no such holders declared.
-        final List<Field> requiredUnwrappedHolders;
+        // Holder chains marked @JSONField(unwrapped=true, required=true). Each chain
+        // walks from the outer instance down to the required holder: a single-element
+        // array for a direct holder (outer.field required), a multi-element array for
+        // a nested required holder (outer.mid.leaf required — only enforced when the
+        // earlier links are non-null, i.e. that mid was materialized by an incoming
+        // key). Post-parse check runs in applyDefaults. Null when no such holders.
+        final List<Field[]> requiredUnwrappedHolders;
 
         FieldReaderCollection(FieldReader[] fieldReaders, FieldNameMatcher matcher,
                               Map<String, FieldReader> fieldReaderMap,
                               List<UnwrappedEntry> unwrappedEntries,
-                              List<Field> requiredUnwrappedHolders) {
+                              List<Field[]> requiredUnwrappedHolders) {
             this.fieldReaders = fieldReaders;
             this.matcher = matcher;
             this.fieldReaderMap = fieldReaderMap;
@@ -764,7 +767,7 @@ public final class ObjectReaderCreator {
         // separately because the unwrapped expansion skips creating a regular
         // FieldReader for these, so the normal applyDefaults required-field
         // enforcement won't see them. Null when no such holders declared.
-        List<Field> requiredUnwrappedHolders = null;
+        List<Field[]> requiredUnwrappedHolders = null;
 
         // Collect from fields
         for (Field field : getDeclaredFields(type)) {
@@ -821,14 +824,15 @@ public final class ObjectReaderCreator {
                 if (unwrappedEntries == null) {
                     unwrappedEntries = new ArrayList<>();
                 }
-                expandUnwrappedField(field, mixIn, useJacksonAnnotation, unwrappedEntries, processedNames);
+                if (requiredUnwrappedHolders == null) {
+                    requiredUnwrappedHolders = new ArrayList<>();
+                }
+                expandUnwrappedField(field, contextType, mixIn, useJacksonAnnotation, unwrappedEntries, processedNames,
+                        requiredUnwrappedHolders);
                 processedNames.add(field.getName());
                 if (annotation.required()) {
-                    if (requiredUnwrappedHolders == null) {
-                        requiredUnwrappedHolders = new ArrayList<>();
-                    }
                     field.setAccessible(true);
-                    requiredUnwrappedHolders.add(field);
+                    requiredUnwrappedHolders.add(new Field[]{field});
                 }
                 continue;
             }
@@ -949,18 +953,19 @@ public final class ObjectReaderCreator {
                         if (unwrappedEntries == null) {
                             unwrappedEntries = new ArrayList<>();
                         }
-                        expandUnwrappedField(holderField, mixIn, useJacksonAnnotation, unwrappedEntries, processedNames);
+                        if (requiredUnwrappedHolders == null) {
+                            requiredUnwrappedHolders = new ArrayList<>();
+                        }
+                        expandUnwrappedField(holderField, contextType, mixIn, useJacksonAnnotation, unwrappedEntries,
+                                processedNames, requiredUnwrappedHolders);
                         processedNames.add(rawName);
                         if (annotation.required()) {
                             // Mirror the field-backed branch: register the backing
                             // field so applyDefaults validates it post-parse. Without
                             // this, @JSONField(unwrapped=true, required=true) on a
                             // setter silently became a no-op.
-                            if (requiredUnwrappedHolders == null) {
-                                requiredUnwrappedHolders = new ArrayList<>();
-                            }
                             holderField.setAccessible(true);
-                            requiredUnwrappedHolders.add(holderField);
+                            requiredUnwrappedHolders.add(new Field[]{holderField});
                         }
                         continue;
                     }
@@ -1031,8 +1036,10 @@ public final class ObjectReaderCreator {
      * inner FieldReaders target the inner's layout so {@code setObjectValue(inner, …)}
      * works unchanged.
      */
-    private static void expandUnwrappedField(Field outerField, Class<?> mixIn, boolean useJacksonAnnotation,
-                                             List<UnwrappedEntry> entries, Set<String> processedNames) {
+    private static void expandUnwrappedField(Field outerField, java.lang.reflect.Type outerContext,
+                                             Class<?> mixIn, boolean useJacksonAnnotation,
+                                             List<UnwrappedEntry> entries, Set<String> processedNames,
+                                             List<Field[]> requiredUnwrappedHolders) {
         Class<?> innerClass = outerField.getType();
         // Guard rails: unwrapping only makes sense for regular bean POJOs. Reject
         // interfaces, abstracts, records, and structural types (Collection / Map /
@@ -1067,7 +1074,15 @@ public final class ObjectReaderCreator {
             // (T value) resolve against the outer's type argument rather than erasing
             // to Object.
             Class<?> innerMixIn = resolveMixIn(innerClass);
-            java.lang.reflect.Type contextType = outerField.getGenericType();
+            // Resolve the declared generic form (e.g. Wrapper<T>) against the
+            // outer's own contextType so an inherited holder through a
+            // parameterized parent — class Child extends Parent<Address>, where
+            // Parent declares @JSONField(unwrapped=true) Wrapper<T> holder; —
+            // still binds T to Address. Passing outerField.getGenericType()
+            // alone would leave T unbound against the parent's TypeVariable.
+            java.lang.reflect.Type contextType = outerContext != null
+                    ? TypeUtils.resolve(outerField.getGenericType(), outerContext)
+                    : outerField.getGenericType();
             FieldReaderCollection innerCollection = collectFieldReaders(innerClass, contextType, innerMixIn, useJacksonAnnotation);
             for (FieldReader innerFr : innerCollection.fieldReaders) {
                 // Outer fields take precedence on name collision — skip any inner name
@@ -1095,6 +1110,20 @@ public final class ObjectReaderCreator {
                     System.arraycopy(nested.holderClasses, 0, prependedClasses, 1, nested.holderClasses.length);
 
                     entries.add(new UnwrappedEntry(prependedChain, prependedClasses, nested.innerReader));
+                }
+            }
+            // Double-unwrap required enforcement: if the inner carried its own
+            // required holders (e.g. @JSONField(unwrapped=true, required=true)
+            // on a Mid→Leaf component), prepend the outer's holder so applyDefaults
+            // walks outer→mid→leaf. The leaf is only required when every ancestor
+            // materialised (at least one flattened ancestor key was present) — the
+            // chain walk short-circuits on the first null ancestor.
+            if (innerCollection.requiredUnwrappedHolders != null) {
+                for (Field[] nestedChain : innerCollection.requiredUnwrappedHolders) {
+                    Field[] prepended = new Field[nestedChain.length + 1];
+                    prepended[0] = outerField;
+                    System.arraycopy(nestedChain, 0, prepended, 1, nestedChain.length);
+                    requiredUnwrappedHolders.add(prepended);
                 }
             }
         } finally {
@@ -1152,9 +1181,15 @@ public final class ObjectReaderCreator {
      */
     static Object applyUnwrappedValueFromMap(UnwrappedEntry entry, Object rawValue, long features) {
         ObjectReader<?> custom = entry.resolveCustomReader();
-        if (custom == null || rawValue == null) {
+        if (custom == null) {
             return entry.innerReader.convertValue(rawValue);
         }
+        // Do NOT short-circuit on rawValue==null. The parser path
+        // (writeUnwrappedValue) always hands the custom reader the JSON token
+        // stream even when the literal is null, so a deserializeUsing that
+        // maps null to a sentinel (Optional.empty, a NOT_SET singleton, etc.)
+        // must get the same chance here. Serialise null → "null" so the
+        // custom reader sees a well-formed JSON token either way.
         String json = com.alibaba.fastjson3.JSON.toJSONString(rawValue);
         try (JSONParser p = JSONParser.of(json)) {
             return custom.readObject(p, entry.innerReader.fieldType, entry.innerReader.fieldName, features);
@@ -1164,7 +1199,7 @@ public final class ObjectReaderCreator {
     /** Record-side variant of {@link #applyUnwrappedValueFromMap}. */
     static Object applyRecordUnwrappedValueFromMap(RecordUnwrappedEntry entry, Object rawValue, long features) {
         ObjectReader<?> custom = entry.resolveCustomReader();
-        if (custom == null || rawValue == null) {
+        if (custom == null) {
             return entry.innerReader.convertValue(rawValue);
         }
         String json = com.alibaba.fastjson3.JSON.toJSONString(rawValue);
@@ -1310,10 +1345,12 @@ public final class ObjectReaderCreator {
         // Null when the type declares no unwrapped fields (the common case — zero overhead).
         private final java.util.Map<String, UnwrappedEntry> unwrappedByName;
 
-        // Outer holders marked @JSONField(unwrapped=true, required=true). After parse, each
-        // holder.get(instance) must be non-null (at least one flattened inner key populated
-        // it). Null when no such holders — keeps the hot path empty.
-        private final Field[] requiredUnwrappedHolders;
+        // Required unwrapped holder chains. Each chain walks from the outer instance
+        // to a holder that must be non-null after parse — single-element for a direct
+        // required holder, multi-element when a nested inner declared the requirement
+        // (outer.mid.leaf required → chain = [mid, leaf]). Nested chains only fire
+        // when every ancestor materialised. Null when no such holders — hot path empty.
+        private final Field[][] requiredUnwrappedHolders;
 
         // Pre-resolved ObjectReaders for POJO and List element types
         // Lazily initialized on first use
@@ -1334,7 +1371,7 @@ public final class ObjectReaderCreator {
                 Method anySetterMethod,
                 JSONSchema typeSchema,
                 List<UnwrappedEntry> unwrappedEntries,
-                List<Field> requiredUnwrappedHolders
+                List<Field[]> requiredUnwrappedHolders
         ) {
             this.objectClass = objectClass;
             this.constructor = constructor;
@@ -1366,7 +1403,7 @@ public final class ObjectReaderCreator {
                 this.unwrappedByName = null;
             }
             this.requiredUnwrappedHolders = (requiredUnwrappedHolders == null || requiredUnwrappedHolders.isEmpty())
-                    ? null : requiredUnwrappedHolders.toArray(new Field[0]);
+                    ? null : requiredUnwrappedHolders.toArray(new Field[0][]);
             // Pre-compute: skip applyDefaults if no fields have required or defaultValue
             // AND no unwrapped holder is required-flagged.
             boolean hasDR = this.requiredUnwrappedHolders != null;
@@ -2627,15 +2664,30 @@ public final class ObjectReaderCreator {
             // remains null. The normal fieldReader loop above skips it because the
             // holder never got a FieldReader; check holders directly here.
             if (requiredUnwrappedHolders != null) {
-                for (Field holder : requiredUnwrappedHolders) {
+                for (Field[] chain : requiredUnwrappedHolders) {
                     try {
-                        if (holder.get(instance) == null) {
-                            throw new JSONException("required field '" + holder.getName()
-                                    + "' is missing in " + objectClass.getName()
-                                    + " (unwrapped holder — at least one flattened inner key must appear)");
+                        Object current = instance;
+                        int lastIdx = chain.length - 1;
+                        for (int i = 0; i < chain.length; i++) {
+                            Object next = chain[i].get(current);
+                            if (next == null) {
+                                // Direct required (chain.length == 1): the outer holder
+                                // itself is null — always a violation. Nested required:
+                                // if an intermediate is null the inner wasn't materialised,
+                                // so the requirement simply doesn't apply (early exit).
+                                // Only the final link is an enforced violation.
+                                if (i == lastIdx) {
+                                    throw new JSONException("required field '" + chain[i].getName()
+                                            + "' is missing in " + objectClass.getName()
+                                            + " (unwrapped holder — at least one flattened inner key must appear)");
+                                }
+                                break;
+                            }
+                            current = next;
                         }
                     } catch (IllegalAccessException e) {
-                        throw new JSONException("cannot read unwrapped holder '" + holder.getName() + "'", e);
+                        throw new JSONException("cannot read unwrapped holder '"
+                                + chain[chain.length - 1].getName() + "'", e);
                     }
                 }
             }

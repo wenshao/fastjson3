@@ -1048,12 +1048,80 @@ public class UnwrappedDeserializeTest {
     public record GenericRecordHost(@JSONField(unwrapped = true) Wrapper<Address> box) {
     }
 
+    public static class InheritParent<T> {
+        @JSONField(unwrapped = true)
+        public Wrapper<T> holder;
+    }
+
+    public static class InheritChild extends InheritParent<Address> {
+    }
+
+    @Test
+    public void inheritedGenericUnwrapBindsAgainstChildTypeArgument() {
+        // outerField.getGenericType() returns Wrapper<T> where T is the parent's
+        // unbound type variable. Resolving it against the parent alone erases
+        // back to Object. Must resolve against Child's binding of Parent<Address>
+        // so Wrapper<T>.value → Address.
+        InheritChild c = JSON.parse("{\"value\":{\"city\":\"Paris\"}}", InheritChild.class);
+        assertNotNull(c.holder);
+        assertInstanceOf(Address.class, c.holder.value,
+                "expected Address, got " + (c.holder.value == null ? "null" : c.holder.value.getClass().getName()));
+        assertEquals("Paris", ((Address) c.holder.value).city);
+    }
+
     @Test
     public void genericInnerRecordResolvesAgainstOuterTypeArgument() {
         GenericRecordHost host = JSON.parse("{\"value\":{\"city\":\"LA\"}}", GenericRecordHost.class);
         assertNotNull(host.box());
         assertInstanceOf(Address.class, host.box().value);
         assertEquals("LA", host.box().value.city);
+    }
+
+    // ==================== Custom reader sees null on map-fallback path ====================
+
+    public static class NullSentinelReader implements com.alibaba.fastjson3.ObjectReader<String> {
+        @Override
+        public String readObject(com.alibaba.fastjson3.JSONParser parser,
+                                 java.lang.reflect.Type fieldType, Object fieldName, long features) {
+            if (parser.readNull()) {
+                return "<NULL-HANDLED>";
+            }
+            return parser.readString();
+        }
+    }
+
+    public static class CustomNullInner {
+        @JSONField(deserializeUsing = NullSentinelReader.class)
+        public String token;
+    }
+
+    public static class CustomNullHost {
+        @JSONField(unwrapped = true)
+        public CustomNullInner inner;
+    }
+
+    public sealed interface CustomNullPolymorphic permits CustomNullChild {
+    }
+
+    @com.alibaba.fastjson3.annotation.JSONType(typeName = "child")
+    public static final class CustomNullChild implements CustomNullPolymorphic {
+        @JSONField(unwrapped = true)
+        public CustomNullInner inner;
+    }
+
+    @Test
+    public void customReaderSeesNullOnMapFallbackPath() {
+        // Polymorphic dispatch materializes a JSONObject and flows through
+        // applyUnwrappedValueFromMap. A deserializeUsing that maps null to a
+        // sentinel (parser.nextIfNull() → "<NULL-HANDLED>") must get the same
+        // chance the parser path gives it, not be short-circuited to a plain
+        // null conversion.
+        String json = "{\"@type\":\"child\",\"token\":null}";
+        CustomNullPolymorphic parsed = JSON.parse(json, CustomNullPolymorphic.class);
+        assertInstanceOf(CustomNullChild.class, parsed);
+        CustomNullChild c = (CustomNullChild) parsed;
+        assertNotNull(c.inner);
+        assertEquals("<NULL-HANDLED>", c.inner.token);
     }
 
     @Test
