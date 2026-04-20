@@ -1396,12 +1396,34 @@ public final class ObjectMapper {
             return (ObjectReader<T>) reader;
         }
 
-        // Fast path for Class types: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns
-        if (type instanceof Class<?> cls) {
-            return getReaderForClass(cls);
+        // Expose this mapper's mix-in cache to creator helpers that walk inner types
+        // (e.g. @JSONField(unwrapped=true) expansion, nested POJO field readers) so
+        // addMixIn(inner, innerMixIn) actually reaches them. Restore after the call
+        // so nested / parallel creations don't leak state.
+        // Skip the ThreadLocal round-trip when mixInCache is empty — the common
+        // case for mappers without addMixIn calls. Saves ~30–50ns per lookup.
+        boolean needsMixinContext = !mixInCache.isEmpty();
+        java.util.Map<Class<?>, Class<?>> prev = null;
+        if (needsMixinContext) {
+            prev = com.alibaba.fastjson3.reader.ObjectReaderCreator.MIXIN_CONTEXT.get();
+            com.alibaba.fastjson3.reader.ObjectReaderCreator.MIXIN_CONTEXT.set(mixInCache);
         }
-        // Slow path for non-Class types (ParameterizedType, GenericArrayType, TypeVariable, WildcardType)
-        return getObjectReaderSlow(type);
+        try {
+            // Fast path for Class types: ClassValue lookup ~3ns vs ConcurrentHashMap ~20ns
+            if (type instanceof Class<?> cls) {
+                return getReaderForClass(cls);
+            }
+            // Slow path for non-Class types (ParameterizedType, GenericArrayType, TypeVariable, WildcardType)
+            return getObjectReaderSlow(type);
+        } finally {
+            if (needsMixinContext) {
+                if (prev == null) {
+                    com.alibaba.fastjson3.reader.ObjectReaderCreator.MIXIN_CONTEXT.remove();
+                } else {
+                    com.alibaba.fastjson3.reader.ObjectReaderCreator.MIXIN_CONTEXT.set(prev);
+                }
+            }
+        }
     }
 
     /**
@@ -1498,6 +1520,9 @@ public final class ObjectMapper {
                     return readerCreator.apply(clazz);
                 } else {
                     Class<?> mixIn = mixInCache.get(clazz);
+                    // MIXIN_CONTEXT is set by the top-level getObjectReader entry so
+                    // inner-type helpers (unwrapped expansion, nested POJO collection)
+                    // can consult this mapper's full mix-in cache.
                     return ObjectReaderCreator.createObjectReader(clazz, mixIn, useJacksonAnnotation);
                 }
             } catch (Exception e) {
