@@ -559,6 +559,7 @@ public final class ObjectReaderCreator {
 
         final int componentIdx;
         final Class<?> innerClass;
+        final Constructor<?> innerCtor; // pre-resolved no-arg ctor for innerClass; null if absent (reported at first hit)
         // Chain of intermediate holder Fields inside the component type when the
         // inner class itself has @JSONField(unwrapped=true). Empty for the direct
         // case. For `record Person(@unwrapped NestedName name, int age)` where
@@ -566,6 +567,7 @@ public final class ObjectReaderCreator {
         // carries intermediateChain=[NestedName.handle], classes=[Handle].
         final Field[] intermediateChain;
         final Class<?>[] intermediateClasses;
+        final Constructor<?>[] intermediateCtors; // pre-resolved, setAccessible done at build
         final FieldReader innerReader;
         volatile ObjectReader<?> customReader;
 
@@ -581,6 +583,27 @@ public final class ObjectReaderCreator {
             this.intermediateChain = intermediateChain;
             this.intermediateClasses = intermediateClasses;
             this.innerReader = innerReader;
+            // Pre-resolve constructors + setAccessible once so each parse-time hit
+            // skips the reflective lookup and access-check overhead.
+            Constructor<?> ic = null;
+            try {
+                ic = innerClass.getDeclaredConstructor();
+                ic.setAccessible(true);
+            } catch (NoSuchMethodException ignored) {
+            }
+            this.innerCtor = ic;
+            Constructor<?>[] ctors = new Constructor<?>[intermediateClasses.length];
+            for (int i = 0; i < intermediateClasses.length; i++) {
+                try {
+                    ctors[i] = intermediateClasses[i].getDeclaredConstructor();
+                    ctors[i].setAccessible(true);
+                } catch (NoSuchMethodException ignored) {
+                }
+                if (intermediateChain[i] != null) {
+                    intermediateChain[i].setAccessible(true);
+                }
+            }
+            this.intermediateCtors = ctors;
         }
 
         ObjectReader<?> resolveCustomReader() {
@@ -612,6 +635,7 @@ public final class ObjectReaderCreator {
     static final class UnwrappedEntry {
         final Field[] holderChain;       // [outerHolder, midHolder, ...] — index 0 is the direct parent field
         final Class<?>[] holderClasses;  // erased type of each holder, for no-arg construction
+        final Constructor<?>[] holderCtors; // pre-resolved no-arg constructor per holder level; may contain nulls when resolution fails (reported at first parse hit)
         final FieldReader innerReader;   // FieldReader for the deepest target class's field
         volatile ObjectReader<?> customReader; // lazily-instantiated @JSONField(deserializeUsing=) instance
 
@@ -619,6 +643,23 @@ public final class ObjectReaderCreator {
             this.holderChain = holderChain;
             this.holderClasses = holderClasses;
             this.innerReader = innerReader;
+            // Pre-resolve Constructor and setAccessible once so every parse-time
+            // hit only pays the newInstance() invocation cost, not the per-call
+            // access-check overhead of getDeclaredConstructor/setAccessible.
+            Constructor<?>[] ctors = new Constructor<?>[holderClasses.length];
+            for (int i = 0; i < holderClasses.length; i++) {
+                try {
+                    ctors[i] = holderClasses[i].getDeclaredConstructor();
+                    ctors[i].setAccessible(true);
+                } catch (NoSuchMethodException ignored) {
+                    // Defer the no-arg-ctor requirement to the first actual hit so the
+                    // error carries the field name context.
+                }
+                if (holderChain[i] != null) {
+                    holderChain[i].setAccessible(true);
+                }
+            }
+            this.holderCtors = ctors;
         }
 
         /**
@@ -1217,9 +1258,18 @@ public final class ObjectReaderCreator {
             if (unwrappedEntries != null && !unwrappedEntries.isEmpty()) {
                 java.util.Map<String, UnwrappedEntry> map = HashMap.newHashMap(unwrappedEntries.size() * 2);
                 for (UnwrappedEntry ue : unwrappedEntries) {
-                    map.putIfAbsent(ue.innerReader.fieldName, ue);
+                    UnwrappedEntry prev = map.putIfAbsent(ue.innerReader.fieldName, ue);
+                    if (prev != null && prev != ue) {
+                        throw new JSONException("ambiguous unwrapped field name '" + ue.innerReader.fieldName
+                                + "' in " + objectClass.getName()
+                                + " — multiple unwrapped holders register the same inner field");
+                    }
                     for (String alt : ue.innerReader.alternateNames) {
-                        map.putIfAbsent(alt, ue);
+                        UnwrappedEntry prevAlt = map.putIfAbsent(alt, ue);
+                        if (prevAlt != null && prevAlt != ue) {
+                            throw new JSONException("ambiguous unwrapped alternate name '" + alt
+                                    + "' in " + objectClass.getName());
+                        }
                     }
                 }
                 this.unwrappedByName = map;
@@ -1631,22 +1681,24 @@ public final class ObjectReaderCreator {
             Object target = outer;
             Field[] chain = entry.holderChain;
             Class<?>[] classes = entry.holderClasses;
+            Constructor<?>[] ctors = entry.holderCtors;
             for (int i = 0; i < chain.length; i++) {
                 Field holder = chain[i];
                 try {
                     Object next = holder.get(target);
                     if (next == null) {
-                        next = classes[i].getDeclaredConstructor().newInstance();
+                        Constructor<?> ctor = ctors[i];
+                        if (ctor == null) {
+                            // Entry build detected no no-arg ctor; surface the real shape
+                            // of the user error here so the exception carries the field name.
+                            throw new JSONException("@JSONField(unwrapped=true) requires "
+                                    + classes[i].getName() + " to declare a no-arg constructor"
+                                    + " (cannot lazily construct via the unwrapped reader)");
+                        }
+                        next = ctor.newInstance();
                         holder.set(target, next);
                     }
                     target = next;
-                } catch (NoSuchMethodException e) {
-                    // Be specific about the no-arg-constructor requirement — types that
-                    // need a parameterised creator (Kotlin data, @JSONCreator with params,
-                    // Records) cannot be lazily constructed by the unwrapped reader.
-                    throw new JSONException("@JSONField(unwrapped=true) requires "
-                            + classes[i].getName() + " to declare a no-arg constructor"
-                            + " (cannot lazily construct via the unwrapped reader)", e);
                 } catch (ReflectiveOperationException e) {
                     throw new JSONException("cannot construct unwrapped inner " + classes[i].getName()
                             + " for field '" + holder.getName() + "': " + e.getMessage(), e);
@@ -2639,9 +2691,18 @@ public final class ObjectReaderCreator {
             } else {
                 Map<String, RecordUnwrappedEntry> map = HashMap.newHashMap(unwrappedEntries.size() * 2);
                 for (RecordUnwrappedEntry ue : unwrappedEntries) {
-                    map.putIfAbsent(ue.innerReader.fieldName, ue);
+                    RecordUnwrappedEntry prev = map.putIfAbsent(ue.innerReader.fieldName, ue);
+                    if (prev != null && prev != ue) {
+                        throw new JSONException("ambiguous unwrapped field name '" + ue.innerReader.fieldName
+                                + "' in record " + objectClass.getName()
+                                + " — multiple unwrapped components register the same inner field");
+                    }
                     for (String alt : ue.innerReader.alternateNames) {
-                        map.putIfAbsent(alt, ue);
+                        RecordUnwrappedEntry prevAlt = map.putIfAbsent(alt, ue);
+                        if (prevAlt != null && prevAlt != ue) {
+                            throw new JSONException("ambiguous unwrapped alternate name '" + alt
+                                    + "' in record " + objectClass.getName());
+                        }
                     }
                 }
                 this.unwrappedByName = map;
@@ -2659,13 +2720,15 @@ public final class ObjectReaderCreator {
         private Object ensureRecordScratch(Object[] values, RecordUnwrappedEntry entry) {
             Object scratch = values[entry.componentIdx];
             if (scratch == null) {
-                try {
-                    scratch = entry.innerClass.getDeclaredConstructor().newInstance();
-                } catch (NoSuchMethodException e) {
+                Constructor<?> ctor = entry.innerCtor;
+                if (ctor == null) {
                     throw new JSONException("@JSONField(unwrapped=true) requires "
                             + entry.innerClass.getName() + " to declare a no-arg constructor"
                             + " (record/constructor-side unwrap stages flattened values before"
-                            + " invoking the canonical constructor)", e);
+                            + " invoking the canonical constructor)");
+                }
+                try {
+                    scratch = ctor.newInstance();
                 } catch (ReflectiveOperationException e) {
                     throw new JSONException("cannot construct unwrapped inner "
                             + entry.innerClass.getName() + ": " + e.getMessage(), e);
@@ -2676,21 +2739,25 @@ public final class ObjectReaderCreator {
             // represents a nested unwrapped hop (inner class itself declares
             // @JSONField(unwrapped=true)). Each hop lazily constructs + attaches
             // the intermediate POJO on demand, mirroring ensureUnwrappedTarget
-            // for mutable outer classes.
+            // for mutable outer classes. Constructors are pre-resolved in the
+            // RecordUnwrappedEntry constructor so the hot path skips reflection
+            // lookup + setAccessible overhead.
             Object target = scratch;
             for (int i = 0; i < entry.intermediateChain.length; i++) {
                 Field holder = entry.intermediateChain[i];
                 try {
-                    holder.setAccessible(true);
                     Object next = holder.get(target);
                     if (next == null) {
-                        next = entry.intermediateClasses[i].getDeclaredConstructor().newInstance();
+                        Constructor<?> ctor = entry.intermediateCtors[i];
+                        if (ctor == null) {
+                            throw new JSONException("@JSONField(unwrapped=true) requires "
+                                    + entry.intermediateClasses[i].getName()
+                                    + " to declare a no-arg constructor");
+                        }
+                        next = ctor.newInstance();
                         holder.set(target, next);
                     }
                     target = next;
-                } catch (NoSuchMethodException e) {
-                    throw new JSONException("@JSONField(unwrapped=true) requires "
-                            + entry.intermediateClasses[i].getName() + " to declare a no-arg constructor", e);
                 } catch (ReflectiveOperationException e) {
                     throw new JSONException("cannot construct unwrapped intermediate "
                             + entry.intermediateClasses[i].getName() + " for field '" + holder.getName()
@@ -2944,10 +3011,14 @@ public final class ObjectReaderCreator {
                         ? new java.util.HashSet<>() : null;
                 for (FieldReader fr : fieldReaders) {
                     Object value = map.get(fr.fieldName);
+                    // Mark consumed by PRESENCE (containsKey), not by non-null value.
+                    // A key with an explicit `null` value must still count as consumed;
+                    // otherwise the second pass misroutes it through unwrappedByName or
+                    // wrongly flags it under ErrorOnUnknownProperties.
+                    if (consumed != null && map.containsKey(fr.fieldName)) {
+                        consumed.add(fr.fieldName);
+                    }
                     if (value != null) {
-                        if (consumed != null) {
-                            consumed.add(fr.fieldName);
-                        }
                         try {
                             // Re-parse the raw value through the generic-aware path when
                             // the record component is a resolved collection/map type so

@@ -819,6 +819,55 @@ public class UnwrappedDeserializeTest {
         assertEquals(7, ((JsonObjectStrictImpl) back).x);
     }
 
+    // ==================== Record map path — null-valued field is consumed ====================
+    //
+    // A JSON key like `{"name": null}` is presence-but-null. The record map
+    // fallback must mark the key as consumed by PRESENCE (containsKey) so the
+    // second pass neither re-routes it through unwrappedByName nor flags it
+    // under ErrorOnUnknownProperties. Bug pattern from wenshao's review.
+
+    public record NullableAware(String name, int age) {
+    }
+
+    @Test
+    public void recordMapFallbackConsumesExplicitNullKey() {
+        // Plain record (no unwrapped) — ErrorOnUnknownProperties must not fire
+        // on a declared component that just happens to be present with a null
+        // value. This pins the "consumed by presence" contract.
+        NullableAware back = JSON.parseObject(
+                "{\"name\":null,\"age\":5}", NullableAware.class,
+                ReadFeature.ErrorOnUnknownProperties);
+        assertNull(back.name());
+        assertEquals(5, back.age());
+    }
+
+    // ==================== Ambiguous unwrapped field names rejected at build ====================
+
+    public static class AmbiguousInnerA {
+        public String tag;
+    }
+
+    public static class AmbiguousInnerB {
+        public String tag;
+    }
+
+    public static class AmbiguousHolder {
+        @JSONField(unwrapped = true)
+        public AmbiguousInnerA a;
+
+        @JSONField(unwrapped = true)
+        public AmbiguousInnerB b;
+    }
+
+    @Test
+    public void ambiguousUnwrappedFieldNameRejected() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(AmbiguousHolder.class));
+        assertTrue(ex.getMessage().contains("ambiguous"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("tag"), ex.getMessage());
+    }
+
     @Test
     public void autoProviderRejectsAsmForInheritedMixInUnwrapped() {
         // hasUnwrappedField must recurse through interface inheritance so a
