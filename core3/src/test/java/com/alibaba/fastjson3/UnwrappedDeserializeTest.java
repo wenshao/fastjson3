@@ -888,4 +888,147 @@ public class UnwrappedDeserializeTest {
             com.alibaba.fastjson3.reader.ObjectReaderCreator.MIXIN_CONTEXT.remove();
         }
     }
+
+    // ==================== Cyclic unwrap rejected ====================
+
+    public static class CycleA {
+        @JSONField(unwrapped = true)
+        public CycleB b;
+    }
+
+    public static class CycleB {
+        @JSONField(unwrapped = true)
+        public CycleA a;
+    }
+
+    @Test
+    public void directCyclicUnwrapRejected() {
+        // A → B → A: without cycle detection this recurses until StackOverflowError.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(CycleA.class));
+        assertTrue(ex.getMessage().toLowerCase().contains("cyclic"), ex.getMessage());
+    }
+
+    public static class CycleX {
+        @JSONField(unwrapped = true)
+        public CycleY y;
+    }
+
+    public static class CycleY {
+        @JSONField(unwrapped = true)
+        public CycleZ z;
+    }
+
+    public static class CycleZ {
+        @JSONField(unwrapped = true)
+        public CycleX x;
+    }
+
+    @Test
+    public void indirectCyclicUnwrapRejected() {
+        // X → Y → Z → X — three-hop cycle still caught.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(CycleX.class));
+        assertTrue(ex.getMessage().toLowerCase().contains("cyclic"), ex.getMessage());
+    }
+
+    @Test
+    public void cycleDetectionDoesNotPoisonSubsequentConstruction() {
+        // A cyclic failure must clean the thread-local visited set so later
+        // (unrelated) construction of a legitimate unwrapped POJO still works.
+        try {
+            com.alibaba.fastjson3.reader.ObjectReaderCreator.createObjectReader(CycleA.class);
+            fail("expected cyclic rejection");
+        } catch (JSONException expected) {
+            // consume
+        }
+        // Previously healthy unwrapped bean still constructs.
+        Person p = JSON.parse("{\"first\":\"a\",\"last\":\"b\",\"age\":1}", Person.class);
+        assertEquals("a", p.name.first);
+    }
+
+    // ==================== Non-POJO unwrap holder rejected ====================
+
+    public static class CollectionHolder {
+        @JSONField(unwrapped = true)
+        public java.util.List<String> items;
+    }
+
+    @Test
+    public void collectionUnwrapHolderRejected() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(CollectionHolder.class));
+        assertTrue(ex.getMessage().contains("Collection"), ex.getMessage());
+    }
+
+    public static class MapHolder {
+        @JSONField(unwrapped = true)
+        public java.util.Map<String, Object> props;
+    }
+
+    @Test
+    public void mapUnwrapHolderRejected() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(MapHolder.class));
+        assertTrue(ex.getMessage().contains("Map"), ex.getMessage());
+    }
+
+    public enum Role { ADMIN, USER }
+
+    public static class EnumHolder {
+        @JSONField(unwrapped = true)
+        public Role role;
+    }
+
+    @Test
+    public void enumUnwrapHolderRejected() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(EnumHolder.class));
+        assertTrue(ex.getMessage().contains("enum"), ex.getMessage());
+    }
+
+    public static class ArrayHolder {
+        @JSONField(unwrapped = true)
+        public String[] tags;
+    }
+
+    @Test
+    public void arrayUnwrapHolderRejected() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(ArrayHolder.class));
+        assertTrue(ex.getMessage().contains("array"), ex.getMessage());
+    }
+
+    // ==================== readFromJSONObject honours @JSONType(schema=) ====================
+
+    public sealed interface SchemaAnimal permits SchemaAdultCat {
+    }
+
+    @com.alibaba.fastjson3.annotation.JSONType(typeName = "Cat", schema =
+            "{\"type\":\"object\",\"properties\":{\"age\":{\"type\":\"integer\",\"minimum\":1}}}")
+    public static final class SchemaAdultCat implements SchemaAnimal {
+        public int age;
+        public String name;
+    }
+
+    @Test
+    public void sealedReadFromJSONObjectHonoursSubtypeSchema() {
+        // Sealed-class polymorphic dispatch materializes the subtype payload as
+        // a JSONObject and then routes through readFromJSONObject. The subtype's
+        // @JSONType(schema=) must still fire — parser-based readers enforce it,
+        // and this entry point used to silently skip the check.
+        String bad = "{\"@type\":\"Cat\",\"age\":0,\"name\":\"k\"}";
+        assertThrows(Exception.class, () -> JSON.parse(bad, SchemaAnimal.class));
+
+        String good = "{\"@type\":\"Cat\",\"age\":3,\"name\":\"whiskers\"}";
+        SchemaAnimal parsed = JSON.parse(good, SchemaAnimal.class);
+        assertInstanceOf(SchemaAdultCat.class, parsed);
+        assertEquals(3, ((SchemaAdultCat) parsed).age);
+    }
 }

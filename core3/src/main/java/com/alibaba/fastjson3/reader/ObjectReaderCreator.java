@@ -35,6 +35,16 @@ public final class ObjectReaderCreator {
         return ctx != null ? ctx.get(type) : null;
     }
 
+    /**
+     * Tracks inner classes currently being walked by {@code expandUnwrappedField}
+     * / {@code expandRecordUnwrapped}. A cyclic {@code @JSONField(unwrapped=true)}
+     * chain (A → B → A, or any longer loop) would otherwise recurse into
+     * {@code collectFieldReaders} forever and blow the stack — we reject it at
+     * construction time with a clear message instead. Cleared on the outer-most
+     * exit so the top-level caller doesn't leak thread-local state.
+     */
+    private static final ThreadLocal<Set<Class<?>>> UNWRAP_VISITED = new ThreadLocal<>();
+
     public static <T> ObjectReader<T> createObjectReader(Class<T> type) {
         return createObjectReader(type, null, false);
     }
@@ -319,31 +329,48 @@ public final class ObjectReaderCreator {
     private static void expandRecordUnwrapped(int componentIdx, Class<?> innerClass,
                                                boolean useJacksonAnnotation,
                                                List<RecordUnwrappedEntry> sink) {
-        if (innerClass.isInterface() || Modifier.isAbstract(innerClass.getModifiers())
-                || JDKUtils.isRecord(innerClass)) {
-            throw new JSONException("@JSONField(unwrapped=true) at component #" + componentIdx
-                    + ": inner type " + innerClass.getName() + " must be a concrete POJO");
+        rejectNonPojoUnwrapHolder(innerClass, "@JSONField(unwrapped=true) at component #" + componentIdx);
+
+        Set<Class<?>> visited = UNWRAP_VISITED.get();
+        boolean topEntry = (visited == null);
+        if (topEntry) {
+            visited = new HashSet<>();
+            UNWRAP_VISITED.set(visited);
         }
-        // Honour a user-registered mix-in for the inner type so renamed properties,
-        // alternate names, ignores/includes rules etc. apply to flattened inner keys
-        // the same way they would when reading the inner as a top-level target.
-        Class<?> innerMixIn = resolveMixIn(innerClass);
-        FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, innerMixIn, useJacksonAnnotation);
-        for (FieldReader innerFr : innerCollection.fieldReaders) {
-            sink.add(new RecordUnwrappedEntry(componentIdx, innerClass, innerFr));
+        if (!visited.add(innerClass)) {
+            if (topEntry) {
+                UNWRAP_VISITED.remove();
+            }
+            throw new JSONException("Cyclic @JSONField(unwrapped=true) chain involving "
+                    + innerClass.getName());
         }
-        // Nested unwrapped inside the component: the inner class itself declares
-        // @JSONField(unwrapped=true), producing a deeper holder chain. Carry each
-        // leaf through so double-flattened JSON emitted by the writer round-trips.
-        // For a leaf inside `NestedName(@unwrapped Handle handle, String first)`
-        // referenced from `record Person(@unwrapped NestedName name, int age)`,
-        // the entry ends up keyed by "nick" with intermediateChain=[name.handle]
-        // so ensureRecordScratch can construct NestedName, then Handle, before
-        // writing the leaf field.
-        if (innerCollection.unwrappedEntries != null) {
-            for (UnwrappedEntry deep : innerCollection.unwrappedEntries) {
-                sink.add(new RecordUnwrappedEntry(componentIdx, innerClass,
-                        deep.holderChain, deep.holderClasses, deep.innerReader));
+        try {
+            // Honour a user-registered mix-in for the inner type so renamed properties,
+            // alternate names, ignores/includes rules etc. apply to flattened inner keys
+            // the same way they would when reading the inner as a top-level target.
+            Class<?> innerMixIn = resolveMixIn(innerClass);
+            FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, innerMixIn, useJacksonAnnotation);
+            for (FieldReader innerFr : innerCollection.fieldReaders) {
+                sink.add(new RecordUnwrappedEntry(componentIdx, innerClass, innerFr));
+            }
+            // Nested unwrapped inside the component: the inner class itself declares
+            // @JSONField(unwrapped=true), producing a deeper holder chain. Carry each
+            // leaf through so double-flattened JSON emitted by the writer round-trips.
+            // For a leaf inside `NestedName(@unwrapped Handle handle, String first)`
+            // referenced from `record Person(@unwrapped NestedName name, int age)`,
+            // the entry ends up keyed by "nick" with intermediateChain=[name.handle]
+            // so ensureRecordScratch can construct NestedName, then Handle, before
+            // writing the leaf field.
+            if (innerCollection.unwrappedEntries != null) {
+                for (UnwrappedEntry deep : innerCollection.unwrappedEntries) {
+                    sink.add(new RecordUnwrappedEntry(componentIdx, innerClass,
+                            deep.holderChain, deep.holderClasses, deep.innerReader));
+                }
+            }
+        } finally {
+            visited.remove(innerClass);
+            if (topEntry) {
+                UNWRAP_VISITED.remove();
             }
         }
     }
@@ -1003,50 +1030,102 @@ public final class ObjectReaderCreator {
                                              List<UnwrappedEntry> entries, Set<String> processedNames) {
         Class<?> innerClass = outerField.getType();
         // Guard rails: unwrapping only makes sense for regular bean POJOs. Reject
-        // interfaces, abstracts, and records (records need the canonical constructor
-        // pattern, which doesn't compose with the outer's reader).
-        if (innerClass.isInterface() || Modifier.isAbstract(innerClass.getModifiers())
-                || JDKUtils.isRecord(innerClass)) {
-            throw new JSONException("@JSONField(unwrapped=true) on " + outerField.getName()
-                    + ": inner type " + innerClass.getName() + " must be a concrete POJO");
-        }
+        // interfaces, abstracts, records, and structural types (Collection / Map /
+        // array / enum) — their field layout isn't a set of flattenable properties,
+        // so letting them through produces opaque downstream NPEs at the
+        // collectFieldReaders step instead of a useful construction-time error.
+        rejectNonPojoUnwrapHolder(innerClass, "@JSONField(unwrapped=true) on " + outerField.getName());
         outerField.setAccessible(true);
 
-        Field[] directChain = {outerField};
-        Class<?>[] directClasses = {innerClass};
-
-        // Honour a user-registered mix-in for the inner type so renamed properties,
-        // alternate names, ignores/includes rules etc. apply to flattened inner
-        // keys the same way they would when reading the inner as a top-level target.
-        Class<?> innerMixIn = resolveMixIn(innerClass);
-        FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, innerMixIn, useJacksonAnnotation);
-        for (FieldReader innerFr : innerCollection.fieldReaders) {
-            // Outer fields take precedence on name collision — skip any inner name
-            // that has already been processed at the outer level.
-            if (processedNames.contains(innerFr.fieldName)) {
-                continue;
-            }
-            entries.add(new UnwrappedEntry(directChain, directClasses, innerFr));
+        Set<Class<?>> visited = UNWRAP_VISITED.get();
+        boolean topEntry = (visited == null);
+        if (topEntry) {
+            visited = new HashSet<>();
+            UNWRAP_VISITED.set(visited);
         }
-        // Double-unwrap: if the inner POJO itself has @JSONField(unwrapped=true) fields,
-        // its deep entries carry a holder chain rooted at the inner. Prepend the outer's
-        // holder so the read loop can walk Person.name → Name.handle → Handle.nick in
-        // one pass, lazily constructing each intermediate POJO on demand.
-        if (innerCollection.unwrappedEntries != null) {
-            for (UnwrappedEntry nested : innerCollection.unwrappedEntries) {
-                if (processedNames.contains(nested.innerReader.fieldName)) {
+        if (!visited.add(innerClass)) {
+            if (topEntry) {
+                UNWRAP_VISITED.remove();
+            }
+            throw new JSONException("Cyclic @JSONField(unwrapped=true) chain involving "
+                    + innerClass.getName());
+        }
+        try {
+            Field[] directChain = {outerField};
+            Class<?>[] directClasses = {innerClass};
+
+            // Honour a user-registered mix-in for the inner type so renamed properties,
+            // alternate names, ignores/includes rules etc. apply to flattened inner
+            // keys the same way they would when reading the inner as a top-level target.
+            Class<?> innerMixIn = resolveMixIn(innerClass);
+            FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, innerMixIn, useJacksonAnnotation);
+            for (FieldReader innerFr : innerCollection.fieldReaders) {
+                // Outer fields take precedence on name collision — skip any inner name
+                // that has already been processed at the outer level.
+                if (processedNames.contains(innerFr.fieldName)) {
                     continue;
                 }
-                Field[] prependedChain = new Field[nested.holderChain.length + 1];
-                prependedChain[0] = outerField;
-                System.arraycopy(nested.holderChain, 0, prependedChain, 1, nested.holderChain.length);
-
-                Class<?>[] prependedClasses = new Class<?>[nested.holderClasses.length + 1];
-                prependedClasses[0] = innerClass;
-                System.arraycopy(nested.holderClasses, 0, prependedClasses, 1, nested.holderClasses.length);
-
-                entries.add(new UnwrappedEntry(prependedChain, prependedClasses, nested.innerReader));
+                entries.add(new UnwrappedEntry(directChain, directClasses, innerFr));
             }
+            // Double-unwrap: if the inner POJO itself has @JSONField(unwrapped=true) fields,
+            // its deep entries carry a holder chain rooted at the inner. Prepend the outer's
+            // holder so the read loop can walk Person.name → Name.handle → Handle.nick in
+            // one pass, lazily constructing each intermediate POJO on demand.
+            if (innerCollection.unwrappedEntries != null) {
+                for (UnwrappedEntry nested : innerCollection.unwrappedEntries) {
+                    if (processedNames.contains(nested.innerReader.fieldName)) {
+                        continue;
+                    }
+                    Field[] prependedChain = new Field[nested.holderChain.length + 1];
+                    prependedChain[0] = outerField;
+                    System.arraycopy(nested.holderChain, 0, prependedChain, 1, nested.holderChain.length);
+
+                    Class<?>[] prependedClasses = new Class<?>[nested.holderClasses.length + 1];
+                    prependedClasses[0] = innerClass;
+                    System.arraycopy(nested.holderClasses, 0, prependedClasses, 1, nested.holderClasses.length);
+
+                    entries.add(new UnwrappedEntry(prependedChain, prependedClasses, nested.innerReader));
+                }
+            }
+        } finally {
+            visited.remove(innerClass);
+            if (topEntry) {
+                UNWRAP_VISITED.remove();
+            }
+        }
+    }
+
+    /**
+     * Reject inner types that don't make sense as unwrap holders. An unwrapped
+     * holder flattens the inner's bean fields into the outer's JSON shape — that
+     * contract only applies to concrete POJO classes (records handled separately).
+     * Collections, maps, enums, arrays, interfaces and abstracts aren't field
+     * bags; letting them reach {@code collectFieldReaders} produces cryptic
+     * downstream failures rather than a useful diagnostic.
+     */
+    private static void rejectNonPojoUnwrapHolder(Class<?> innerClass, String site) {
+        // Check the more specific classifications first — an array has
+        // Modifier.ABSTRACT, and a Collection-typed field is always an
+        // interface, so a plain interface/abstract check would mis-label both.
+        String reason = null;
+        if (innerClass.isArray()) {
+            reason = "array";
+        } else if (innerClass.isEnum()) {
+            reason = "enum";
+        } else if (Collection.class.isAssignableFrom(innerClass)) {
+            reason = "Collection";
+        } else if (Map.class.isAssignableFrom(innerClass)) {
+            reason = "Map";
+        } else if (innerClass.isInterface()) {
+            reason = "interface";
+        } else if (Modifier.isAbstract(innerClass.getModifiers())) {
+            reason = "abstract class";
+        } else if (JDKUtils.isRecord(innerClass)) {
+            reason = "record";
+        }
+        if (reason != null) {
+            throw new JSONException(site + ": inner type " + innerClass.getName()
+                    + " (" + reason + ") is not a concrete POJO and cannot be unwrapped");
         }
     }
 
@@ -2505,6 +2584,12 @@ public final class ObjectReaderCreator {
             }
 
             applyDefaults(instance, fieldSetMask);
+            // Honour @JSONType(schema=...) on the polymorphic / JSONObject entry
+            // point too — otherwise a sealed-class or Jackson-subtype instance
+            // built via readFromJSONObject would skip the schema check that the
+            // parser-based readers apply, producing inconsistent behaviour across
+            // entry points for the same class.
+            validateTypeSchema(instance);
             return instance;
         }
 
