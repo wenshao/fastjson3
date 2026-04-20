@@ -657,14 +657,31 @@ public final class FieldReader implements Comparable<FieldReader> {
                 return UUID.fromString(str);
             }
             if (fieldClass == java.math.BigDecimal.class) {
-                return new java.math.BigDecimal(str);
+                try {
+                    return new java.math.BigDecimal(str);
+                } catch (NumberFormatException e) {
+                    throw new JSONException("invalid BigDecimal literal '" + str
+                            + "' for field " + fieldName, e);
+                }
             }
             if (fieldClass == java.math.BigInteger.class) {
                 // Same float-tolerance as the numeric branch above: "3.14" → 3.
-                if (str.indexOf('.') >= 0 || str.indexOf('e') >= 0 || str.indexOf('E') >= 0) {
-                    return new java.math.BigDecimal(str).toBigInteger();
+                try {
+                    if (str.indexOf('.') >= 0 || str.indexOf('e') >= 0 || str.indexOf('E') >= 0) {
+                        java.math.BigDecimal bd = new java.math.BigDecimal(str);
+                        int digits = bd.precision() - bd.scale();
+                        if (digits > com.alibaba.fastjson3.JSONParser.MAX_BIG_INTEGER_DIGITS) {
+                            throw new JSONException("BigInteger magnitude " + digits
+                                    + " digits exceeds maximum "
+                                    + com.alibaba.fastjson3.JSONParser.MAX_BIG_INTEGER_DIGITS);
+                        }
+                        return bd.toBigInteger();
+                    }
+                    return new java.math.BigInteger(str);
+                } catch (NumberFormatException | ArithmeticException e) {
+                    throw new JSONException("invalid BigInteger literal '" + str
+                            + "' for field " + fieldName, e);
                 }
-                return new java.math.BigInteger(str);
             }
             if (fieldClass == Duration.class) {
                 return Duration.parse(str);

@@ -1120,29 +1120,53 @@ public abstract sealed class JSONParser implements Closeable
      * method returns {@code Double} for floats unless {@code UseBigDecimalForDoubles}
      * is set, so {@code (BigDecimal) readNumber()} throws ClassCastException.
      */
+    /**
+     * Upper bound on the implied digit count ({@code precision - scale}) of a
+     * {@code BigDecimal} before we allow it to be materialised as a
+     * {@code BigInteger}. Without this bound, {@code "1e1000000"} on a
+     * BigInteger target expands a 16-byte payload into a ~400 KB bignum plus
+     * the CPU cost of the BigInteger multiplication chain — a
+     * payload-to-memory amplification usable as a DoS primitive on any API
+     * that accepts JSON numbers for a BigInteger slot.
+     */
+    public static final int MAX_BIG_INTEGER_DIGITS = 4096;
+
     public java.math.BigDecimal readBigDecimalLiteral() {
         skipWhitespace();
+        String numStr;
         // Money-shaped APIs often quote decimals to dodge JS Number precision;
         // mirror the BuiltinCodecs BIG_DECIMAL_READER so the in-parser dispatch
         // and the field-reader dispatch don't diverge on `"3.14"`.
         if (offset < end()) {
             int c = ch(offset);
             if (c == '"' || (c == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
-                String s = readString();
-                if (s == null || s.isEmpty()) {
+                numStr = readString();
+                if (numStr == null || numStr.isEmpty()) {
                     return null;
                 }
-                return new java.math.BigDecimal(s);
+            } else {
+                int start = offset;
+                scanNumber();
+                int numLen = offset - start;
+                if (numLen > MAX_NUMBER_LENGTH) {
+                    throw new JSONException("number length " + numLen + " exceeds maximum " + MAX_NUMBER_LENGTH
+                            + " at " + locationAt(start));
+                }
+                numStr = extractString(start, offset);
             }
+        } else {
+            throw new JSONException("unexpected end in number at " + locationAt(offset));
         }
-        int start = offset;
-        scanNumber();
-        int numLen = offset - start;
-        if (numLen > MAX_NUMBER_LENGTH) {
-            throw new JSONException("number length " + numLen + " exceeds maximum " + MAX_NUMBER_LENGTH
-                    + " at " + locationAt(start));
+        // The only callers of this method want a JSONException on malformed
+        // input (quoted garbage, otherwise-unscanned text). Without this
+        // wrapper, `parseObject("\"abc\"", BigDecimal.class)` leaks a raw
+        // NumberFormatException to the caller — violating the framework's
+        // exception contract.
+        try {
+            return new java.math.BigDecimal(numStr);
+        } catch (NumberFormatException e) {
+            throw new JSONException("invalid number literal '" + numStr + "'", e);
         }
-        return new java.math.BigDecimal(extractString(start, offset));
     }
 
     /**
@@ -1153,33 +1177,50 @@ public abstract sealed class JSONParser implements Closeable
      */
     public BigInteger readBigIntegerLiteral() {
         skipWhitespace();
+        String numStr;
+        boolean forceBigDecimalPath = false;
         // Accept quoted numeric strings on the same-path basis as
         // readBigDecimalLiteral — API parity with BuiltinCodecs BIG_INTEGER_READER.
         if (offset < end()) {
             int c = ch(offset);
             if (c == '"' || (c == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
-                String s = readString();
-                if (s == null || s.isEmpty()) {
+                numStr = readString();
+                if (numStr == null || numStr.isEmpty()) {
                     return null;
                 }
-                if (s.indexOf('.') >= 0 || s.indexOf('e') >= 0 || s.indexOf('E') >= 0) {
-                    return new java.math.BigDecimal(s).toBigInteger();
+                forceBigDecimalPath = numStr.indexOf('.') >= 0
+                        || numStr.indexOf('e') >= 0 || numStr.indexOf('E') >= 0;
+            } else {
+                int start = offset;
+                forceBigDecimalPath = scanNumber();
+                int numLen = offset - start;
+                if (numLen > MAX_NUMBER_LENGTH) {
+                    throw new JSONException("number length " + numLen + " exceeds maximum " + MAX_NUMBER_LENGTH
+                            + " at " + locationAt(start));
                 }
-                return new BigInteger(s);
+                numStr = extractString(start, offset);
             }
+        } else {
+            throw new JSONException("unexpected end in number at " + locationAt(offset));
         }
-        int start = offset;
-        boolean isFloat = scanNumber();
-        int numLen = offset - start;
-        if (numLen > MAX_NUMBER_LENGTH) {
-            throw new JSONException("number length " + numLen + " exceeds maximum " + MAX_NUMBER_LENGTH
-                    + " at " + locationAt(start));
+        try {
+            if (forceBigDecimalPath) {
+                // Cap the implied integer size BEFORE calling toBigInteger().
+                // A payload like "1e1000000" otherwise expands to a ~400 KB
+                // bignum — a 16-byte → 400 KB amplification usable as a DoS
+                // primitive. Same upper bound the writer uses.
+                java.math.BigDecimal bd = new java.math.BigDecimal(numStr);
+                int digits = bd.precision() - bd.scale();
+                if (digits > MAX_BIG_INTEGER_DIGITS) {
+                    throw new JSONException("BigInteger magnitude " + digits
+                            + " digits exceeds maximum " + MAX_BIG_INTEGER_DIGITS);
+                }
+                return bd.toBigInteger();
+            }
+            return new BigInteger(numStr);
+        } catch (NumberFormatException | ArithmeticException e) {
+            throw new JSONException("invalid number literal '" + numStr + "'", e);
         }
-        String numStr = extractString(start, offset);
-        if (isFloat) {
-            return new java.math.BigDecimal(numStr).toBigInteger();
-        }
-        return new BigInteger(numStr);
     }
 
     protected Number readNumber() {

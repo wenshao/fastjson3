@@ -437,4 +437,78 @@ class NumberEdgeCaseTest {
                 () -> JSON.parseObject("'3.14'", BigDecimal.class));
     }
 
+    // Round-4: NFE/ArithmeticException must not leak as non-JSONException
+    // (violates framework contract). Plus a digit cap on BigInteger
+    // toBigInteger expansion to block DoS amplification where 16-byte
+    // input -> ~400 KB bignum.
+
+    @Test
+    void bigDecimalMalformedQuotedInputRaisesJsonException() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"abc\"", BigDecimal.class));
+        assertTrue(ex.getMessage().contains("abc")
+                        || ex.getMessage().toLowerCase().contains("invalid"),
+                ex.getMessage());
+    }
+
+    @Test
+    void bigDecimalNaNQuotedRaisesJsonException() {
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"NaN\"", BigDecimal.class));
+    }
+
+    @Test
+    void bigIntegerMalformedQuotedInputRaisesJsonException() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"abc\"", BigInteger.class));
+        assertTrue(ex.getMessage().contains("abc")
+                        || ex.getMessage().toLowerCase().contains("invalid"),
+                ex.getMessage());
+    }
+
+    @Test
+    void bigIntegerHugeExponentRejectedToBlockDoSAmplification() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("1e1000000", BigInteger.class));
+        assertTrue(ex.getMessage().contains("digits")
+                        || ex.getMessage().toLowerCase().contains("exceeds"),
+                ex.getMessage());
+    }
+
+    @Test
+    void bigIntegerHugeExponentFromQuotedStringRejected() {
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"1e1000000\"", BigInteger.class));
+    }
+
+    @Test
+    void bigIntegerReasonableExponentStillAccepted() {
+        // 100 digits — well under the 4096 cap. Covers legitimate big-int use.
+        BigInteger bi = JSON.parseObject("1e100", BigInteger.class);
+        assertEquals(new BigInteger("1" + "0".repeat(100)), bi);
+    }
+
+    public static class BigDecPojo {
+        public BigDecimal price;
+    }
+
+    public static class BigIntPojo {
+        public BigInteger count;
+    }
+
+    @Test
+    void pojoBigDecimalMalformedStringRaisesJsonException() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("{\"price\":\"abc\"}", BigDecPojo.class));
+        assertTrue(ex.getMessage().contains("abc")
+                        || ex.getMessage().toLowerCase().contains("invalid"),
+                ex.getMessage());
+    }
+
+    @Test
+    void pojoBigIntegerHugeExponentStringRejected() {
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("{\"count\":\"1e1000000\"}", BigIntPojo.class));
+    }
+
 }
