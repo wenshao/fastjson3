@@ -1313,4 +1313,51 @@ public class UnwrappedDeserializeTest {
                 "mix-in-renamed inner should emit as 'renamed': " + json);
         assertFalse(json.contains("\"a\":\"hello\""), json);
     }
+
+    // Round-4: rejectNonPojoUnwrappedInner previously only caught structural
+    // non-POJOs (Collection / Map / enum / array / abstract / record). Scalar
+    // wrappers (String, Integer, Long, BigDecimal, Object, …) slipped through
+    // and produced `"field":value` output that the reader couldn't recombine.
+
+    public static class ScalarStringUnwrapHolder {
+        @JSONField(unwrapped = true)
+        public String payload;
+    }
+
+    public static class ScalarIntegerUnwrapHolder {
+        @JSONField(unwrapped = true)
+        public Integer counter;
+    }
+
+    public static class ScalarObjectUnwrapHolder {
+        @JSONField(unwrapped = true)
+        public Object payload;
+    }
+
+    @Test
+    public void writerRejectsScalarStringInnerAtConstruction() {
+        ScalarStringUnwrapHolder h = new ScalarStringUnwrapHolder();
+        h.payload = "hi";
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.toJSONString(h));
+        assertTrue(ex.getMessage().contains("scalar")
+                        || ex.getMessage().toLowerCase().contains("string"),
+                ex.getMessage());
+    }
+
+    @Test
+    public void writerRejectsScalarIntegerInnerAtConstruction() {
+        ScalarIntegerUnwrapHolder h = new ScalarIntegerUnwrapHolder();
+        h.counter = 42;
+        assertThrows(JSONException.class, () -> JSON.toJSONString(h));
+    }
+
+    @Test
+    public void writerRejectsObjectInnerAtConstruction() {
+        ScalarObjectUnwrapHolder h = new ScalarObjectUnwrapHolder();
+        h.payload = java.util.Map.of("k", "v");
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.toJSONString(h));
+        assertTrue(ex.getMessage().contains("Object"), ex.getMessage());
+    }
 }

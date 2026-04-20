@@ -1148,6 +1148,23 @@ public final class ObjectWriterCreator {
             reason = "abstract class";
         } else if (com.alibaba.fastjson3.util.JDKUtils.isRecord(innerClass)) {
             reason = "record";
+        } else if (innerClass == Object.class) {
+            reason = "Object";
+        } else if (innerClass == String.class
+                || innerClass == Integer.class || innerClass == Long.class
+                || innerClass == Short.class || innerClass == Byte.class
+                || innerClass == Double.class || innerClass == Float.class
+                || innerClass == Boolean.class || innerClass == Character.class
+                || innerClass == java.math.BigInteger.class
+                || innerClass == java.math.BigDecimal.class
+                || Number.class.isAssignableFrom(innerClass)) {
+            // Scalar wrappers have no inner bean layout to flatten. Emitting
+            // the value under the field name is the only sensible choice — but
+            // then the reader-side @JSONField(unwrapped=true) path (PR #120)
+            // won't recombine it, silently breaking round-trip. Reject at
+            // writer construction instead so the mis-configuration surfaces
+            // as a clear error, symmetric with the reader's POJO-only rule.
+            reason = "scalar wrapper";
         }
         if (reason != null) {
             throw new com.alibaba.fastjson3.JSONException(
