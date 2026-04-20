@@ -131,4 +131,50 @@ public class TypeReferenceGenericTest {
         List<User> users = JSON.parseObject(bytes, new TypeReference<List<User>>() {}.getType());
         assertEquals(1, users.size());
     }
+
+    // ==================== null elements / values in typed collections ====================
+    // Round-3 usability audit finding F2: null element in List<String> / value in
+    // Map<String,String> used to throw "expected quote" at the null token because
+    // the typed-target dispatch called readString() directly, with no null guard.
+
+    @Test
+    public void typedStringListAcceptsNullElements() {
+        List<String> list = JSON.parseObject("[null,\"a\",null]", new TypeReference<List<String>>() {});
+        assertEquals(3, list.size());
+        assertNull(list.get(0));
+        assertEquals("a", list.get(1));
+        assertNull(list.get(2));
+    }
+
+    @Test
+    public void typedStringMapAcceptsNullValues() {
+        Map<String, String> m = JSON.parseObject("{\"a\":null,\"b\":\"x\",\"c\":null}",
+                new TypeReference<Map<String, String>>() {});
+        assertEquals(3, m.size());
+        assertNull(m.get("a"));
+        assertEquals("x", m.get("b"));
+        assertNull(m.get("c"));
+    }
+
+    @Test
+    public void typedStringSetAcceptsNullElements() {
+        Set<String> s = JSON.parseObject("[\"a\",null,\"b\"]", new TypeReference<Set<String>>() {});
+        assertEquals(3, s.size());
+        assertTrue(s.contains(null));
+        assertTrue(s.contains("a"));
+    }
+
+    @Test
+    public void typedBoxedNumberListAcceptsNullElements() {
+        // Same null-literal courtesy extended to boxed wrappers.
+        List<Integer> li = JSON.parseObject("[1,null,3]", new TypeReference<List<Integer>>() {});
+        assertEquals(java.util.Arrays.asList(1, null, 3), li);
+
+        List<Long> ll = JSON.parseObject("[null,2]", new TypeReference<List<Long>>() {});
+        assertNull(ll.get(0));
+        assertEquals(2L, ll.get(1));
+
+        List<Boolean> lb = JSON.parseObject("[true,null,false]", new TypeReference<List<Boolean>>() {});
+        assertEquals(java.util.Arrays.asList(true, null, false), lb);
+    }
 }
