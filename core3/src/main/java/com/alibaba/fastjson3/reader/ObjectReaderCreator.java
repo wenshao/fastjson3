@@ -232,7 +232,7 @@ public final class ObjectReaderCreator {
                 if (recordUnwrapped == null) {
                     recordUnwrapped = new ArrayList<>();
                 }
-                expandRecordUnwrapped(i, componentTypes[i], useJacksonAnnotation, recordUnwrapped);
+                expandRecordUnwrapped(i, componentTypes[i], genericTypes[i], useJacksonAnnotation, recordUnwrapped);
                 if (annotation.required()) {
                     if (recordRequiredIndices == null) {
                         recordRequiredIndices = new ArrayList<>();
@@ -327,6 +327,7 @@ public final class ObjectReaderCreator {
      * record-side unwrapped list keyed by component index.
      */
     private static void expandRecordUnwrapped(int componentIdx, Class<?> innerClass,
+                                               java.lang.reflect.Type genericInner,
                                                boolean useJacksonAnnotation,
                                                List<RecordUnwrappedEntry> sink) {
         rejectNonPojoUnwrapHolder(innerClass, "@JSONField(unwrapped=true) at component #" + componentIdx);
@@ -348,8 +349,12 @@ public final class ObjectReaderCreator {
             // Honour a user-registered mix-in for the inner type so renamed properties,
             // alternate names, ignores/includes rules etc. apply to flattened inner keys
             // the same way they would when reading the inner as a top-level target.
+            // Use the generic form (e.g. Wrapper<Address>) as contextType so inner
+            // field types parameterised on the outer's type argument (T value) resolve
+            // to Address instead of erasing to Object.
             Class<?> innerMixIn = resolveMixIn(innerClass);
-            FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, innerMixIn, useJacksonAnnotation);
+            java.lang.reflect.Type contextType = genericInner != null ? genericInner : innerClass;
+            FieldReaderCollection innerCollection = collectFieldReaders(innerClass, contextType, innerMixIn, useJacksonAnnotation);
             for (FieldReader innerFr : innerCollection.fieldReaders) {
                 sink.add(new RecordUnwrappedEntry(componentIdx, innerClass, innerFr));
             }
@@ -449,7 +454,7 @@ public final class ObjectReaderCreator {
                 if (ctorUnwrapped == null) {
                     ctorUnwrapped = new ArrayList<>();
                 }
-                expandRecordUnwrapped(i, paramTypes[i], useJacksonAnnotation, ctorUnwrapped);
+                expandRecordUnwrapped(i, paramTypes[i], genericParamTypes[i], useJacksonAnnotation, ctorUnwrapped);
                 if (annotation.required()) {
                     if (ctorRequiredIndices == null) {
                         ctorRequiredIndices = new ArrayList<>();
@@ -1057,8 +1062,13 @@ public final class ObjectReaderCreator {
             // Honour a user-registered mix-in for the inner type so renamed properties,
             // alternate names, ignores/includes rules etc. apply to flattened inner
             // keys the same way they would when reading the inner as a top-level target.
+            // Use the generic form of the outer field (e.g. Wrapper<Address>) as
+            // contextType so inner fields declared with an outer-site type variable
+            // (T value) resolve against the outer's type argument rather than erasing
+            // to Object.
             Class<?> innerMixIn = resolveMixIn(innerClass);
-            FieldReaderCollection innerCollection = collectFieldReaders(innerClass, innerClass, innerMixIn, useJacksonAnnotation);
+            java.lang.reflect.Type contextType = outerField.getGenericType();
+            FieldReaderCollection innerCollection = collectFieldReaders(innerClass, contextType, innerMixIn, useJacksonAnnotation);
             for (FieldReader innerFr : innerCollection.fieldReaders) {
                 // Outer fields take precedence on name collision — skip any inner name
                 // that has already been processed at the outer level.

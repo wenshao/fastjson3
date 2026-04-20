@@ -1017,6 +1017,45 @@ public class UnwrappedDeserializeTest {
         public String name;
     }
 
+    // ==================== Generic inner resolves via outer type argument ====================
+
+    public static class Wrapper<T> {
+        public T value;
+    }
+
+    public static class Address {
+        public String city;
+    }
+
+    public static class GenericUnwrapHost {
+        @JSONField(unwrapped = true)
+        public Wrapper<Address> box;
+    }
+
+    @Test
+    public void genericInnerResolvesAgainstOuterTypeArgument() {
+        // Inner field `T value` previously erased to Object, landing a LinkedHashMap
+        // in box.value instead of a real Address. The contextType handed to
+        // collectFieldReaders must be `Wrapper<Address>`, not `Wrapper.class`.
+        GenericUnwrapHost host = JSON.parse("{\"value\":{\"city\":\"SF\"}}", GenericUnwrapHost.class);
+        assertNotNull(host.box);
+        assertNotNull(host.box.value);
+        assertInstanceOf(Address.class, host.box.value,
+                "expected Address, got " + host.box.value.getClass().getName());
+        assertEquals("SF", host.box.value.city);
+    }
+
+    public record GenericRecordHost(@JSONField(unwrapped = true) Wrapper<Address> box) {
+    }
+
+    @Test
+    public void genericInnerRecordResolvesAgainstOuterTypeArgument() {
+        GenericRecordHost host = JSON.parse("{\"value\":{\"city\":\"LA\"}}", GenericRecordHost.class);
+        assertNotNull(host.box());
+        assertInstanceOf(Address.class, host.box().value);
+        assertEquals("LA", host.box().value.city);
+    }
+
     @Test
     public void sealedReadFromJSONObjectHonoursSubtypeSchema() {
         // Sealed-class polymorphic dispatch materializes the subtype payload as
