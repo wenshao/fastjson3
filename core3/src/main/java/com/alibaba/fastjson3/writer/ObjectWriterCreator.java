@@ -1165,6 +1165,19 @@ public final class ObjectWriterCreator {
             // writer construction instead so the mis-configuration surfaces
             // as a clear error, symmetric with the reader's POJO-only rule.
             reason = "scalar wrapper";
+        } else if (java.util.Optional.class.isAssignableFrom(innerClass)
+                || java.util.OptionalInt.class == innerClass
+                || java.util.OptionalLong.class == innerClass
+                || java.util.OptionalDouble.class == innerClass) {
+            // Optional has no bean layout worth flattening; writer would
+            // emit `"empty":false,"present":true` nonsense from the accessor
+            // enumeration. Reject at construction.
+            reason = "Optional wrapper";
+        } else if (java.util.concurrent.atomic.AtomicReference.class.isAssignableFrom(innerClass)) {
+            // AtomicReference isn't a Number subclass so the wrapper check
+            // misses it, but its accessor set (getAcquire/getOpaque/getPlain)
+            // also produces garbage flattened output — reject explicitly.
+            reason = "AtomicReference wrapper";
         }
         if (reason != null) {
             throw new com.alibaba.fastjson3.JSONException(

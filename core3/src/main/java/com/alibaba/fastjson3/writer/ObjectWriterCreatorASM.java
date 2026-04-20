@@ -160,6 +160,11 @@ public final class ObjectWriterCreatorASM {
 
         // @JSONField(format=) requires reflection path for custom formatting
         // @JSONField(inclusion=) requires reflection path for custom inclusion logic
+        // @JSONField(unwrapped=true) requires the reflection path's
+        //   rejectNonPojoUnwrappedInner guard + FieldWriter.resolveUnwrapFieldWriters
+        //   — the ASM writer has no equivalent wiring, so a field marked unwrapped
+        //   that slipped into the ASM path would emit nested `"field":value`
+        //   instead of the flattened shape, breaking round-trip with the reader.
         for (java.lang.reflect.Field field : type.getDeclaredFields()) {
             com.alibaba.fastjson3.annotation.JSONField jsonField = field.getAnnotation(
                     com.alibaba.fastjson3.annotation.JSONField.class);
@@ -170,9 +175,12 @@ public final class ObjectWriterCreatorASM {
                 if (jsonField.inclusion() != com.alibaba.fastjson3.annotation.Inclusion.ALWAYS) {
                     return false;
                 }
+                if (jsonField.unwrapped()) {
+                    return false;
+                }
             }
         }
-        // Also check methods for @JSONField(format=) and @JSONField(inclusion=)
+        // Also check methods for @JSONField(format=) and @JSONField(inclusion=) and @JSONField(unwrapped=)
         for (java.lang.reflect.Method method : type.getMethods()) {
             com.alibaba.fastjson3.annotation.JSONField jsonField = method.getAnnotation(
                     com.alibaba.fastjson3.annotation.JSONField.class);
@@ -181,6 +189,9 @@ public final class ObjectWriterCreatorASM {
                     return false;
                 }
                 if (jsonField.inclusion() != com.alibaba.fastjson3.annotation.Inclusion.ALWAYS) {
+                    return false;
+                }
+                if (jsonField.unwrapped()) {
                     return false;
                 }
             }

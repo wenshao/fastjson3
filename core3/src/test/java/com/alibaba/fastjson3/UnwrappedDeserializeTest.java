@@ -1360,4 +1360,93 @@ public class UnwrappedDeserializeTest {
                 () -> JSON.toJSONString(h));
         assertTrue(ex.getMessage().contains("Object"), ex.getMessage());
     }
+
+    // Round-5: Optional and AtomicReference slipped through the R4 guard.
+
+    public static class OptionalHolder {
+        @JSONField(unwrapped = true)
+        public java.util.Optional<String> payload;
+    }
+
+    @Test
+    public void writerRejectsOptionalInnerAtConstruction() {
+        OptionalHolder h = new OptionalHolder();
+        h.payload = java.util.Optional.of("hi");
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.toJSONString(h));
+        assertTrue(ex.getMessage().contains("Optional"), ex.getMessage());
+    }
+
+    @Test
+    public void readerRejectsOptionalInnerAtConstruction() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(OptionalHolder.class));
+        assertTrue(ex.getMessage().contains("Optional"), ex.getMessage());
+    }
+
+    public static class AtomicReferenceHolder {
+        @JSONField(unwrapped = true)
+        public java.util.concurrent.atomic.AtomicReference<String> payload;
+    }
+
+    @Test
+    public void writerRejectsAtomicReferenceInnerAtConstruction() {
+        AtomicReferenceHolder h = new AtomicReferenceHolder();
+        h.payload = new java.util.concurrent.atomic.AtomicReference<>("hi");
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.toJSONString(h));
+        assertTrue(ex.getMessage().contains("AtomicReference"), ex.getMessage());
+    }
+
+    // Round-5 reader symmetry with writer's R4 scalar/Object rejection.
+
+    @Test
+    public void readerRejectsScalarStringInnerAtConstruction() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(ScalarStringUnwrapHolder.class));
+        assertTrue(ex.getMessage().toLowerCase().contains("scalar")
+                        || ex.getMessage().toLowerCase().contains("string"),
+                ex.getMessage());
+    }
+
+    @Test
+    public void readerRejectsObjectInnerAtConstruction() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(ScalarObjectUnwrapHolder.class));
+        assertTrue(ex.getMessage().contains("Object"), ex.getMessage());
+    }
+
+    // Round-5 ASM bypass: without unwrap in canGenerate, ASM writer got
+    // chosen for unwrap fields with inclusion=ALWAYS and emitted nested
+    // shape instead of flattened.
+
+    public static class AsmBypassInner {
+        public String city;
+    }
+
+    public static class AsmBypassOuter {
+        @JSONField(unwrapped = true, serialize = true)
+        public AsmBypassInner addr;
+        public String name;
+    }
+
+    @Test
+    public void asmWriterRejectsUnwrappedForReflectPath() {
+        AsmBypassOuter o = new AsmBypassOuter();
+        o.addr = new AsmBypassInner();
+        o.addr.city = "SF";
+        o.name = "alice";
+
+        String json = JSON.toJSONString(o);
+        assertTrue(json.contains("\"city\":\"SF\""),
+                "unwrap must flatten — nested means ASM bypass re-opened: " + json);
+        assertFalse(json.contains("\"addr\":"), json);
+
+        AsmBypassOuter back = JSON.parse(json, AsmBypassOuter.class);
+        assertEquals("alice", back.name);
+        assertEquals("SF", back.addr.city);
+    }
 }
