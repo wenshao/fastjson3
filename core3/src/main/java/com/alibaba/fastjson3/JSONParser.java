@@ -1131,6 +1131,50 @@ public abstract sealed class JSONParser implements Closeable
      */
     public static final int MAX_BIG_INTEGER_DIGITS = 4096;
 
+    /**
+     * DoS defence on user-supplied numeric strings. Round 4 only capped the
+     * scientific-notation branch (`.`/`e`/`E`), so a 1 MB quoted pure-digit
+     * payload `"111...1"` slipped through to {@code new BigInteger(str)} and
+     * produced a 1M-digit bignum with 12+ seconds of CPU. Round 5 routes
+     * EVERY bignum-materialisation site through this single helper so the
+     * next refactor can't accidentally re-open the hole.
+     *
+     * <p>Rejects early on raw string length (cheap). For scientific inputs
+     * where length overruns but magnitude doesn't (e.g. {@code "1.5E-300"}),
+     * falls through to a precise {@code precision - scale} check via
+     * {@link java.math.BigDecimal}.</p>
+     */
+    public static void checkBigNumberMagnitude(String numStr) {
+        if (numStr == null) {
+            return;
+        }
+        int len = numStr.length();
+        if (len == 0) {
+            return;
+        }
+        // Scientific notation amplifies magnitude beyond string length:
+        // "1e1000000" is 9 chars but magnitude is 1_000_001. Can't skip the
+        // precise check for inputs with `e` / `E` — even short strings may
+        // expand massively. Pure-digit inputs shortcut on string length.
+        boolean hasExp = numStr.indexOf('e') >= 0 || numStr.indexOf('E') >= 0;
+        if (!hasExp) {
+            int signAdjust = (numStr.charAt(0) == '-' || numStr.charAt(0) == '+') ? 1 : 0;
+            if (len - signAdjust <= MAX_BIG_INTEGER_DIGITS) {
+                return;
+            }
+        }
+        try {
+            java.math.BigDecimal bd = new java.math.BigDecimal(numStr);
+            int digits = bd.precision() - bd.scale();
+            if (digits > MAX_BIG_INTEGER_DIGITS) {
+                throw new JSONException("BigInteger/BigDecimal magnitude "
+                        + digits + " digits exceeds maximum " + MAX_BIG_INTEGER_DIGITS);
+            }
+        } catch (NumberFormatException e) {
+            // Malformed — let the caller's own NFE handler produce the JSONException.
+        }
+    }
+
     public java.math.BigDecimal readBigDecimalLiteral() {
         skipWhitespace();
         String numStr;
@@ -1157,11 +1201,7 @@ public abstract sealed class JSONParser implements Closeable
         } else {
             throw new JSONException("unexpected end in number at " + locationAt(offset));
         }
-        // The only callers of this method want a JSONException on malformed
-        // input (quoted garbage, otherwise-unscanned text). Without this
-        // wrapper, `parseObject("\"abc\"", BigDecimal.class)` leaks a raw
-        // NumberFormatException to the caller — violating the framework's
-        // exception contract.
+        checkBigNumberMagnitude(numStr);
         try {
             return new java.math.BigDecimal(numStr);
         } catch (NumberFormatException e) {
@@ -1179,8 +1219,6 @@ public abstract sealed class JSONParser implements Closeable
         skipWhitespace();
         String numStr;
         boolean forceBigDecimalPath = false;
-        // Accept quoted numeric strings on the same-path basis as
-        // readBigDecimalLiteral — API parity with BuiltinCodecs BIG_INTEGER_READER.
         if (offset < end()) {
             int c = ch(offset);
             if (c == '"' || (c == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
@@ -1203,19 +1241,14 @@ public abstract sealed class JSONParser implements Closeable
         } else {
             throw new JSONException("unexpected end in number at " + locationAt(offset));
         }
+        // Apply the magnitude cap to every path — pure-digit strings like
+        // "1".repeat(1_000_000) also expand to a 1M-digit BigInteger
+        // (12+ s CPU), a DoS primitive equivalent to scientific-notation
+        // amplification. One helper, every branch.
+        checkBigNumberMagnitude(numStr);
         try {
             if (forceBigDecimalPath) {
-                // Cap the implied integer size BEFORE calling toBigInteger().
-                // A payload like "1e1000000" otherwise expands to a ~400 KB
-                // bignum — a 16-byte → 400 KB amplification usable as a DoS
-                // primitive. Same upper bound the writer uses.
-                java.math.BigDecimal bd = new java.math.BigDecimal(numStr);
-                int digits = bd.precision() - bd.scale();
-                if (digits > MAX_BIG_INTEGER_DIGITS) {
-                    throw new JSONException("BigInteger magnitude " + digits
-                            + " digits exceeds maximum " + MAX_BIG_INTEGER_DIGITS);
-                }
-                return bd.toBigInteger();
+                return new java.math.BigDecimal(numStr).toBigInteger();
             }
             return new BigInteger(numStr);
         } catch (NumberFormatException | ArithmeticException e) {

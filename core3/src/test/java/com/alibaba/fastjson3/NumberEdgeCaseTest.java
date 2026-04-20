@@ -511,4 +511,54 @@ class NumberEdgeCaseTest {
                 () -> JSON.parseObject("{\"count\":\"1e1000000\"}", BigIntPojo.class));
     }
 
+    // Round-5: the R4 cap only covered the `.`/`e`/`E` branches. Pure-
+    // digit strings bypassed the cap — a 1 MB quoted `"111...1"` produced
+    // a 1M-digit BigInteger with 12+ s CPU. Route every bignum site
+    // through `checkBigNumberMagnitude` so no branch is unbounded.
+
+    @Test
+    void topLevelBigIntegerPureDigitStringCapped() {
+        String huge = "1".repeat(10_000);
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"" + huge + "\"", BigInteger.class));
+    }
+
+    @Test
+    void bareLiteralBigIntegerPureDigitCapped() {
+        String huge = "1".repeat(10_000);
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject(huge, BigInteger.class));
+    }
+
+    @Test
+    void topLevelBigDecimalPureDigitStringCapped() {
+        String huge = "1".repeat(10_000);
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"" + huge + "\"", BigDecimal.class));
+    }
+
+    @Test
+    void pojoBigIntegerPureDigitStringCapped() {
+        String huge = "1".repeat(10_000);
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("{\"count\":\"" + huge + "\"}", BigIntPojo.class));
+    }
+
+    @Test
+    void pojoBigDecimalPureDigitStringCapped() {
+        String huge = "1".repeat(10_000);
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("{\"price\":\"" + huge + "\"}", BigDecPojo.class));
+    }
+
+    @Test
+    void at4096DigitBoundaryStillAcceptedAsQuotedString() {
+        // Quoted-string path: MAX_NUMBER_LENGTH doesn't apply (it's a string
+        // literal), so exactly 4096 digits lands at the magnitude cap boundary
+        // and must be accepted.
+        String boundary = "1".repeat(4096);
+        BigInteger bi = JSON.parseObject("\"" + boundary + "\"", BigInteger.class);
+        assertEquals(new BigInteger(boundary), bi);
+    }
+
 }

@@ -657,6 +657,11 @@ public final class FieldReader implements Comparable<FieldReader> {
                 return UUID.fromString(str);
             }
             if (fieldClass == java.math.BigDecimal.class) {
+                // Apply the same magnitude cap the parser uses on in-stream
+                // literals — otherwise a 1 MB quoted-integer payload on a
+                // BigDecimal field would produce a 1M-digit bignum (round 4's
+                // cap was only on the scientific-notation branch).
+                com.alibaba.fastjson3.JSONParser.checkBigNumberMagnitude(str);
                 try {
                     return new java.math.BigDecimal(str);
                 } catch (NumberFormatException e) {
@@ -665,17 +670,12 @@ public final class FieldReader implements Comparable<FieldReader> {
                 }
             }
             if (fieldClass == java.math.BigInteger.class) {
-                // Same float-tolerance as the numeric branch above: "3.14" → 3.
+                // Same cap as above applied BEFORE either branch — pure-digit
+                // strings were unbounded in round 4.
+                com.alibaba.fastjson3.JSONParser.checkBigNumberMagnitude(str);
                 try {
                     if (str.indexOf('.') >= 0 || str.indexOf('e') >= 0 || str.indexOf('E') >= 0) {
-                        java.math.BigDecimal bd = new java.math.BigDecimal(str);
-                        int digits = bd.precision() - bd.scale();
-                        if (digits > com.alibaba.fastjson3.JSONParser.MAX_BIG_INTEGER_DIGITS) {
-                            throw new JSONException("BigInteger magnitude " + digits
-                                    + " digits exceeds maximum "
-                                    + com.alibaba.fastjson3.JSONParser.MAX_BIG_INTEGER_DIGITS);
-                        }
-                        return bd.toBigInteger();
+                        return new java.math.BigDecimal(str).toBigInteger();
                     }
                     return new java.math.BigInteger(str);
                 } catch (NumberFormatException | ArithmeticException e) {
