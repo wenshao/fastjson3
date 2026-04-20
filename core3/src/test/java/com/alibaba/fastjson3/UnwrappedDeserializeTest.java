@@ -1251,4 +1251,66 @@ public class UnwrappedDeserializeTest {
         public RecordInnerHost() {}
         public RecordInnerHost(RecordInner leaf) { this.leaf = leaf; }
     }
+
+    // ==================== Mix-in / Jackson config preserved on unwrap ====================
+    // Round-1 audit on PR #125 found that building a fresh ReflectObjectWriter
+    // via the 1-arg factory dropped the mapper's mix-in map + useJacksonAnnotation
+    // flag, so a Jackson-renamed inner field emitted its raw Java name instead.
+
+    public static class RenamedInner {
+        @com.fasterxml.jackson.annotation.JsonProperty("renamed")
+        public String a;
+    }
+
+    public static class JacksonRenameHost {
+        @JSONField(unwrapped = true)
+        public RenamedInner inner;
+        public String name;
+    }
+
+    @Test
+    public void unwrapHonoursJacksonRenamingOnInnerField() {
+        JacksonRenameHost h = new JacksonRenameHost();
+        h.inner = new RenamedInner();
+        h.inner.a = "hello";
+        h.name = "bob";
+
+        ObjectMapper jackson = ObjectMapper.builder().useJacksonAnnotation(true).build();
+        String json = jackson.writeValueAsString(h);
+        assertTrue(json.contains("\"renamed\":\"hello\""),
+                "inner field should emit as 'renamed' not raw 'a': " + json);
+        assertFalse(json.contains("\"a\":\"hello\""), json);
+        assertTrue(json.contains("\"name\":\"bob\""), json);
+    }
+
+    public static class MixInRenamedInner {
+        public String a;
+    }
+
+    public interface InnerMixIn {
+        @JSONField(name = "renamed")
+        String a = null;
+    }
+
+    public static class MixInRenameHost {
+        @JSONField(unwrapped = true)
+        public MixInRenamedInner inner;
+        public String name;
+    }
+
+    @Test
+    public void unwrapHonoursMixInRenamingOnInnerField() {
+        MixInRenameHost h = new MixInRenameHost();
+        h.inner = new MixInRenamedInner();
+        h.inner.a = "hello";
+        h.name = "bob";
+
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(MixInRenamedInner.class, InnerMixIn.class)
+                .build();
+        String json = mapper.writeValueAsString(h);
+        assertTrue(json.contains("\"renamed\":\"hello\""),
+                "mix-in-renamed inner should emit as 'renamed': " + json);
+        assertFalse(json.contains("\"a\":\"hello\""), json);
+    }
 }

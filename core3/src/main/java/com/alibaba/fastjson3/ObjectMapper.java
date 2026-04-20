@@ -1786,6 +1786,17 @@ public final class ObjectMapper {
     }
 
     /**
+     * Whether Jackson annotations (e.g. {@code @JsonProperty}, {@code @JsonIgnore})
+     * are interpreted on top of fastjson's own. Set via
+     * {@link Builder#useJacksonAnnotation(boolean)}. Exposed so deep-in-writer
+     * paths that create fresh per-type writers (e.g. unwrap flattening) can
+     * reproduce the mapper's configuration.
+     */
+    public boolean useJacksonAnnotation() {
+        return useJacksonAnnotation;
+    }
+
+    /**
      * Register a mixin class at runtime. Annotations from {@code mixinSource}
      * will be applied to {@code target} during serialization and deserialization.
      * <p>Note: Cached ObjectReaders/ObjectWriters for the target type are not

@@ -696,12 +696,13 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             return;
         }
         // Unwrapped: write nested object's fields directly into parent (no field name, no braces).
-        // We need a concrete FieldWriter[] to iterate; ASM writers don't publish theirs, so we
-        // bypass the mapper's type→writer cache (which may have stored an ASM writer) and build
-        // a reflection writer dedicated to the unwrapping use case. Cached per FieldWriter
-        // instance so the recursive per-write creation only happens once per inner class.
+        // We need a concrete FieldWriter[] to iterate; ASM writers don't publish theirs, so
+        // we prefer the mapper's cached writer when it's a ReflectObjectWriter (already
+        // configured with the owning mapper's mix-in + useJacksonAnnotation), and fall back
+        // to a fresh ReflectObjectWriter built with the mapper's config when the cached
+        // writer is an ASM class.
         if (unwrapped) {
-            FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(value.getClass());
+            FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(generator, value.getClass());
             ObjectWriterCreator.writeFields(generator, innerFieldWriters, value, features);
             return;
         }
@@ -1057,31 +1058,47 @@ public final class FieldWriter implements Comparable<FieldWriter> {
 
     /**
      * Resolve the inner type's {@link FieldWriter} array for unwrap-time
-     * emission. Always goes through {@link ObjectWriterCreator} so we get a
-     * {@link ObjectWriterCreator.ReflectObjectWriter} — the only writer kind
-     * that publishes its {@code writers} array. Bypasses the mapper's
-     * {@code type→writer} cache because that cache may hold an ASM-generated
-     * writer that conceals its internal field writers.
+     * emission. Prefers the mapper's cached writer when it's a
+     * {@link ObjectWriterCreator.ReflectObjectWriter} — that writer was
+     * already built with the mapper's own mix-in + useJacksonAnnotation
+     * config, so field renames from a mix-in or Jackson's {@code @JsonProperty}
+     * are honoured. Only when the cached writer is an ASM class (which
+     * conceals its internal FieldWriter[]) do we fall back to building a
+     * fresh ReflectObjectWriter — and then we rebuild it with the mapper's
+     * mix-in lookup and useJacksonAnnotation flag so the inner's rename
+     * rules still apply on the flattened keys.
      */
-    private FieldWriter[] resolveUnwrapFieldWriters(Class<?> valueClass) {
+    private FieldWriter[] resolveUnwrapFieldWriters(JSONGenerator generator, Class<?> valueClass) {
         FieldWriter[] writers = cachedUnwrapFieldWriters;
-        if (writers == null || cachedUnwrapFieldWritersClass != valueClass) {
-            ObjectWriter<?> w = ObjectWriterCreator.createObjectWriter(valueClass);
-            if (w instanceof ObjectWriterCreator.ReflectObjectWriter row) {
+        if (writers != null && cachedUnwrapFieldWritersClass == valueClass) {
+            return writers;
+        }
+        // Mapper's cached writer may already be a ReflectObjectWriter with the
+        // correct config — take its writers array directly.
+        ObjectMapper mapper = generator.effectiveMapper();
+        ObjectWriter<?> cached = mapper.getObjectWriter(valueClass);
+        if (cached instanceof ObjectWriterCreator.ReflectObjectWriter cachedRow) {
+            writers = cachedRow.writers;
+        } else {
+            // ASM or custom — build a reflect writer with the SAME config the
+            // mapper uses (mix-in lookup + useJacksonAnnotation) so rename
+            // rules stay consistent between nested and flattened shapes.
+            Class<?> innerMixIn = mapper.getMixIn(valueClass);
+            boolean jackson = mapper.useJacksonAnnotation();
+            ObjectWriter<?> reflect = ObjectWriterCreator.createObjectWriter(
+                    valueClass, innerMixIn, jackson);
+            if (reflect instanceof ObjectWriterCreator.ReflectObjectWriter row) {
                 writers = row.writers;
-                cachedUnwrapFieldWriters = writers;
-                cachedUnwrapFieldWritersClass = valueClass;
             } else {
                 // Inner type uses a custom @JSONType(serializer=…) / @JsonAnyGetter
-                // lambda path — no accessible FieldWriter[] to flatten. Reject
-                // at write time with a clear message; nested serialisation
-                // isn't a meaningful fallback because it would break round-trip
-                // with the unwrap-aware reader on the other side.
+                // lambda path — no accessible FieldWriter[] to flatten.
                 throw new JSONException("@JSONField(unwrapped=true) on " + fieldName
                         + ": inner type " + valueClass.getName()
                         + " uses a custom serializer or anyGetter and cannot be flattened");
             }
         }
+        cachedUnwrapFieldWriters = writers;
+        cachedUnwrapFieldWritersClass = valueClass;
         return writers;
     }
 
@@ -1186,7 +1203,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         // Unwrapped: write nested fields directly (no name, no braces)
         if (unwrapped) {
-            FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(value.getClass());
+            FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(generator, value.getClass());
             ObjectWriterCreator.writeFields(generator, innerFieldWriters, value, features);
             return;
         }
