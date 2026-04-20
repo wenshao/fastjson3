@@ -1077,6 +1077,56 @@ public class UnwrappedDeserializeTest {
         assertEquals("LA", host.box().value.city);
     }
 
+    // ==================== Primitive unwrap holder rejected ====================
+
+    public static class PrimitiveFieldHolder {
+        @JSONField(unwrapped = true)
+        public int counter;
+    }
+
+    @Test
+    public void primitiveFieldUnwrapHolderRejected() {
+        // Primitive can't have an inner bean layout to flatten. A silent
+        // fall-through to the regular FieldReader path would mislead users
+        // into thinking the annotation took effect.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(PrimitiveFieldHolder.class));
+        assertTrue(ex.getMessage().contains("primitive"), ex.getMessage());
+    }
+
+    public static class PrimitiveSetterHolder {
+        private int counter;
+
+        @JSONField(unwrapped = true)
+        public void setCounter(int c) {
+            this.counter = c;
+        }
+
+        public int getCounter() {
+            return counter;
+        }
+    }
+
+    @Test
+    public void primitiveSetterUnwrapRejected() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(PrimitiveSetterHolder.class));
+        assertTrue(ex.getMessage().contains("primitive"), ex.getMessage());
+    }
+
+    public record PrimitiveCtorHolder(@JSONField(unwrapped = true) int counter) {
+    }
+
+    @Test
+    public void primitiveCtorParamUnwrapRejected() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(PrimitiveCtorHolder.class));
+        assertTrue(ex.getMessage().contains("primitive"), ex.getMessage());
+    }
+
     // ==================== Custom reader sees null on map-fallback path ====================
 
     public static class NullSentinelReader implements com.alibaba.fastjson3.ObjectReader<String> {

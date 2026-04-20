@@ -223,8 +223,11 @@ public final class ObjectReaderCreator {
             // regular FieldReader — collect the inner's FieldReaders in a parallel
             // side table keyed by (component index, inner reader) so the record
             // reader can stage a scratch inner into the canonical constructor slot.
-            if (annotation != null && annotation.unwrapped()
-                    && !componentTypes[i].isPrimitive()) {
+            if (annotation != null && annotation.unwrapped()) {
+                if (componentTypes[i].isPrimitive()) {
+                    throw new JSONException("@JSONField(unwrapped=true) on record component '"
+                            + rawName + "': primitive component cannot be an unwrapped holder");
+                }
                 if (!annotation.defaultValue().isEmpty()) {
                     throw new JSONException("@JSONField(unwrapped=true) on record component '"
                             + rawName + "' does not support defaultValue — the holder is a POJO");
@@ -446,7 +449,11 @@ public final class ObjectReaderCreator {
             // @JSONField(unwrapped=true) on a constructor parameter: same treatment
             // as record components — skip the regular FieldReader and collect the
             // inner's FieldReaders into a side table keyed by parameter index.
-            if (annotation != null && annotation.unwrapped() && !paramTypes[i].isPrimitive()) {
+            if (annotation != null && annotation.unwrapped()) {
+                if (paramTypes[i].isPrimitive()) {
+                    throw new JSONException("@JSONField(unwrapped=true) on constructor param '"
+                            + rawName + "': primitive parameter cannot be an unwrapped holder");
+                }
                 if (!annotation.defaultValue().isEmpty()) {
                     throw new JSONException("@JSONField(unwrapped=true) on constructor param '"
                             + rawName + "' does not support defaultValue — the holder is a POJO");
@@ -812,7 +819,15 @@ public final class ObjectReaderCreator {
             // loop can lazily construct the inner and delegate field writes.
             // Placed AFTER the eligibility filters (ignores/includes/transient/visibility)
             // so an excluded holder field never contributes routes.
-            if (annotation != null && annotation.unwrapped() && !field.getType().isPrimitive()) {
+            if (annotation != null && annotation.unwrapped()) {
+                // Primitive holder makes no sense — a primitive has no inner
+                // bean layout to flatten. Silently falling through to a normal
+                // FieldReader would leave the user believing their annotation
+                // is honoured. Fail loud at construction time instead.
+                if (field.getType().isPrimitive()) {
+                    throw new JSONException("@JSONField(unwrapped=true) on " + type.getName() + "."
+                            + field.getName() + ": primitive field cannot be an unwrapped holder");
+                }
                 if (!annotation.defaultValue().isEmpty()) {
                     // The holder is a POJO; a single-string defaultValue can't stand
                     // in for an arbitrary inner object. Reject explicitly so the user
@@ -938,44 +953,47 @@ public final class ObjectReaderCreator {
             // see the flattened keys land on the holder field directly at best.
             if (annotation != null && annotation.unwrapped()) {
                 Class<?> paramType = method.getParameterTypes()[0];
-                if (!paramType.isPrimitive()) {
-                    if (!annotation.defaultValue().isEmpty()) {
-                        throw new JSONException("@JSONField(unwrapped=true) on setter "
-                                + type.getName() + "." + method.getName()
-                                + " does not support defaultValue — the holder is a POJO");
-                    }
-                    // Walk the class hierarchy — the holder field may live on a
-                    // superclass (common JavaBean shape: `class Child extends
-                    // Base { ... }` where Base declares the holder). Rejecting
-                    // inherited fields narrows the feature unnecessarily.
-                    Field holderField = findInstanceFieldInHierarchy(type, rawName);
-                    if (holderField != null) {
-                        if (unwrappedEntries == null) {
-                            unwrappedEntries = new ArrayList<>();
-                        }
-                        if (requiredUnwrappedHolders == null) {
-                            requiredUnwrappedHolders = new ArrayList<>();
-                        }
-                        expandUnwrappedField(holderField, contextType, mixIn, useJacksonAnnotation, unwrappedEntries,
-                                processedNames, requiredUnwrappedHolders);
-                        processedNames.add(rawName);
-                        if (annotation.required()) {
-                            // Mirror the field-backed branch: register the backing
-                            // field so applyDefaults validates it post-parse. Without
-                            // this, @JSONField(unwrapped=true, required=true) on a
-                            // setter silently became a no-op.
-                            holderField.setAccessible(true);
-                            requiredUnwrappedHolders.add(new Field[]{holderField});
-                        }
-                        continue;
-                    }
-                    // No backing field — the unwrapped semantics can't be lazily
-                    // implemented. Reject fast with a clear message rather than
-                    // silently falling back to a whole-object setter.
+                if (paramType.isPrimitive()) {
                     throw new JSONException("@JSONField(unwrapped=true) on setter "
                             + type.getName() + "." + method.getName()
-                            + " requires a backing field named '" + rawName + "' to be lazily constructed");
+                            + ": primitive parameter cannot be an unwrapped holder");
                 }
+                if (!annotation.defaultValue().isEmpty()) {
+                    throw new JSONException("@JSONField(unwrapped=true) on setter "
+                            + type.getName() + "." + method.getName()
+                            + " does not support defaultValue — the holder is a POJO");
+                }
+                // Walk the class hierarchy — the holder field may live on a
+                // superclass (common JavaBean shape: `class Child extends
+                // Base { ... }` where Base declares the holder). Rejecting
+                // inherited fields narrows the feature unnecessarily.
+                Field holderField = findInstanceFieldInHierarchy(type, rawName);
+                if (holderField != null) {
+                    if (unwrappedEntries == null) {
+                        unwrappedEntries = new ArrayList<>();
+                    }
+                    if (requiredUnwrappedHolders == null) {
+                        requiredUnwrappedHolders = new ArrayList<>();
+                    }
+                    expandUnwrappedField(holderField, contextType, mixIn, useJacksonAnnotation, unwrappedEntries,
+                            processedNames, requiredUnwrappedHolders);
+                    processedNames.add(rawName);
+                    if (annotation.required()) {
+                        // Mirror the field-backed branch: register the backing
+                        // field so applyDefaults validates it post-parse. Without
+                        // this, @JSONField(unwrapped=true, required=true) on a
+                        // setter silently became a no-op.
+                        holderField.setAccessible(true);
+                        requiredUnwrappedHolders.add(new Field[]{holderField});
+                    }
+                    continue;
+                }
+                // No backing field — the unwrapped semantics can't be lazily
+                // implemented. Reject fast with a clear message rather than
+                // silently falling back to a whole-object setter.
+                throw new JSONException("@JSONField(unwrapped=true) on setter "
+                        + type.getName() + "." + method.getName()
+                        + " requires a backing field named '" + rawName + "' to be lazily constructed");
             }
 
             String jsonName = resolveFieldName(rawName, annotation, naming);
