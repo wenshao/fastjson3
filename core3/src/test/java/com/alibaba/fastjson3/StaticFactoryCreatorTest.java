@@ -283,4 +283,68 @@ public class StaticFactoryCreatorTest {
                         && ex.getMessage().contains("fromMixIn"),
                 "expected both method names in: " + ex.getMessage());
     }
+
+    // ==================== Record + @JSONCreator factory ====================
+
+    public record ValidatedRecord(int v) {
+        @JSONCreator
+        public static ValidatedRecord of(@JSONField(name = "v") int v) {
+            if (v < 0) {
+                throw new IllegalArgumentException("negative value: " + v);
+            }
+            return new ValidatedRecord(v);
+        }
+    }
+
+    @Test
+    public void recordFactoryTakesPrecedenceOverCanonicalCtor() {
+        // Round-4 audit: record short-circuit ran before the factory lookup,
+        // so a record with a validating @JSONCreator static factory silently
+        // bypassed the validation. Now the factory lookup runs first and
+        // records honour it like any other POJO.
+        ValidatedRecord ok = JSON.parseObject("{\"v\":42}", ValidatedRecord.class);
+        assertEquals(42, ok.v());
+
+        // Factory's validation fires instead of the canonical ctor:
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> JSON.parseObject("{\"v\":-1}", ValidatedRecord.class));
+        Throwable cause = ex;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        assertTrue(cause.getMessage().contains("negative"), cause.getMessage());
+    }
+
+    // ==================== Generic factory with method-scoped TypeVariable ====================
+
+    public static final class Box<T> {
+        public T value;
+
+        private Box(T v) {
+            this.value = v;
+        }
+
+        @JSONCreator
+        public static <T> Box<T> of(@JSONField(name = "value") T value) {
+            return new Box<>(value);
+        }
+    }
+
+    public static class Address {
+        public String city;
+    }
+
+    @Test
+    public void genericFactoryResolvesMethodTypeVariableFromTypeReference() {
+        // Round-4 audit: `<T> Box<T> of(T v)` used to collapse T to Object
+        // because TypeUtils.resolve walks only class-level TypeVariables.
+        // The factory now unifies its return type against the caller's
+        // TypeReference to bind method-scoped T.
+        Box<Address> box = JSON.parseObject("{\"value\":{\"city\":\"SF\"}}",
+                new TypeReference<Box<Address>>() {});
+        assertNotNull(box.value);
+        assertInstanceOf(Address.class, box.value,
+                "expected Address, got " + (box.value == null ? "null" : box.value.getClass().getName()));
+        assertEquals("SF", box.value.city);
+    }
 }

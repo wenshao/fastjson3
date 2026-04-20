@@ -94,6 +94,19 @@ public final class ObjectReaderCreator {
             return null;
         }
 
+        // Static @JSONCreator / Jackson @JsonCreator factory method takes
+        // precedence even over record's canonical-ctor dispatch. Record
+        // authors may expose a validating factory (`@JSONCreator static R of
+        // (int v) { if (v < 0) throw ...; return new R(v); }`) that the
+        // record path would otherwise bypass, silently skipping the
+        // validation. Checked BEFORE the record short-circuit AND before
+        // the interface/abstract guard so factories on sealed / interface
+        // / record targets all resolve through this single entry.
+        Method staticFactory = resolveStaticFactoryMethod(type, mixIn, useJacksonAnnotation);
+        if (staticFactory != null) {
+            return createStaticFactoryReader(type, contextType, staticFactory, mixIn, useJacksonAnnotation);
+        }
+
         if (JDKUtils.isRecord(type)) {
             return createRecordReader(type, contextType, mixIn, useJacksonAnnotation);
         }
@@ -125,19 +138,6 @@ public final class ObjectReaderCreator {
             if (jacksonBean != null && jacksonBean.typeKey() != null && jacksonBean.subTypes() != null) {
                 return createJacksonPolymorphicReader(type, mixIn, jacksonBean.typeKey(), jacksonBean.subTypes());
             }
-        }
-
-        // Static @JSONCreator / Jackson @JsonCreator factory method takes precedence
-        // over constructor resolution — Jackson-style immutable-wrapper classes
-        // (Money of(BigDecimal v), Optional-like wrappers, value-object factories)
-        // often expose only a static factory rather than a public constructor.
-        // Checked BEFORE the interface / abstract guard so a factory declared on
-        // an interface (`interface Currency { @JSONCreator static Currency of(…) }`)
-        // is reachable — otherwise the caller would hit "cannot deserialize
-        // interface" even though a valid creator exists.
-        Method staticFactory = resolveStaticFactoryMethod(type, mixIn, useJacksonAnnotation);
-        if (staticFactory != null) {
-            return createStaticFactoryReader(type, contextType, staticFactory, mixIn, useJacksonAnnotation);
         }
 
         // Abstract class or interface without polymorphic info: no way to construct.
@@ -3363,6 +3363,76 @@ public final class ObjectReaderCreator {
         return chosen;
     }
 
+    /**
+     * Bind a factory method's method-scoped {@link java.lang.reflect.TypeVariable}s
+     * to concrete {@link java.lang.reflect.Type}s by unifying the factory's
+     * generic return type against the target {@code contextType}. For
+     * `<T> Box<T> of(T v)` with contextType `Box<Address>` this produces
+     * {@code T → Address}; without this step T collapses to its upper bound
+     * (usually Object) at {@link TypeUtils#resolve} time.
+     *
+     * <p>Returns an empty map when the factory has no method type parameters
+     * or the unification isn't possible (e.g., contextType is the raw class).
+     */
+    private static java.util.Map<java.lang.reflect.TypeVariable<?>, java.lang.reflect.Type> resolveMethodTypeVariables(
+            Method factory, java.lang.reflect.Type contextType) {
+        java.lang.reflect.TypeVariable<?>[] methodTypeParams = factory.getTypeParameters();
+        if (methodTypeParams.length == 0 || !(contextType instanceof ParameterizedType target)) {
+            return java.util.Map.of();
+        }
+        java.lang.reflect.Type genericReturn = factory.getGenericReturnType();
+        if (!(genericReturn instanceof ParameterizedType retPT)) {
+            return java.util.Map.of();
+        }
+        // Both sides must share the same raw class for positional arg unification to make sense.
+        if (retPT.getRawType() != target.getRawType()) {
+            return java.util.Map.of();
+        }
+        java.lang.reflect.Type[] retArgs = retPT.getActualTypeArguments();
+        java.lang.reflect.Type[] targetArgs = target.getActualTypeArguments();
+        int n = Math.min(retArgs.length, targetArgs.length);
+        java.util.Map<java.lang.reflect.TypeVariable<?>, java.lang.reflect.Type> bindings = new java.util.HashMap<>();
+        for (int i = 0; i < n; i++) {
+            if (retArgs[i] instanceof java.lang.reflect.TypeVariable<?> tv) {
+                // Only bind variables declared on this method — class-level
+                // TypeVariables are handled by TypeUtils.resolve against contextType.
+                // .equals() not == because Method instances returned by
+                // getDeclaredMethods() are freshly allocated per call.
+                if (factory.equals(tv.getGenericDeclaration())) {
+                    bindings.put(tv, targetArgs[i]);
+                }
+            }
+        }
+        return bindings;
+    }
+
+    /**
+     * Narrow {@code T}-shaped factory parameters: if the generic parameter
+     * type is itself a method-scoped TypeVariable present in {@code bindings},
+     * return the bound type. Otherwise return the parameter type unchanged and
+     * let {@link TypeUtils#resolve} handle class-level TypeVariables against
+     * the caller's contextType.
+     *
+     * <p>Scope is intentionally limited to the direct-TypeVariable case
+     * (`T v`) — the common Jackson-migration shape. Nested method-scoped
+     * TypeVariables (`List&lt;T&gt; v`) would require synthesising a
+     * ParameterizedType, which fj3 doesn't expose publicly. Those fall
+     * through to TypeUtils.resolve with class-scope bindings only, which
+     * collapses them to the bound (usually Object) — matching the
+     * pre-PR-123 behaviour.
+     */
+    private static java.lang.reflect.Type bindMethodScopedTypeVariable(
+            java.lang.reflect.Type paramGeneric,
+            java.util.Map<java.lang.reflect.TypeVariable<?>, java.lang.reflect.Type> bindings) {
+        if (paramGeneric instanceof java.lang.reflect.TypeVariable<?> tv) {
+            java.lang.reflect.Type bound = bindings.get(tv);
+            if (bound != null) {
+                return bound;
+            }
+        }
+        return paramGeneric;
+    }
+
     private static Method scanStaticFactory(Class<?> owner, Class<?> annotationHost,
                                             boolean useJacksonAnnotation, Method chosen) {
         for (Method m : annotationHost.getDeclaredMethods()) {
@@ -3410,6 +3480,15 @@ public final class ObjectReaderCreator {
         factory.setAccessible(true);
         Class<?>[] paramTypes = factory.getParameterTypes();
         java.lang.reflect.Type[] genericParamTypes = factory.getGenericParameterTypes();
+
+        // Method-scoped TypeVariable binding. For `<T> Box<T> of(T v)` with a
+        // target of `TypeReference<Box<Address>>`, we want parameter `v` to
+        // resolve to Address, not to T's erasure (Object). Class-level
+        // TypeUtils.resolve walks only class TypeVariables; method-scoped ones
+        // need to be bound from the unification of the factory's return type
+        // against the target contextType.
+        java.util.Map<java.lang.reflect.TypeVariable<?>, java.lang.reflect.Type> methodBindings
+                = resolveMethodTypeVariables(factory, contextType);
 
         List<Field> instanceFields = getInstanceFieldsParentFirst(type);
 
@@ -3469,9 +3548,28 @@ public final class ObjectReaderCreator {
                     ? annotation.deserializeUsing() : null;
             String schema = (annotation != null && !annotation.schema().isEmpty()) ? annotation.schema() : null;
 
+            // Two-step resolution: first bind any method-scoped TypeVariable
+            // direct hit from the unified bindings, then run the standard
+            // context-type resolve for class-level TypeVariables. When the
+            // binding substitutes `T` for a concrete class, the `fieldClass`
+            // must also follow — paramTypes[i] is already erased to Object
+            // by the compiler, so without this narrowing the Map→POJO
+            // conversion won't know what type to build.
+            java.lang.reflect.Type boundGeneric = methodBindings.isEmpty()
+                    ? genericParamTypes[i]
+                    : bindMethodScopedTypeVariable(genericParamTypes[i], methodBindings);
+            java.lang.reflect.Type resolvedType = TypeUtils.resolve(boundGeneric, contextType);
+            Class<?> resolvedClass = paramTypes[i];
+            if (paramTypes[i] == Object.class && resolvedType instanceof Class<?> rc) {
+                resolvedClass = rc;
+            } else if (paramTypes[i] == Object.class
+                    && resolvedType instanceof ParameterizedType rpt
+                    && rpt.getRawType() instanceof Class<?> rawRc) {
+                resolvedClass = rawRc;
+            }
             fieldReaderList.add(new FieldReader(
                     jsonName, alternateNames,
-                    TypeUtils.resolve(genericParamTypes[i], contextType), paramTypes[i],
+                    resolvedType, resolvedClass,
                     ordinal, defaultValue, required,
                     null, null, format, deserializeUsingClass, schema, 0, useJacksonAnnotation
             ));
