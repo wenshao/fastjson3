@@ -384,4 +384,36 @@ class NumberEdgeCaseTest {
         assertEquals(BigInteger.valueOf(42), p.txId);
     }
 
+    // ==================== In-parser dispatch accepts quoted strings ====================
+    // Round-1 audit: the read(Class) fast path called readBigDecimalLiteral
+    // directly and threw on quoted input, while BuiltinCodecs accepted it —
+    // different behaviour for the same input depending on entry point. The
+    // parseObject variant with ReadFeature overrides uses the in-parser path.
+
+    @Test
+    void topLevelBigDecimalFromQuotedStringWithFeature() {
+        BigDecimal bd = JSON.parseObject("\"3.14\"", BigDecimal.class,
+                ReadFeature.UseBigDecimalForDoubles);
+        assertEquals(new BigDecimal("3.14"), bd);
+    }
+
+    @Test
+    void topLevelBigDecimalFromQuotedStringDefault() {
+        BigDecimal bd = JSON.parseObject("\"99.95\"", BigDecimal.class);
+        assertEquals(new BigDecimal("99.95"), bd);
+    }
+
+    @Test
+    void topLevelBigIntegerFromQuotedString() {
+        BigInteger bi = JSON.parseObject("\"12345678901234567890\"", BigInteger.class);
+        assertEquals(new BigInteger("12345678901234567890"), bi);
+    }
+
+    @Test
+    void topLevelBigIntegerFromQuotedFractionalString() {
+        // Jackson-style tolerance: "3.14" on a BigInteger target truncates to 3.
+        BigInteger bi = JSON.parseObject("\"3.14\"", BigInteger.class);
+        assertEquals(BigInteger.valueOf(3), bi);
+    }
+
 }

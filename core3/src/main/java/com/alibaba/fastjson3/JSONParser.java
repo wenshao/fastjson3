@@ -1122,6 +1122,19 @@ public abstract sealed class JSONParser implements Closeable
      */
     public java.math.BigDecimal readBigDecimalLiteral() {
         skipWhitespace();
+        // Money-shaped APIs often quote decimals to dodge JS Number precision;
+        // mirror the BuiltinCodecs BIG_DECIMAL_READER so the in-parser dispatch
+        // and the field-reader dispatch don't diverge on `"3.14"`.
+        if (offset < end()) {
+            int c = ch(offset);
+            if (c == '"' || (c == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+                String s = readString();
+                if (s == null || s.isEmpty()) {
+                    return null;
+                }
+                return new java.math.BigDecimal(s);
+            }
+        }
         int start = offset;
         scanNumber();
         int numLen = offset - start;
@@ -1140,6 +1153,21 @@ public abstract sealed class JSONParser implements Closeable
      */
     public BigInteger readBigIntegerLiteral() {
         skipWhitespace();
+        // Accept quoted numeric strings on the same-path basis as
+        // readBigDecimalLiteral — API parity with BuiltinCodecs BIG_INTEGER_READER.
+        if (offset < end()) {
+            int c = ch(offset);
+            if (c == '"' || (c == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+                String s = readString();
+                if (s == null || s.isEmpty()) {
+                    return null;
+                }
+                if (s.indexOf('.') >= 0 || s.indexOf('e') >= 0 || s.indexOf('E') >= 0) {
+                    return new java.math.BigDecimal(s).toBigInteger();
+                }
+                return new BigInteger(s);
+            }
+        }
         int start = offset;
         boolean isFloat = scanNumber();
         int numLen = offset - start;
