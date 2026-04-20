@@ -147,4 +147,103 @@ public class StaticFactoryCreatorTest {
         assertEquals(0, f.fromCtor, "ctor should not have run");
         assertEquals(42, f.fromFactory);
     }
+
+    // ==================== Factory declared on an interface ====================
+
+    public interface Currency {
+        @JSONCreator
+        static Currency of(@JSONField(name = "code") String code) {
+            return new USD(code);
+        }
+    }
+
+    public static class USD implements Currency {
+        public String code;
+
+        public USD() {
+        }
+
+        public USD(String code) {
+            this.code = code;
+        }
+    }
+
+    @Test
+    public void staticFactoryOnInterfaceReachable() {
+        // The interface / abstract guard in createObjectReader used to
+        // short-circuit BEFORE the factory lookup, making a valid
+        // @JSONCreator on an interface unreachable (Jackson supports this).
+        Currency c = JSON.parseObject("{\"code\":\"USD\"}", Currency.class);
+        assertInstanceOf(USD.class, c);
+        assertEquals("USD", ((USD) c).code);
+    }
+
+    // ==================== Multiple @JSONCreator factories: ambiguous ====================
+
+    public static class MultiCreator {
+        public int x;
+        public String y;
+
+        @JSONCreator
+        public static MultiCreator byInt(@JSONField(name = "x") int x) {
+            MultiCreator m = new MultiCreator();
+            m.x = x;
+            return m;
+        }
+
+        @JSONCreator
+        public static MultiCreator byString(@JSONField(name = "y") String y) {
+            MultiCreator m = new MultiCreator();
+            m.y = y;
+            return m;
+        }
+    }
+
+    @Test
+    public void multipleAnnotatedFactoriesRejected() {
+        // Declared-method order is JVM-unspecified; silently picking first
+        // found would produce non-deterministic behaviour across runs.
+        // ObjectMapper's auto-create path swallows the creator exception as
+        // "no ObjectReader registered" — call the creator directly so the
+        // targeted error surfaces unchanged.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(MultiCreator.class));
+        assertTrue(ex.getMessage().contains("multiple"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("byInt")
+                        && ex.getMessage().contains("byString"),
+                "expected both method names in: " + ex.getMessage());
+    }
+
+    // ==================== @JSONField(unwrapped=true) on factory param rejected ====================
+
+    public static class UnwrappedInner {
+        public String city;
+    }
+
+    public static class UnwrappedFactoryHost {
+        public UnwrappedInner addr;
+        public String name;
+
+        @JSONCreator
+        public static UnwrappedFactoryHost make(
+                @JSONField(unwrapped = true) UnwrappedInner addr,
+                @JSONField(name = "name") String name) {
+            UnwrappedFactoryHost h = new UnwrappedFactoryHost();
+            h.addr = addr;
+            h.name = name;
+            return h;
+        }
+    }
+
+    @Test
+    public void unwrappedOnFactoryParamRejected() {
+        // Factory path doesn't wire up scratch-inner machinery; silently
+        // dropping the annotation would lose inner-field routing.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(UnwrappedFactoryHost.class));
+        assertTrue(ex.getMessage().contains("unwrapped"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("not supported"), ex.getMessage());
+    }
 }

@@ -127,21 +127,25 @@ public final class ObjectReaderCreator {
             }
         }
 
+        // Static @JSONCreator / Jackson @JsonCreator factory method takes precedence
+        // over constructor resolution — Jackson-style immutable-wrapper classes
+        // (Money of(BigDecimal v), Optional-like wrappers, value-object factories)
+        // often expose only a static factory rather than a public constructor.
+        // Checked BEFORE the interface / abstract guard so a factory declared on
+        // an interface (`interface Currency { @JSONCreator static Currency of(…) }`)
+        // is reachable — otherwise the caller would hit "cannot deserialize
+        // interface" even though a valid creator exists.
+        Method staticFactory = resolveStaticFactoryMethod(type, mixIn, useJacksonAnnotation);
+        if (staticFactory != null) {
+            return createStaticFactoryReader(type, contextType, staticFactory, mixIn, useJacksonAnnotation);
+        }
+
         // Abstract class or interface without polymorphic info: no way to construct.
         // Return null so the caller (JSONParser.read) can raise a targeted error
         // that distinguishes "no registered reader (maybe handled by a parser
         // special case)" from "abstract type with no discriminator registered".
         if (type.isInterface() || Modifier.isAbstract(type.getModifiers())) {
             return null;
-        }
-
-        // Static @JSONCreator / Jackson @JsonCreator factory method takes precedence
-        // over constructor resolution — Jackson-style immutable-wrapper classes
-        // (Money of(BigDecimal v), Optional-like wrappers, value-object factories)
-        // often expose only a static factory rather than a public constructor.
-        Method staticFactory = resolveStaticFactoryMethod(type, mixIn, useJacksonAnnotation);
-        if (staticFactory != null) {
-            return createStaticFactoryReader(type, contextType, staticFactory, mixIn, useJacksonAnnotation);
         }
 
         Constructor<T> constructor = resolveConstructor(type, mixIn, useJacksonAnnotation);
@@ -3356,6 +3360,7 @@ public final class ObjectReaderCreator {
     }
 
     private static Method scanStaticFactory(Class<?> owner, Class<?> annotationHost, boolean useJacksonAnnotation) {
+        Method chosen = null;
         for (Method m : annotationHost.getDeclaredMethods()) {
             if (!Modifier.isStatic(m.getModifiers())) {
                 continue;
@@ -3365,11 +3370,21 @@ public final class ObjectReaderCreator {
             }
             boolean marked = m.isAnnotationPresent(JSONCreator.class)
                     || (useJacksonAnnotation && JacksonAnnotationSupport.hasJsonCreator(m));
-            if (marked) {
-                return m;
+            if (!marked) {
+                continue;
             }
+            if (chosen != null) {
+                // Declared-method order is JVM-unspecified, so silently picking
+                // "first found" would be non-deterministic. Match Jackson's
+                // behaviour (InvalidDefinitionException on conflicting creators)
+                // so the ambiguity surfaces at construction time with both names.
+                throw new JSONException("multiple @JSONCreator factory methods on "
+                        + annotationHost.getName() + ": " + chosen.getName()
+                        + " and " + m.getName() + " — mark only one");
+            }
+            chosen = m;
         }
-        return null;
+        return chosen;
     }
 
     /**
@@ -3414,6 +3429,18 @@ public final class ObjectReaderCreator {
         for (int i = 0; i < paramTypes.length; i++) {
             Parameter p = parameters[i];
             JSONField annotation = p.getAnnotation(JSONField.class);
+
+            // @JSONField(unwrapped=true) would need the record/ctor-path's
+            // scratch-inner machinery (paramMapping + expandRecordUnwrapped),
+            // which this reader doesn't wire up. Silently dropping the
+            // annotation would lose inner-field routing; reject loudly so the
+            // user knows to use a constructor or direct record instead.
+            if (annotation != null && annotation.unwrapped()) {
+                throw new JSONException("@JSONField(unwrapped=true) on factory parameter '"
+                        + p.getName() + "' of " + factory.getDeclaringClass().getName()
+                        + "." + factory.getName()
+                        + " is not supported — use a constructor or record instead");
+            }
 
             String rawName;
             if (overrideNames.length > i && !overrideNames[i].isEmpty()) {
