@@ -1219,35 +1219,48 @@ public final class ObjectWriterCreator {
     }
 
     private static boolean findMixInJacksonAnyGetter(Class<?> mixIn, Method targetMethod) {
-        // Walk the mix-in's superclass + interface chain — a common Jackson
-        // pattern is `class UserMixIn extends BaseMixIn` where @JsonAnyGetter
-        // lives on BaseMixIn. `getDeclaredMethod` on UserMixIn alone misses
-        // the annotation, silently dropping the anyGetter and emitting both
-        // the wrapping slot AND the flattened keys. The native @JSONField
-        // path already walks the chain via findMixInAnnotation; the Jackson
-        // branch was asymmetric.
-        for (Class<?> host = mixIn; host != null && host != Object.class; host = host.getSuperclass()) {
-            if (checkMixInHostForJacksonAnyGetter(host, targetMethod)) {
+        // Use getMethods() for the full transitive closure — inherited
+        // public methods from all superclasses AND all (transitively) declared
+        // interfaces are included. Covers:
+        //   - interface A extends B (annotation on B), mixIn implements A
+        //   - ChildMixIn extends ParentMixIn implements IBase (annotation on IBase)
+        // Then fall back to a superclass chain walk that hits DECLARED methods
+        // including package-private / protected ones which getMethods() skips.
+        String name = targetMethod.getName();
+        Class<?>[] pts = targetMethod.getParameterTypes();
+        for (Method m : mixIn.getMethods()) {
+            if (m.getName().equals(name)
+                    && java.util.Arrays.equals(m.getParameterTypes(), pts)
+                    && isJacksonAnyGetter(m)) {
                 return true;
             }
         }
-        // Mix-in interfaces can also host the annotation (default methods or
-        // abstract method declarations with @JsonAnyGetter).
-        for (Class<?> iface : mixIn.getInterfaces()) {
-            if (checkMixInHostForJacksonAnyGetter(iface, targetMethod)) {
-                return true;
+        // Non-public method declarations — getMethods() only returns public.
+        // Walk the class chain + all interface layers via getDeclaredMethods.
+        java.util.Set<Class<?>> visited = new java.util.HashSet<>();
+        java.util.Deque<Class<?>> stack = new java.util.ArrayDeque<>();
+        stack.push(mixIn);
+        while (!stack.isEmpty()) {
+            Class<?> host = stack.pop();
+            if (host == null || host == Object.class || !visited.add(host)) {
+                continue;
+            }
+            try {
+                Method m = host.getDeclaredMethod(name, pts);
+                if (isJacksonAnyGetter(m)) {
+                    return true;
+                }
+            } catch (NoSuchMethodException ignored) {
+                // not declared on this host
+            }
+            if (host.getSuperclass() != null) {
+                stack.push(host.getSuperclass());
+            }
+            for (Class<?> iface : host.getInterfaces()) {
+                stack.push(iface);
             }
         }
         return false;
-    }
-
-    private static boolean checkMixInHostForJacksonAnyGetter(Class<?> host, Method targetMethod) {
-        try {
-            Method mixInMethod = host.getDeclaredMethod(targetMethod.getName(), targetMethod.getParameterTypes());
-            return isJacksonAnyGetter(mixInMethod);
-        } catch (NoSuchMethodException ignored) {
-            return false;
-        }
     }
 
     private static String resolveLabel(JSONField jsonField, Field backingField, Class<?> mixIn) {

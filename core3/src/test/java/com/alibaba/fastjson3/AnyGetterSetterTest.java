@@ -431,4 +431,82 @@ public class AnyGetterSetterTest {
         assertTrue(json.contains("\"k\":\"v\""), json);
         assertTrue(json.contains("\"name\":\"bob\""), json);
     }
+
+    // Round-6: R5's walk missed transitive interfaces.
+    //   Gap A: interface A extends B with annotation on B, mixIn implements A.
+    //   Gap B: ChildMixIn extends ParentMixIn implements IBase (annot on IBase).
+
+    public interface IBaseAnyGetter {
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        Map<String, Object> getExtras();
+    }
+
+    public interface IChildAnyGetter extends IBaseAnyGetter {
+    }
+
+    public static class TransitiveInterfaceMixInTarget {
+        public String name = "bob";
+        public Map<String, Object> extras = new LinkedHashMap<>();
+
+        public TransitiveInterfaceMixInTarget() {
+            extras.put("k", "v");
+        }
+
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+    }
+
+    public abstract static class TransitiveInterfaceMixIn implements IChildAnyGetter {
+    }
+
+    @Test
+    public void mixInJacksonAnyGetterTransitiveInterface() {
+        ObjectMapper jackson = ObjectMapper.builder()
+                .useJacksonAnnotation(true)
+                .addMixIn(TransitiveInterfaceMixInTarget.class, TransitiveInterfaceMixIn.class)
+                .build();
+        String json = jackson.writeValueAsString(new TransitiveInterfaceMixInTarget());
+        assertFalse(json.contains("\"extras\":"),
+                "transitive interface @JsonAnyGetter must be recognised: " + json);
+        assertTrue(json.contains("\"k\":\"v\""), json);
+        assertTrue(json.contains("\"name\":\"bob\""), json);
+    }
+
+    public interface IBaseAnyGetter2 {
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        Map<String, Object> getExtras();
+    }
+
+    public abstract static class ParentMixInImplementsBase implements IBaseAnyGetter2 {
+    }
+
+    public abstract static class ChildMixIn2 extends ParentMixInImplementsBase {
+    }
+
+    public static class SuperclassInterfaceTarget {
+        public String id = "S";
+        public Map<String, Object> extras = new LinkedHashMap<>();
+
+        public SuperclassInterfaceTarget() {
+            extras.put("z", 7);
+        }
+
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+    }
+
+    @Test
+    public void mixInJacksonAnyGetterSuperclassInterface() {
+        ObjectMapper jackson = ObjectMapper.builder()
+                .useJacksonAnnotation(true)
+                .addMixIn(SuperclassInterfaceTarget.class, ChildMixIn2.class)
+                .build();
+        String json = jackson.writeValueAsString(new SuperclassInterfaceTarget());
+        assertFalse(json.contains("\"extras\":"),
+                "superclass's interface @JsonAnyGetter must be recognised: " + json);
+        assertTrue(json.contains("\"z\":7"), json);
+        assertTrue(json.contains("\"id\":\"S\""), json);
+    }
 }
