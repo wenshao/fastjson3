@@ -667,4 +667,52 @@ class NumberEdgeCaseTest {
                 () -> JSON.parseObject(huge, BigDecimal.class));
     }
 
+    // Round-8 F1: pure-digit input (no `e`/`E`) over the cap fell through
+    // to `new BigDecimal(numStr)` because the !hasExp branch only returned
+    // on SAFE inputs — it had no "reject if too long" side.  The R7 gate
+    // only covered hasExp=true, leaving the plain-digit case open.
+    // Reproduced at 12.7s per request before fix.
+    @Test
+    void hugePureDigitStringRejectedFast() {
+        String huge = "1".repeat(10_000);
+        long t0 = System.nanoTime();
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSONParser.checkBigNumberMagnitude(huge));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(elapsedMs < 1000,
+                "should reject pure-digit over-cap quickly, took " + elapsedMs + "ms");
+        assertTrue(ex.getMessage().contains("mantissa length"), ex.getMessage());
+    }
+
+    @Test
+    void hugePureDigitViaJSONObjectAccessors() {
+        String huge = "1".repeat(10_000);
+        JSONObject obj = JSON.parseObject("{\"v\":\"" + huge + "\"}");
+        long t0 = System.nanoTime();
+        assertThrows(JSONException.class, () -> obj.getBigDecimal("v"));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(elapsedMs < 1000,
+                "JSONObject.getBigDecimal over-cap reject must be fast, took " + elapsedMs + "ms");
+    }
+
+    @Test
+    void hugePureDigitViaJSONArrayAccessors() {
+        String huge = "1".repeat(10_000);
+        JSONArray arr = JSON.parseArray("[\"" + huge + "\"]");
+        long t0 = System.nanoTime();
+        assertThrows(JSONException.class, () -> arr.getBigDecimal(0));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(elapsedMs < 1000,
+                "JSONArray.getBigDecimal over-cap reject must be fast, took " + elapsedMs + "ms");
+    }
+
+    @Test
+    void at4096PureDigitStillAcceptedAsString() {
+        // Regression: the exact cap boundary (4096 pure digits, no sign, no dot)
+        // must still pass through to BigInteger construction.
+        String boundary = "1".repeat(4096);
+        BigInteger bi = JSON.parseObject("\"" + boundary + "\"", BigInteger.class);
+        assertEquals(new BigInteger(boundary), bi);
+    }
+
 }

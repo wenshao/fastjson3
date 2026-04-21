@@ -1162,6 +1162,17 @@ public abstract sealed class JSONParser implements Closeable
             if (len - signAdjust <= MAX_BIG_INTEGER_DIGITS) {
                 return;
             }
+            // Pure-digit (and possibly dotted) input whose raw length already
+            // blows the cap — reject early. Previously the !hasExp branch only
+            // returned on SAFE inputs; oversized pure-digit strings fell
+            // through to `new BigDecimal(numStr)` and burned O(n^2) CPU
+            // parsing a doomed-to-reject bignum (12+ s on 1M-digit input).
+            // The mantissa directly bounds BigDecimal.precision(), so any
+            // input exceeding the cap by more than a single dot is guaranteed
+            // to trip the later digits check — reject now.
+            throw new JSONException("BigInteger/BigDecimal mantissa length "
+                    + (len - signAdjust)
+                    + " exceeds the maximum safe bound for parsing");
         }
         // Fast-path rejection for pathological exponents BEFORE calling
         // `new BigDecimal(numStr)` — a 13-char input `"1e2147483647"` would
