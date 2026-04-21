@@ -605,4 +605,65 @@ public class AnyGetterSetterTest {
         assertTrue(json.contains(WriteClassNameAnyGetterDog.class.getName()), json);
         assertTrue(json.contains("\"e\":1"), json);
     }
+
+    // Round-9 F2: null keys in the anyGetter map must not silently stringify to
+    // "null" (collides with a legitimate "null" entry — silent data corruption).
+    public static class NullKeyAnyGetter {
+        private final Map<String, Object> extras = new LinkedHashMap<>();
+
+        public NullKeyAnyGetter() {
+            extras.put(null, "value-for-null-key");
+        }
+
+        @JSONField(anyGetter = true)
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+    }
+
+    @Test
+    public void anyGetterMapWithNullKeyIsRejected() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> MAPPER.writeValueAsString(new NullKeyAnyGetter()));
+        assertTrue(ex.getMessage().contains("null key"), ex.getMessage());
+    }
+
+    // Round-9 F1: self-referencing anyGetter map used to produce an
+    // exception chain of size proportional to stack depth (each recursion's
+    // catch block wrapped an inner JSONException in a fresh JSONException,
+    // allocating a full stack trace). Post-fix: writeAny's JSONException
+    // propagates unchanged, so the outer caller sees a single exception
+    // from the depth / reference cap.
+    public static class SelfRefAnyGetter {
+        private final Map<String, Object> extras = new LinkedHashMap<>();
+
+        public SelfRefAnyGetter() {
+            // The map contains THIS bean — recursive write would loop via anyGetter.
+            extras.put("self", this);
+        }
+
+        @JSONField(anyGetter = true)
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+    }
+
+    @Test
+    public void selfRefAnyGetterDoesNotAmplifyExceptionChain() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .enableWrite(WriteFeature.ReferenceDetection)
+                .build();
+        // With ReferenceDetection enabled, the circular reference is caught
+        // cleanly. The inner JSONException must not be wrapped in a new
+        // "anyGetter error" layer — that was the R9 amplification.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> mapper.writeValueAsString(new SelfRefAnyGetter()));
+        // Count the chain depth — must NOT be amplified per-recursion.
+        int depth = 0;
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            depth++;
+        }
+        assertTrue(depth <= 4,
+                "exception chain must not scale with recursion depth, got " + depth);
+    }
 }

@@ -762,18 +762,38 @@ public final class ObjectWriterCreator {
                 }
                 writeFields(generator, writers, object, features);
                 if (anyGetterMethod != null) {
+                    java.util.Map<?, ?> extra;
                     try {
-                        java.util.Map<?, ?> extra = (java.util.Map<?, ?>) anyGetterMethod.invoke(object);
-                        if (extra != null) {
-                            for (java.util.Map.Entry<?, ?> e : extra.entrySet()) {
-                                generator.writeName(String.valueOf(e.getKey()));
-                                generator.writeAny(e.getValue());
-                            }
-                        }
+                        extra = (java.util.Map<?, ?>) anyGetterMethod.invoke(object);
                     } catch (java.lang.reflect.InvocationTargetException e) {
                         throw new com.alibaba.fastjson3.JSONException("anyGetter error", e.getTargetException());
-                    } catch (Exception e) {
+                    } catch (IllegalAccessException e) {
                         throw new com.alibaba.fastjson3.JSONException("anyGetter error", e);
+                    }
+                    if (extra != null) {
+                        for (java.util.Map.Entry<?, ?> e : extra.entrySet()) {
+                            Object rawKey = e.getKey();
+                            if (rawKey == null) {
+                                // Jackson errors on null keys when no keySerializer
+                                // is configured; fj3 has no keySerializer mechanism,
+                                // so reject rather than silently emit literal "null"
+                                // that collides with a legitimate "null" entry.
+                                throw new com.alibaba.fastjson3.JSONException(
+                                        "anyGetter on " + anyGetterMethod.getDeclaringClass().getName()
+                                                + "." + anyGetterMethod.getName()
+                                                + " returned a Map with a null key");
+                            }
+                            // writeAny may itself throw JSONException (e.g. from
+                            // circular reference / depth-cap detection). Let it
+                            // propagate unchanged — wrapping each recursion in
+                            // a fresh JSONException("anyGetter error", inner)
+                            // allocates a per-frame stack trace and amplifies
+                            // exception chain size proportional to recursion
+                            // depth (R9 F1 — ~1KB per frame × 512 frames =
+                            // 512KB/attack on self-referencing anyGetter maps).
+                            generator.writeName(rawKey instanceof String s ? s : rawKey.toString());
+                            generator.writeAny(e.getValue());
+                        }
                     }
                 }
                 // After filters
