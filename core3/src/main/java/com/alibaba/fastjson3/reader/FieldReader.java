@@ -576,6 +576,23 @@ public final class FieldReader implements Comparable<FieldReader> {
             if (fieldClass == AtomicLong.class) {
                 return new AtomicLong(number.longValue());
             }
+            if (fieldClass == java.math.BigDecimal.class) {
+                return toBigDecimal(number);
+            }
+            if (fieldClass == java.math.BigInteger.class) {
+                // Accept fractional sources (3.14 → 3) by routing through
+                // BigDecimal, matching the typed-target parse path. An integer
+                // Number is returned directly without lossy string conversion.
+                if (number instanceof java.math.BigInteger bi) {
+                    return bi;
+                }
+                if (number instanceof Integer || number instanceof Long
+                        || number instanceof Short || number instanceof Byte
+                        || number instanceof AtomicInteger || number instanceof AtomicLong) {
+                    return java.math.BigInteger.valueOf(number.longValue());
+                }
+                return toBigDecimal(number).toBigInteger();
+            }
             // Number → temporal type conversion (millis timestamp)
             long millis = number.longValue();
             if (fieldClass == Date.class) {
@@ -638,6 +655,33 @@ public final class FieldReader implements Comparable<FieldReader> {
             // String → JDK types (builtin codecs)
             if (fieldClass == UUID.class) {
                 return UUID.fromString(str);
+            }
+            if (fieldClass == java.math.BigDecimal.class) {
+                // Apply the same magnitude cap the parser uses on in-stream
+                // literals — otherwise a 1 MB quoted-integer payload on a
+                // BigDecimal field would produce a 1M-digit bignum (round 4's
+                // cap was only on the scientific-notation branch).
+                com.alibaba.fastjson3.JSONParser.checkBigNumberMagnitude(str);
+                try {
+                    return new java.math.BigDecimal(str);
+                } catch (NumberFormatException e) {
+                    throw new JSONException("invalid BigDecimal literal '" + str
+                            + "' for field " + fieldName, e);
+                }
+            }
+            if (fieldClass == java.math.BigInteger.class) {
+                // Same cap as above applied BEFORE either branch — pure-digit
+                // strings were unbounded in round 4.
+                com.alibaba.fastjson3.JSONParser.checkBigNumberMagnitude(str);
+                try {
+                    if (str.indexOf('.') >= 0 || str.indexOf('e') >= 0 || str.indexOf('E') >= 0) {
+                        return new java.math.BigDecimal(str).toBigInteger();
+                    }
+                    return new java.math.BigInteger(str);
+                } catch (NumberFormatException | ArithmeticException e) {
+                    throw new JSONException("invalid BigInteger literal '" + str
+                            + "' for field " + fieldName, e);
+                }
             }
             if (fieldClass == Duration.class) {
                 return Duration.parse(str);

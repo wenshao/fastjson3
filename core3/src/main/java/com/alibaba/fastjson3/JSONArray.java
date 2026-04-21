@@ -134,8 +134,13 @@ public class JSONArray extends ArrayList<Object> {
         if (val instanceof Number) {
             return BigDecimal.valueOf(((Number) val).doubleValue());
         }
-        if (val instanceof String) {
-            return new BigDecimal((String) val);
+        if (val instanceof String s) {
+            JSONParser.checkBigNumberMagnitude(s);
+            try {
+                return new BigDecimal(s);
+            } catch (NumberFormatException e) {
+                throw new JSONException("parse BigDecimal error at JSONArray[" + index + "]: " + s, e);
+            }
         }
         throw new JSONException("Cannot cast JSONArray[" + index + "] from "
             + val.getClass().getSimpleName() + " to BigDecimal: " + val);
@@ -152,8 +157,13 @@ public class JSONArray extends ArrayList<Object> {
         if (val instanceof Number) {
             return BigInteger.valueOf(((Number) val).longValue());
         }
-        if (val instanceof String) {
-            return new BigInteger((String) val);
+        if (val instanceof String s) {
+            JSONParser.checkBigNumberMagnitude(s);
+            try {
+                return new BigInteger(s);
+            } catch (NumberFormatException e) {
+                throw new JSONException("parse BigInteger error at JSONArray[" + index + "]: " + s, e);
+            }
         }
         throw new JSONException("Cannot cast JSONArray[" + index + "] from "
             + val.getClass().getSimpleName() + " to BigInteger: " + val);

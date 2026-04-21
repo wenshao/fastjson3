@@ -307,4 +307,446 @@ class NumberEdgeCaseTest {
         assertEquals(BigInteger.valueOf(42), obj.getBigInteger("val"));
     }
 
+    // ==================== Top-level BigDecimal / BigInteger target ====================
+
+    @Test
+    void topLevelBigDecimal_fromFloatLiteral() {
+        // parseObject("3.14", BigDecimal.class) used to throw
+        // ClassCastException: Double cannot be cast to BigDecimal
+        BigDecimal bd = JSON.parseObject("3.14", BigDecimal.class);
+        assertEquals(new BigDecimal("3.14"), bd);
+    }
+
+    @Test
+    void topLevelBigDecimal_preservesPrecision() {
+        // Round-tripping via Double would truncate to 15–17 significant digits.
+        BigDecimal bd = JSON.parseObject("3.141592653589793238462643383279", BigDecimal.class);
+        assertEquals(new BigDecimal("3.141592653589793238462643383279"), bd);
+    }
+
+    @Test
+    void topLevelBigDecimal_null() {
+        assertNull(JSON.parseObject("null", BigDecimal.class));
+    }
+
+    @Test
+    void topLevelBigInteger_fromInt() {
+        assertEquals(BigInteger.valueOf(42), JSON.parseObject("42", BigInteger.class));
+    }
+
+    @Test
+    void topLevelBigInteger_fromLargeInt() {
+        BigInteger bi = JSON.parseObject("12345678901234567890", BigInteger.class);
+        assertEquals(new BigInteger("12345678901234567890"), bi);
+    }
+
+    @Test
+    void topLevelBigInteger_truncatesFloat() {
+        // Match Jackson tolerance: 3.14 on a BigInteger target rounds down to 3.
+        BigInteger bi = JSON.parseObject("3.14", BigInteger.class);
+        assertEquals(BigInteger.valueOf(3), bi);
+    }
+
+    // ==================== Record / POJO component BigDecimal + BigInteger ====================
+
+    public record MoneyRec(BigDecimal price, BigInteger txId) {
+    }
+
+    public static class MoneyPojo {
+        public BigDecimal price;
+        public BigInteger txId;
+    }
+
+    @Test
+    void recordBigDecimalBigIntegerFields() {
+        // Record canonical-ctor path; used to throw "argument type mismatch"
+        // because convertValue produced a Double for a BigDecimal component.
+        MoneyRec r = JSON.parseObject(
+                "{\"price\":99.95,\"txId\":12345678901234567890}", MoneyRec.class);
+        assertEquals(new BigDecimal("99.95"), r.price);
+        assertEquals(new BigInteger("12345678901234567890"), r.txId);
+    }
+
+    @Test
+    void pojoBigDecimalBigIntegerFields() {
+        MoneyPojo p = JSON.parseObject(
+                "{\"price\":99.95,\"txId\":12345678901234567890}", MoneyPojo.class);
+        assertEquals(new BigDecimal("99.95"), p.price);
+        assertEquals(new BigInteger("12345678901234567890"), p.txId);
+    }
+
+    @Test
+    void pojoBigDecimalFromStringValue() {
+        // "99.95" as a quoted string still produces the decimal value — common
+        // in APIs that return money amounts as strings to dodge JS precision.
+        MoneyPojo p = JSON.parseObject("{\"price\":\"99.95\",\"txId\":\"42\"}", MoneyPojo.class);
+        assertEquals(new BigDecimal("99.95"), p.price);
+        assertEquals(BigInteger.valueOf(42), p.txId);
+    }
+
+    // ==================== In-parser dispatch accepts quoted strings ====================
+    // Round-1 audit: the read(Class) fast path called readBigDecimalLiteral
+    // directly and threw on quoted input, while BuiltinCodecs accepted it —
+    // different behaviour for the same input depending on entry point. The
+    // parseObject variant with ReadFeature overrides uses the in-parser path.
+
+    @Test
+    void topLevelBigDecimalFromQuotedStringWithFeature() {
+        BigDecimal bd = JSON.parseObject("\"3.14\"", BigDecimal.class,
+                ReadFeature.UseBigDecimalForDoubles);
+        assertEquals(new BigDecimal("3.14"), bd);
+    }
+
+    @Test
+    void topLevelBigDecimalFromQuotedStringDefault() {
+        BigDecimal bd = JSON.parseObject("\"99.95\"", BigDecimal.class);
+        assertEquals(new BigDecimal("99.95"), bd);
+    }
+
+    @Test
+    void topLevelBigIntegerFromQuotedString() {
+        BigInteger bi = JSON.parseObject("\"12345678901234567890\"", BigInteger.class);
+        assertEquals(new BigInteger("12345678901234567890"), bi);
+    }
+
+    @Test
+    void topLevelBigIntegerFromQuotedFractionalString() {
+        // Jackson-style tolerance: "3.14" on a BigInteger target truncates to 3.
+        BigInteger bi = JSON.parseObject("\"3.14\"", BigInteger.class);
+        assertEquals(BigInteger.valueOf(3), bi);
+    }
+
+    // Round-2 audit: BuiltinCodecs previously duplicated the quote-peek with
+    // an unguarded charAt, so whitespace-only input blew past end() with
+    // AIOOBE, and single-quote bypassed the AllowSingleQuotes feature check.
+
+    @Test
+    void whitespaceOnlyInputRaisesCleanJsonException() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("   ", BigDecimal.class));
+        assertTrue(ex.getMessage().toLowerCase().contains("unexpected")
+                        || ex.getMessage().toLowerCase().contains("number"),
+                "expected clean number-parse error, got: " + ex.getMessage());
+    }
+
+    @Test
+    void singleQuoteInputRejectedWithoutAllowSingleQuotesFeature() {
+        // readString rejects single quotes without the feature; BuiltinCodecs
+        // must not bypass that gate with its own quote-peek.
+        assertThrows(Exception.class,
+                () -> JSON.parseObject("'3.14'", BigDecimal.class));
+    }
+
+    // Round-4: NFE/ArithmeticException must not leak as non-JSONException
+    // (violates framework contract). Plus a digit cap on BigInteger
+    // toBigInteger expansion to block DoS amplification where 16-byte
+    // input -> ~400 KB bignum.
+
+    @Test
+    void bigDecimalMalformedQuotedInputRaisesJsonException() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"abc\"", BigDecimal.class));
+        assertTrue(ex.getMessage().contains("abc")
+                        || ex.getMessage().toLowerCase().contains("invalid"),
+                ex.getMessage());
+    }
+
+    @Test
+    void bigDecimalNaNQuotedRaisesJsonException() {
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"NaN\"", BigDecimal.class));
+    }
+
+    @Test
+    void bigIntegerMalformedQuotedInputRaisesJsonException() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"abc\"", BigInteger.class));
+        assertTrue(ex.getMessage().contains("abc")
+                        || ex.getMessage().toLowerCase().contains("invalid"),
+                ex.getMessage());
+    }
+
+    @Test
+    void bigIntegerHugeExponentRejectedToBlockDoSAmplification() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("1e1000000", BigInteger.class));
+        assertTrue(ex.getMessage().contains("digits")
+                        || ex.getMessage().toLowerCase().contains("exceeds"),
+                ex.getMessage());
+    }
+
+    @Test
+    void bigIntegerHugeExponentFromQuotedStringRejected() {
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"1e1000000\"", BigInteger.class));
+    }
+
+    @Test
+    void bigIntegerReasonableExponentStillAccepted() {
+        // 100 digits — well under the 4096 cap. Covers legitimate big-int use.
+        BigInteger bi = JSON.parseObject("1e100", BigInteger.class);
+        assertEquals(new BigInteger("1" + "0".repeat(100)), bi);
+    }
+
+    public static class BigDecPojo {
+        public BigDecimal price;
+    }
+
+    public static class BigIntPojo {
+        public BigInteger count;
+    }
+
+    @Test
+    void pojoBigDecimalMalformedStringRaisesJsonException() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.parseObject("{\"price\":\"abc\"}", BigDecPojo.class));
+        assertTrue(ex.getMessage().contains("abc")
+                        || ex.getMessage().toLowerCase().contains("invalid"),
+                ex.getMessage());
+    }
+
+    @Test
+    void pojoBigIntegerHugeExponentStringRejected() {
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("{\"count\":\"1e1000000\"}", BigIntPojo.class));
+    }
+
+    // Round-5: the R4 cap only covered the `.`/`e`/`E` branches. Pure-
+    // digit strings bypassed the cap — a 1 MB quoted `"111...1"` produced
+    // a 1M-digit BigInteger with 12+ s CPU. Route every bignum site
+    // through `checkBigNumberMagnitude` so no branch is unbounded.
+
+    @Test
+    void topLevelBigIntegerPureDigitStringCapped() {
+        String huge = "1".repeat(10_000);
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"" + huge + "\"", BigInteger.class));
+    }
+
+    @Test
+    void bareLiteralBigIntegerPureDigitCapped() {
+        String huge = "1".repeat(10_000);
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject(huge, BigInteger.class));
+    }
+
+    @Test
+    void topLevelBigDecimalPureDigitStringCapped() {
+        String huge = "1".repeat(10_000);
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("\"" + huge + "\"", BigDecimal.class));
+    }
+
+    @Test
+    void pojoBigIntegerPureDigitStringCapped() {
+        String huge = "1".repeat(10_000);
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("{\"count\":\"" + huge + "\"}", BigIntPojo.class));
+    }
+
+    @Test
+    void pojoBigDecimalPureDigitStringCapped() {
+        String huge = "1".repeat(10_000);
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("{\"price\":\"" + huge + "\"}", BigDecPojo.class));
+    }
+
+    @Test
+    void at4096DigitBoundaryStillAcceptedAsQuotedString() {
+        // Quoted-string path: MAX_NUMBER_LENGTH doesn't apply (it's a string
+        // literal), so exactly 4096 digits lands at the magnitude cap boundary
+        // and must be accepted.
+        String boundary = "1".repeat(4096);
+        BigInteger bi = JSON.parseObject("\"" + boundary + "\"", BigInteger.class);
+        assertEquals(new BigInteger(boundary), bi);
+    }
+
+    // Round-6: R5 cap reopened on 3 adjacent paths.
+    //
+    // F1: `precision() - scale()` was `int` subtraction — "1e2147483647"
+    //     (13 chars) overflows to Integer.MIN_VALUE, wrapping past the cap.
+    //     Fix: reject absurd exponents BEFORE BigDecimal parse, use long
+    //     arithmetic in the post-parse check.
+    // F2: readNumber float branch with UseBigDecimalForDoubles was uncapped.
+    //     `parseObject("1e1000000", Object.class, UseBigDecimalForDoubles)`
+    //     produced a 1M-digit BigDecimal.
+    // F3: JSONObject.getBigDecimal / getBigInteger on a String value
+    //     called new BigDecimal/new BigInteger with no cap.
+
+    @Test
+    void hugeExponentIntOverflowBlocked() {
+        // Pre-fix: "1e2147483647" was 13 chars, passed length check,
+        // BigDecimal.precision - scale overflowed to Integer.MIN_VALUE,
+        // passed the `> 4096` check, expanded to a 2B-digit bignum.
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("1e2147483647", BigInteger.class));
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("1e2147483647", BigDecimal.class));
+    }
+
+    @Test
+    void readNumberFloatBranchCapsUseBigDecimalForDoubles() {
+        // parseObject with Object target + UseBigDecimalForDoubles goes
+        // through readNumber's float branch (not readBigDecimalLiteral).
+        // Must apply the same magnitude cap.
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("1e1000000", Object.class,
+                        ReadFeature.UseBigDecimalForDoubles));
+    }
+
+    @Test
+    void jsonObjectGetBigDecimalCapsStringValue() {
+        // 1 MB of digits in a JSONObject string value. getBigDecimal must
+        // enforce the cap — pre-fix it did `new BigDecimal(str)` unchecked.
+        String huge = "1".repeat(10_000);
+        JSONObject obj = JSON.parseObject("{\"v\":\"" + huge + "\"}");
+        assertThrows(JSONException.class, () -> obj.getBigDecimal("v"));
+    }
+
+    @Test
+    void jsonObjectGetBigIntegerCapsStringValue() {
+        String huge = "1".repeat(10_000);
+        JSONObject obj = JSON.parseObject("{\"v\":\"" + huge + "\"}");
+        assertThrows(JSONException.class, () -> obj.getBigInteger("v"));
+    }
+
+    @Test
+    void jsonObjectGetBigDecimalSmallValueStillWorks() {
+        // Regression: legitimate small values must still parse through.
+        JSONObject obj = JSON.parseObject("{\"v\":\"3.14\"}");
+        assertEquals(new BigDecimal("3.14"), obj.getBigDecimal("v"));
+    }
+
+    // Round-7 F1: symmetric JSONArray accessors missed the cap.
+    @Test
+    void jsonArrayGetBigDecimalCapsStringValue() {
+        String huge = "1".repeat(10_000);
+        JSONArray arr = JSON.parseArray("[\"" + huge + "\"]");
+        assertThrows(JSONException.class, () -> arr.getBigDecimal(0));
+    }
+
+    @Test
+    void jsonArrayGetBigIntegerCapsStringValue() {
+        String huge = "1".repeat(10_000);
+        JSONArray arr = JSON.parseArray("[\"" + huge + "\"]");
+        assertThrows(JSONException.class, () -> arr.getBigInteger(0));
+    }
+
+    @Test
+    void jsonArrayGetBigDecimalSmallValueStillWorks() {
+        JSONArray arr = JSON.parseArray("[\"3.14\"]");
+        assertEquals(new BigDecimal("3.14"), arr.getBigDecimal(0));
+    }
+
+    // Round-7 F2: long-mantissa + short-exponent bypassed the helper's
+    // own gating. "1" + "0"*1_000_000 + "e1" had hasExp=true (so the raw
+    // length shortcut was skipped), short post-e digits (so the exponent
+    // gate passed), and fell into `new BigDecimal(numStr)` — 12+ seconds
+    // to reject. Must reject on mantissa length before allocating.
+    @Test
+    void hugeMantissaWithShortExponentRejectedFast() {
+        String huge = "1" + "0".repeat(10_000) + "e1";
+        long t0 = System.nanoTime();
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSONParser.checkBigNumberMagnitude(huge));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        // The pre-fix path took ~200ms for a 10k mantissa; the post-fix
+        // reject is string-length-bounded and completes in single-digit
+        // milliseconds. Generous budget avoids flake on slow CI.
+        assertTrue(elapsedMs < 1000,
+                "checkBigNumberMagnitude should reject huge mantissa quickly, took " + elapsedMs + "ms");
+        assertTrue(ex.getMessage().contains("mantissa length"), ex.getMessage());
+    }
+
+    @Test
+    void hugeMantissaViaParseObjectRejected() {
+        // End-to-end: the same payload reaching BigDecimal materialisation
+        // via parseObject must reject via the helper.
+        String huge = "\"1" + "0".repeat(10_000) + "e1\"";
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject(huge, BigDecimal.class));
+    }
+
+    // Round-8 F1: pure-digit input (no `e`/`E`) over the cap fell through
+    // to `new BigDecimal(numStr)` because the !hasExp branch only returned
+    // on SAFE inputs — it had no "reject if too long" side.  The R7 gate
+    // only covered hasExp=true, leaving the plain-digit case open.
+    // Reproduced at 12.7s per request before fix.
+    @Test
+    void hugePureDigitStringRejectedFast() {
+        String huge = "1".repeat(10_000);
+        long t0 = System.nanoTime();
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSONParser.checkBigNumberMagnitude(huge));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(elapsedMs < 1000,
+                "should reject pure-digit over-cap quickly, took " + elapsedMs + "ms");
+        assertTrue(ex.getMessage().contains("mantissa length"), ex.getMessage());
+    }
+
+    @Test
+    void hugePureDigitViaJSONObjectAccessors() {
+        String huge = "1".repeat(10_000);
+        JSONObject obj = JSON.parseObject("{\"v\":\"" + huge + "\"}");
+        long t0 = System.nanoTime();
+        assertThrows(JSONException.class, () -> obj.getBigDecimal("v"));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(elapsedMs < 1000,
+                "JSONObject.getBigDecimal over-cap reject must be fast, took " + elapsedMs + "ms");
+    }
+
+    @Test
+    void hugePureDigitViaJSONArrayAccessors() {
+        String huge = "1".repeat(10_000);
+        JSONArray arr = JSON.parseArray("[\"" + huge + "\"]");
+        long t0 = System.nanoTime();
+        assertThrows(JSONException.class, () -> arr.getBigDecimal(0));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(elapsedMs < 1000,
+                "JSONArray.getBigDecimal over-cap reject must be fast, took " + elapsedMs + "ms");
+    }
+
+    @Test
+    void at4096PureDigitStillAcceptedAsString() {
+        // Regression: the exact cap boundary (4096 pure digits, no sign, no dot)
+        // must still pass through to BigInteger construction.
+        String boundary = "1".repeat(4096);
+        BigInteger bi = JSON.parseObject("\"" + boundary + "\"", BigInteger.class);
+        assertEquals(new BigInteger(boundary), bi);
+    }
+
+    // Round-11: JSONPath typed coercion was the only public Big* materialisation
+    // path still bypassing the cap. 1M-digit quoted string → 12.7s pre-fix.
+    @Test
+    void jsonPathTypedBigDecimalCapsQuotedString() {
+        String huge = "1".repeat(10_000);
+        String json = "{\"v\":\"" + huge + "\"}";
+        JSONPath path = JSONPath.of(new String[]{"$.v"}, new java.lang.reflect.Type[]{BigDecimal.class});
+        long t0 = System.nanoTime();
+        assertThrows(JSONException.class, () -> path.extract(json));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(elapsedMs < 1000,
+                "JSONPath typed BigDecimal over-cap reject must be fast, took " + elapsedMs + "ms");
+    }
+
+    @Test
+    void jsonPathTypedBigIntegerCapsQuotedString() {
+        String huge = "1".repeat(10_000);
+        String json = "{\"v\":\"" + huge + "\"}";
+        JSONPath path = JSONPath.of(new String[]{"$.v"}, new java.lang.reflect.Type[]{BigInteger.class});
+        long t0 = System.nanoTime();
+        assertThrows(JSONException.class, () -> path.extract(json));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(elapsedMs < 1000,
+                "JSONPath typed BigInteger over-cap reject must be fast, took " + elapsedMs + "ms");
+    }
+
+    @Test
+    void jsonPathTypedBigDecimalSmallValueStillWorks() {
+        // Regression: legitimate small value must still parse through JSONPath coercion.
+        JSONPath path = JSONPath.of(new String[]{"$.v"}, new java.lang.reflect.Type[]{BigDecimal.class});
+        Object[] result = (Object[]) path.extract("{\"v\":\"3.14\"}");
+        assertEquals(new BigDecimal("3.14"), result[0]);
+    }
+
 }

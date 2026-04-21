@@ -877,14 +877,16 @@ public abstract sealed class JSONParser implements Closeable
             return (T) Boolean.valueOf(readBoolean());
         }
         if (type == BigDecimal.class) {
-            return (T) readNumber();
+            if (readNull()) {
+                return null;
+            }
+            return (T) readBigDecimalLiteral();
         }
         if (type == BigInteger.class) {
-            Number num = readNumber();
-            if (num instanceof BigInteger) {
-                return (T) num;
+            if (readNull()) {
+                return null;
             }
-            return (T) BigInteger.valueOf(num.longValue());
+            return (T) readBigIntegerLiteral();
         }
         if (type == JSONObject.class) {
             return (T) readObject();
@@ -1110,6 +1112,204 @@ public abstract sealed class JSONParser implements Closeable
 
     // ==================== Number parsing ====================
 
+    /**
+     * Scan a number literal and return it as a {@link BigDecimal}, preserving full
+     * precision. Used by the typed-target path ({@code parse("3.14", BigDecimal.class)})
+     * and by the POJO field path where the declared type is {@code BigDecimal}.
+     * Reading through {@link #readNumber()} and then casting would blow up: that
+     * method returns {@code Double} for floats unless {@code UseBigDecimalForDoubles}
+     * is set, so {@code (BigDecimal) readNumber()} throws ClassCastException.
+     */
+    /**
+     * Upper bound on the implied digit count ({@code precision - scale}) of a
+     * {@code BigDecimal} before we allow it to be materialised as a
+     * {@code BigInteger}. Without this bound, {@code "1e1000000"} on a
+     * BigInteger target expands a 16-byte payload into a ~400 KB bignum plus
+     * the CPU cost of the BigInteger multiplication chain — a
+     * payload-to-memory amplification usable as a DoS primitive on any API
+     * that accepts JSON numbers for a BigInteger slot.
+     */
+    public static final int MAX_BIG_INTEGER_DIGITS = 4096;
+
+    /**
+     * DoS defence on user-supplied numeric strings. Round 4 only capped the
+     * scientific-notation branch (`.`/`e`/`E`), so a 1 MB quoted pure-digit
+     * payload `"111...1"` slipped through to {@code new BigInteger(str)} and
+     * produced a 1M-digit bignum with 12+ seconds of CPU. Round 5 routes
+     * EVERY bignum-materialisation site through this single helper so the
+     * next refactor can't accidentally re-open the hole.
+     *
+     * <p>Rejects early on raw string length (cheap). For scientific inputs
+     * where length overruns but magnitude doesn't (e.g. {@code "1.5E-300"}),
+     * falls through to a precise {@code precision - scale} check via
+     * {@link java.math.BigDecimal}.</p>
+     */
+    public static void checkBigNumberMagnitude(String numStr) {
+        if (numStr == null) {
+            return;
+        }
+        int len = numStr.length();
+        if (len == 0) {
+            return;
+        }
+        // Scientific notation amplifies magnitude beyond string length:
+        // "1e1000000" is 9 chars but magnitude is 1_000_001. Can't skip the
+        // precise check for inputs with `e` / `E` — even short strings may
+        // expand massively. Pure-digit inputs shortcut on string length.
+        boolean hasExp = numStr.indexOf('e') >= 0 || numStr.indexOf('E') >= 0;
+        if (!hasExp) {
+            int signAdjust = (numStr.charAt(0) == '-' || numStr.charAt(0) == '+') ? 1 : 0;
+            if (len - signAdjust <= MAX_BIG_INTEGER_DIGITS) {
+                return;
+            }
+            // Pure-digit (and possibly dotted) input whose raw length already
+            // blows the cap — reject early. Previously the !hasExp branch only
+            // returned on SAFE inputs; oversized pure-digit strings fell
+            // through to `new BigDecimal(numStr)` and burned O(n^2) CPU
+            // parsing a doomed-to-reject bignum (12+ s on 1M-digit input).
+            // The mantissa directly bounds BigDecimal.precision(), so any
+            // input exceeding the cap by more than a single dot is guaranteed
+            // to trip the later digits check — reject now.
+            throw new JSONException("BigInteger/BigDecimal mantissa length "
+                    + (len - signAdjust)
+                    + " exceeds the maximum safe bound for parsing");
+        }
+        // Fast-path rejection for pathological exponents BEFORE calling
+        // `new BigDecimal(numStr)` — a 13-char input `"1e2147483647"` would
+        // otherwise build a BigDecimal whose .precision() - .scale() int
+        // subtraction OVERFLOWS to Integer.MIN_VALUE, wrapping past the
+        // `> MAX_BIG_INTEGER_DIGITS` check and letting a 2.1-billion-digit
+        // bignum through. Scan the exponent substring and reject early.
+        if (hasExp) {
+            int eIdx = numStr.indexOf('e');
+            if (eIdx < 0) {
+                eIdx = numStr.indexOf('E');
+            }
+            // Parse the exponent digits (skipping optional sign) into a long.
+            // Rejecting any |exp| > MAX_BIG_INTEGER_DIGITS early catches the
+            // overflow-eligible inputs. Non-integer exponents throw NFE,
+            // propagated to the caller's handler.
+            int expStart = eIdx + 1;
+            if (expStart < len && (numStr.charAt(expStart) == '+' || numStr.charAt(expStart) == '-')) {
+                expStart++;
+            }
+            // A 10-digit exponent already exceeds MAX_BIG_INTEGER_DIGITS (4096).
+            // A 12+ digit exponent risks int-overflow during BigDecimal parse.
+            if (len - expStart > 10) {
+                throw new JSONException("exponent length " + (len - expStart)
+                        + " exceeds the maximum safe bound for BigInteger/BigDecimal parsing");
+            }
+            // Mantissa-length gate. Without this, a payload like
+            // "1" + "0"*1_000_000 + "e1" bypasses the length shortcut above
+            // (hasExp=true) and the exponent gate (exp is short), falling
+            // into `new BigDecimal(numStr)` which burns 12+ seconds on a
+            // 1MB-digit mantissa. The mantissa directly bounds
+            // BigDecimal.precision(), so a mantissa exceeding the cap is
+            // guaranteed to trip the digits check — reject before allocating.
+            int mantissaSignAdjust = (numStr.charAt(0) == '-' || numStr.charAt(0) == '+') ? 1 : 0;
+            if (eIdx - mantissaSignAdjust > MAX_BIG_INTEGER_DIGITS + 1) {
+                throw new JSONException("BigInteger/BigDecimal mantissa length "
+                        + (eIdx - mantissaSignAdjust)
+                        + " exceeds the maximum safe bound for parsing");
+            }
+        }
+        try {
+            java.math.BigDecimal bd = new java.math.BigDecimal(numStr);
+            // Use long arithmetic — precision() and scale() are each `int`,
+            // so their subtraction can wrap. With the early-exponent gate
+            // above, we shouldn't actually reach pathological values here,
+            // but belt-and-braces.
+            long digits = (long) bd.precision() - (long) bd.scale();
+            if (digits > MAX_BIG_INTEGER_DIGITS) {
+                throw new JSONException("BigInteger/BigDecimal magnitude "
+                        + digits + " digits exceeds maximum " + MAX_BIG_INTEGER_DIGITS);
+            }
+        } catch (NumberFormatException e) {
+            // Malformed — let the caller's own NFE handler produce the JSONException.
+        }
+    }
+
+    public java.math.BigDecimal readBigDecimalLiteral() {
+        skipWhitespace();
+        String numStr;
+        // Money-shaped APIs often quote decimals to dodge JS Number precision;
+        // mirror the BuiltinCodecs BIG_DECIMAL_READER so the in-parser dispatch
+        // and the field-reader dispatch don't diverge on `"3.14"`.
+        if (offset < end()) {
+            int c = ch(offset);
+            if (c == '"' || (c == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+                numStr = readString();
+                if (numStr == null || numStr.isEmpty()) {
+                    return null;
+                }
+            } else {
+                int start = offset;
+                scanNumber();
+                int numLen = offset - start;
+                if (numLen > MAX_NUMBER_LENGTH) {
+                    throw new JSONException("number length " + numLen + " exceeds maximum " + MAX_NUMBER_LENGTH
+                            + " at " + locationAt(start));
+                }
+                numStr = extractString(start, offset);
+            }
+        } else {
+            throw new JSONException("unexpected end in number at " + locationAt(offset));
+        }
+        checkBigNumberMagnitude(numStr);
+        try {
+            return new java.math.BigDecimal(numStr);
+        } catch (NumberFormatException e) {
+            throw new JSONException("invalid number literal '" + numStr + "'", e);
+        }
+    }
+
+    /**
+     * Scan a number literal and return it as a {@link BigInteger}. Truncates any
+     * fractional / exponent part via {@code BigDecimal.toBigInteger()} so the
+     * input {@code "3.14"} rounds down to {@code 3}, matching Jackson's
+     * tolerance for float-shaped input on a {@code BigInteger} target.
+     */
+    public BigInteger readBigIntegerLiteral() {
+        skipWhitespace();
+        String numStr;
+        boolean forceBigDecimalPath = false;
+        if (offset < end()) {
+            int c = ch(offset);
+            if (c == '"' || (c == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+                numStr = readString();
+                if (numStr == null || numStr.isEmpty()) {
+                    return null;
+                }
+                forceBigDecimalPath = numStr.indexOf('.') >= 0
+                        || numStr.indexOf('e') >= 0 || numStr.indexOf('E') >= 0;
+            } else {
+                int start = offset;
+                forceBigDecimalPath = scanNumber();
+                int numLen = offset - start;
+                if (numLen > MAX_NUMBER_LENGTH) {
+                    throw new JSONException("number length " + numLen + " exceeds maximum " + MAX_NUMBER_LENGTH
+                            + " at " + locationAt(start));
+                }
+                numStr = extractString(start, offset);
+            }
+        } else {
+            throw new JSONException("unexpected end in number at " + locationAt(offset));
+        }
+        // Apply the magnitude cap to every path — pure-digit strings like
+        // "1".repeat(1_000_000) also expand to a 1M-digit BigInteger
+        // (12+ s CPU), a DoS primitive equivalent to scientific-notation
+        // amplification. One helper, every branch.
+        checkBigNumberMagnitude(numStr);
+        try {
+            if (forceBigDecimalPath) {
+                return new java.math.BigDecimal(numStr).toBigInteger();
+            }
+            return new BigInteger(numStr);
+        } catch (NumberFormatException | ArithmeticException e) {
+            throw new JSONException("invalid number literal '" + numStr + "'", e);
+        }
+    }
+
     protected Number readNumber() {
         skipWhitespace();
         int start = offset;
@@ -1123,7 +1323,18 @@ public abstract sealed class JSONParser implements Closeable
 
         if (isFloat) {
             if (isEnabled(ReadFeature.UseBigDecimalForDoubles)) {
-                return new BigDecimal(numStr);
+                // Apply the magnitude cap BEFORE allocating the BigDecimal —
+                // without it, `parseObject("1e1000000", Object.class,
+                // UseBigDecimalForDoubles)` spends 70+ ms producing a
+                // 1M-digit bignum. Matches the protection on the typed-target
+                // readBigDecimalLiteral path. NFE is wrapped for the
+                // framework exception contract.
+                checkBigNumberMagnitude(numStr);
+                try {
+                    return new BigDecimal(numStr);
+                } catch (NumberFormatException e) {
+                    throw new JSONException("invalid number literal '" + numStr + "'", e);
+                }
             }
             return Double.parseDouble(numStr);
         }

@@ -137,6 +137,12 @@ public final class BuiltinCodecs {
         if (type == Boolean.class || type == boolean.class) {
             return (ObjectReader<T>) BOOLEAN_READER;
         }
+        if (type == java.math.BigDecimal.class) {
+            return (ObjectReader<T>) BIG_DECIMAL_READER;
+        }
+        if (type == java.math.BigInteger.class) {
+            return (ObjectReader<T>) BIG_INTEGER_READER;
+        }
 
         // Guava immutable collections (zero-dependency, reflection-based)
         ObjectReader<?> guavaReader = GuavaSupport.getReader(type);
@@ -679,5 +685,28 @@ public final class BuiltinCodecs {
                     return null;
                 }
                 return parser.readBoolean();
+            };
+
+    private static final ObjectReader<java.math.BigDecimal> BIG_DECIMAL_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                // readBigDecimalLiteral itself handles both the bare-literal
+                // and the quoted-string shapes (see JSONParser round-1 fix).
+                // Earlier this ObjectReader duplicated the quoted-string peek
+                // inline with an unguarded charAt — whitespace-only input blew
+                // past end() and threw AIOOBE; single-quote bypassed the
+                // AllowSingleQuotes feature check. Delegating cleanly fixes
+                // both without re-implementing the quote-peek protocol.
+                return parser.readBigDecimalLiteral();
+            };
+
+    private static final ObjectReader<java.math.BigInteger> BIG_INTEGER_READER =
+            (parser, fieldType, fieldName, features) -> {
+                if (parser.readNull()) {
+                    return null;
+                }
+                return parser.readBigIntegerLiteral();
             };
 }
