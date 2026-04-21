@@ -1449,4 +1449,34 @@ public class UnwrappedDeserializeTest {
         assertEquals("alice", back.name);
         assertEquals("SF", back.addr.city);
     }
+
+    // Round-6: ASM canGenerate checked only `type.getDeclaredFields()`, so
+    // an INHERITED public field with @JSONField(unwrapped=true) passed the
+    // gate and ASM emitted nested JSON. Scan superclass chain.
+
+    public static class ParentWithUnwrap {
+        @JSONField(unwrapped = true, serialize = true)
+        public AsmBypassInner addr;
+    }
+
+    public static class InheritedUnwrap extends ParentWithUnwrap {
+        public String name;
+    }
+
+    @Test
+    public void asmWriterRejectsInheritedUnwrappedField() {
+        InheritedUnwrap o = new InheritedUnwrap();
+        o.addr = new AsmBypassInner();
+        o.addr.city = "LA";
+        o.name = "bob";
+
+        String json = JSON.toJSONString(o);
+        assertTrue(json.contains("\"city\":\"LA\""),
+                "inherited unwrap must flatten — if nested the ASM gate still misses inherited: " + json);
+        assertFalse(json.contains("\"addr\":"), json);
+
+        InheritedUnwrap back = JSON.parse(json, InheritedUnwrap.class);
+        assertEquals("bob", back.name);
+        assertEquals("LA", back.addr.city);
+    }
 }

@@ -165,18 +165,25 @@ public final class ObjectWriterCreatorASM {
         //   — the ASM writer has no equivalent wiring, so a field marked unwrapped
         //   that slipped into the ASM path would emit nested `"field":value`
         //   instead of the flattened shape, breaking round-trip with the reader.
-        for (java.lang.reflect.Field field : type.getDeclaredFields()) {
-            com.alibaba.fastjson3.annotation.JSONField jsonField = field.getAnnotation(
-                    com.alibaba.fastjson3.annotation.JSONField.class);
-            if (jsonField != null) {
-                if (!jsonField.format().isEmpty()) {
-                    return false;
-                }
-                if (jsonField.inclusion() != com.alibaba.fastjson3.annotation.Inclusion.ALWAYS) {
-                    return false;
-                }
-                if (jsonField.unwrapped()) {
-                    return false;
+        // Walk the superclass chain — downstream `collectFields` uses
+        // `type.getFields()` which includes inherited public fields, but
+        // `getDeclaredFields()` on the target alone misses them. An inherited
+        // public field with @JSONField(unwrapped=true) would pass this gate,
+        // ASM would take over, and emit nested JSON instead of flattening.
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field field : c.getDeclaredFields()) {
+                com.alibaba.fastjson3.annotation.JSONField jsonField = field.getAnnotation(
+                        com.alibaba.fastjson3.annotation.JSONField.class);
+                if (jsonField != null) {
+                    if (!jsonField.format().isEmpty()) {
+                        return false;
+                    }
+                    if (jsonField.inclusion() != com.alibaba.fastjson3.annotation.Inclusion.ALWAYS) {
+                        return false;
+                    }
+                    if (jsonField.unwrapped()) {
+                        return false;
+                    }
                 }
             }
         }
