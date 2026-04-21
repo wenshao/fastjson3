@@ -185,12 +185,20 @@ public final class JSON {
 
     // ==================== Parse: parseObject (fastjson2-compat) ====================
     //
-    // parseObject(...) overloads mirror fastjson 1.x / 2.x.
-    //   * Untyped JSONObject result  → prefer JSON.parse(String)
-    //   * Typed POJO result          → prefer JSON.parse(json, Class<T>)
-    //                                           JSON.parse(json, Type)
-    //                                           JSON.parse(json, TypeReference<T>)
-    // Behaviour is identical; only the method name differs.
+    // parseObject(...) overloads mirror fastjson 1.x / 2.x. Typed overloads
+    // have a modern counterpart in "Unified Parse API":
+    //   parseObject(json, Class<T>)       ↔ JSON.parse(json, Class<T>)
+    //   parseObject(json, Type)           ↔ JSON.parse(json, Type)
+    //   parseObject(json, TypeReference)  ↔ JSON.parse(json, TypeReference)
+    //
+    // Caveats before migrating:
+    //   * The untyped overload `parseObject(String)` returns JSONObject;
+    //     JSON.parse(String) is untyped auto-detect and may return
+    //     JSONObject / JSONArray / scalar / null.
+    //   * parseObject honours globalReadFeatures (see setGlobalRead...);
+    //     JSON.parse routes through a ParseConfig mask and does NOT read
+    //     the thread-local global. Verify your call sites don't depend on
+    //     a globally-enabled feature before switching.
 
     /**
      * Parse JSON string to JSONObject.
@@ -388,11 +396,15 @@ public final class JSON {
 
     // ==================== Parse: parseArray (fastjson2-compat) ====================
     //
-    // parseArray(...) overloads mirror fastjson 1.x / 2.x.
-    //   * Untyped JSONArray result     → prefer JSON.parse(String)
-    //   * Typed List<T> result         → prefer JSON.parseList(json, Class<T>)
-    //   * Typed POJO array             → prefer JSON.parseTypedArray(json, Class<T>)
-    // Behaviour is identical; only the method name differs.
+    // parseArray(...) overloads mirror fastjson 1.x / 2.x. Typed overloads
+    // have a modern counterpart:
+    //   parseArray(json, Class<T>)  ↔ JSON.parseList(json, Class<T>) (returns List<T>)
+    //                               ↔ JSON.parseTypedArray(json, Class<T>) (returns T[])
+    //
+    // Caveat: the untyped `parseArray(String)` returns JSONArray; modern
+    // JSON.parse(String) is untyped auto-detect with a broader return
+    // contract. parseArray also reads globalReadFeatures, JSON.parseList
+    // does not — see the parseObject note above.
 
     /**
      * Parse JSON string to JSONArray.
@@ -507,9 +519,12 @@ public final class JSON {
 
     // ==================== Parse: parseObject(InputStream) (fastjson2-compat) ====================
     //
-    // For new code, prefer JSON.parse(byte[], Class<T>) — reading the stream
-    // into a byte[] first gives identical behaviour with a name that matches
-    // the rest of the modern API.
+    // These overloads exist for migration from fastjson 1.x / 2.x. The
+    // modern API has no direct stream-typed counterpart — callers who
+    // want the modern `parse(...)` verb must buffer the stream themselves,
+    // which is *not* a drop-in swap: parseObject(InputStream) applies an
+    // internal oversized-input guard via readAllBytesWithLimit(...) that a
+    // hand-rolled ByteArrayOutputStream copy does not replicate.
 
     /**
      * Parse JSON from InputStream (UTF-8) to typed Java object.
@@ -569,8 +584,10 @@ public final class JSON {
 
     // ==================== Parse: parseObject(Reader) (fastjson2-compat) ====================
     //
-    // For new code, prefer JSON.parse(String, Class<T>) after reading the
-    // Reader into a String. Behaviour is identical.
+    // Same story as the InputStream overloads above — no modern
+    // Reader-typed counterpart. Migrating means the caller reads the
+    // Reader into a String first; verify that's acceptable (memory
+    // footprint, oversized-input handling) before switching.
 
     /**
      * Read all characters from a Reader into a String.
@@ -605,11 +622,21 @@ public final class JSON {
 
     // ==================== Serialize: toJSONString / toJSONBytes (fastjson2-compat) ====================
     //
-    // toJSONString / toJSONBytes mirror fastjson 1.x / 2.x. For new code prefer:
-    //   toJSONString(obj)          → JSON.write(obj)
-    //   toJSONBytes(obj)           → JSON.writeBytes(obj)
-    //   toJSONString(obj, pretty)  → JSON.writePretty(obj)  /  JSON.writeCompact(obj)
-    // See "Unified Write API" section below for the modern entry points.
+    // toJSONString / toJSONBytes mirror fastjson 1.x / 2.x. Modern
+    // counterparts (see "Unified Write API"):
+    //   toJSONString(obj)                        ↔ JSON.write(obj)
+    //   toJSONString(obj, WriteFeature...)       ↔ JSON.write(obj, WriteConfig)  (WriteConfig wraps feature flags)
+    //   toJSONBytes(obj)                         ↔ JSON.writeBytes(obj)
+    //   toJSONBytes(obj, WriteFeature...)        ↔ JSON.writeBytes(obj, WriteConfig)
+    //
+    // Caveats before migrating:
+    //   * Pretty/compact output: no toJSONString(obj, boolean) overload
+    //     exists; in fj3 use either a WriteFeature... vararg here, or
+    //     JSON.writePretty(obj) / JSON.writeCompact(obj) on the modern side.
+    //   * toJSONString / toJSONBytes honour globalWriteFeatures (see
+    //     setGlobalWrite...); JSON.write / JSON.writeBytes route through a
+    //     WriteConfig mask and do NOT read the global. Verify no call site
+    //     depends on a globally-enabled feature before switching.
 
     /**
      * Serialize object to JSON string.
@@ -1210,6 +1237,10 @@ public final class JSON {
     // covers String / byte[] / Class<T> / Type / TypeReference / TypeToken
     // / ParseConfig. Call sites read uniformly and mirror the write-side
     // `JSON.write(obj)` family.
+    //
+    // Unlike `parseObject` / `parseArray`, these do NOT read
+    // globalReadFeatures — the ParseConfig mask is the only source of
+    // feature flags, so parsing is reproducible regardless of JVM-wide state.
 
     /**
      * Parse JSON string to specified type.
@@ -1825,7 +1856,12 @@ public final class JSON {
     //   writeCompact(obj)          → compact String (explicit alias)
     //   writeBytes(obj)            → compact byte[]
     //   writeTo(OutputStream, obj) → streaming
-    // Prefer over the fastjson2-compat names (toJSONString / toJSONBytes).
+    // Fine-grained control: `write(obj, WriteConfig)` / `writeBytes(obj,
+    // WriteConfig)` take a preset (DEFAULT/PRETTY/WITH_NULLS/etc.).
+    //
+    // Unlike `toJSONString` / `toJSONBytes`, these do NOT read
+    // globalWriteFeatures — the WriteConfig mask is the only source of
+    // feature flags, so output is reproducible regardless of JVM-wide state.
 
     /**
      * Serialize object to JSON string.
