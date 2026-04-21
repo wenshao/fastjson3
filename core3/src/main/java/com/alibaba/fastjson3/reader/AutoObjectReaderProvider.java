@@ -89,6 +89,7 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
                 && !hasAnySetter(type)
                 && !hasBuiltinCodecField(type)
                 && !hasUnwrappedField(type)
+                && !hasJsonCreatorFactory(type)
                 && countSerializableFields(type) <= 15) {
             try {
                 return ObjectReaderCreatorASM.createObjectReader(type);
@@ -116,6 +117,34 @@ public final class AutoObjectReaderProvider extends AbstractObjectReaderProvider
      * registration applied only through {@code addMixIn(Type, TypeMixIn)} still
      * blocks ASM selection.
      */
+    /**
+     * Check if the type (or its mix-in) declares a {@code static} factory
+     * method annotated {@code @JSONCreator} (or Jackson {@code @JsonCreator}).
+     * The ASM reader has no factory-invocation wiring — it'd populate fields
+     * directly on a bare allocateInstance, bypassing the factory entirely and
+     * producing a wrong-state object. Route these types through the reflection
+     * reader so the factory runs.
+     */
+    private static boolean hasJsonCreatorFactory(Class<?> type) {
+        for (java.lang.reflect.Method m : type.getDeclaredMethods()) {
+            if (!java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                continue;
+            }
+            if (!type.isAssignableFrom(m.getReturnType())) {
+                continue;
+            }
+            if (m.isAnnotationPresent(com.alibaba.fastjson3.annotation.JSONCreator.class)) {
+                return true;
+            }
+            for (java.lang.annotation.Annotation ann : m.getAnnotations()) {
+                if ("com.fasterxml.jackson.annotation.JsonCreator".equals(ann.annotationType().getName())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static boolean hasUnwrappedField(Class<?> type) {
         if (scanForUnwrapped(type)) {
             return true;

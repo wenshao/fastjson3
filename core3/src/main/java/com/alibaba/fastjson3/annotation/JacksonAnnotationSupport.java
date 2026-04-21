@@ -309,7 +309,23 @@ public final class JacksonAnnotationSupport {
         if (!AVAILABLE) {
             return false;
         }
-        for (Annotation ann : ctor.getAnnotations()) {
+        return hasJsonCreatorAnnotation(ctor.getAnnotations());
+    }
+
+    /**
+     * Check if a static factory method has @JsonCreator annotation. Needed
+     * for the Jackson-style {@code static Foo of(...)} factory idiom where
+     * the instance is produced by a method rather than a constructor.
+     */
+    public static boolean hasJsonCreator(Method method) {
+        if (!AVAILABLE) {
+            return false;
+        }
+        return hasJsonCreatorAnnotation(method.getAnnotations());
+    }
+
+    private static boolean hasJsonCreatorAnnotation(Annotation[] annotations) {
+        for (Annotation ann : annotations) {
             if ("com.fasterxml.jackson.annotation.JsonCreator".equals(ann.annotationType().getName())) {
                 return true;
             }

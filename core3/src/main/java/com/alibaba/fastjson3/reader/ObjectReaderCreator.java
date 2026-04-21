@@ -94,6 +94,19 @@ public final class ObjectReaderCreator {
             return null;
         }
 
+        // Static @JSONCreator / Jackson @JsonCreator factory method takes
+        // precedence even over record's canonical-ctor dispatch. Record
+        // authors may expose a validating factory (`@JSONCreator static R of
+        // (int v) { if (v < 0) throw ...; return new R(v); }`) that the
+        // record path would otherwise bypass, silently skipping the
+        // validation. Checked BEFORE the record short-circuit AND before
+        // the interface/abstract guard so factories on sealed / interface
+        // / record targets all resolve through this single entry.
+        Method staticFactory = resolveStaticFactoryMethod(type, mixIn, useJacksonAnnotation);
+        if (staticFactory != null) {
+            return createStaticFactoryReader(type, contextType, staticFactory, mixIn, useJacksonAnnotation);
+        }
+
         if (JDKUtils.isRecord(type)) {
             return createRecordReader(type, contextType, mixIn, useJacksonAnnotation);
         }
@@ -319,7 +332,9 @@ public final class ObjectReaderCreator {
                 : recordRequiredIndices.stream().mapToInt(Integer::intValue).toArray();
         String[] requiredNames = recordRequiredIndices == null ? null
                 : recordRequiredIndices.stream().map(ii -> componentNames[ii]).toArray(String[]::new);
-        return new RecordObjectReader<>(type, constructor, collection.fieldReaders,
+        Constructor<T> ctor = constructor;
+        InstanceInvoker<T> invoker = values -> ctor.newInstance(values);
+        return new RecordObjectReader<>(type, invoker, ctor.getParameterTypes(), collection.fieldReaders,
                 collection.fieldReaderMap, collection.matcher, componentTypes.length, paramMapping,
                 recordUnwrapped, requiredIdx, requiredNames);
     }
@@ -552,7 +567,9 @@ public final class ObjectReaderCreator {
                 : ctorRequiredIndices.stream().mapToInt(Integer::intValue).toArray();
         String[] ctorRequiredNameArr = ctorRequiredNames == null ? null
                 : ctorRequiredNames.toArray(new String[0]);
-        return new RecordObjectReader<>(type, constructor, collection.fieldReaders,
+        Constructor<T> ctor = constructor;
+        InstanceInvoker<T> invoker = values -> ctor.newInstance(values);
+        return new RecordObjectReader<>(type, invoker, paramTypes, collection.fieldReaders,
                 collection.fieldReaderMap, collection.matcher, paramTypes.length, paramMapping,
                 ctorUnwrapped, ctorRequiredIdx, ctorRequiredNameArr);
     }
@@ -2813,9 +2830,23 @@ public final class ObjectReaderCreator {
      * This reader uses Unsafe to allocate the instance and set fields directly,
      * then validates that all required fields were provided.
      */
+    /**
+     * Invokes either a constructor or a static factory method to materialise
+     * the record / constructor-based POJO instance from the filled values[]
+     * array. Abstracted so a static `@JSONCreator` / `@JsonCreator`-annotated
+     * factory method (e.g. {@code static F of(int v) { … }}) can slot into the
+     * same parsing machinery as a canonical constructor without duplicating
+     * the read loops.
+     */
+    @FunctionalInterface
+    interface InstanceInvoker<T> {
+        T invoke(Object[] values) throws Exception;
+    }
+
     private static final class RecordObjectReader<T> implements ObjectReader<T> {
         private final Class<T> objectClass;
-        private final Constructor<T> constructor;
+        private final InstanceInvoker<T> instanceInvoker;
+        private final Class<?>[] parameterTypes;
         private final FieldReader[] fieldReaders;
         private final Map<String, FieldReader> fieldReaderMap;
         private final FieldNameMatcher matcher;
@@ -2834,7 +2865,8 @@ public final class ObjectReaderCreator {
 
         RecordObjectReader(
                 Class<T> objectClass,
-                Constructor<T> constructor,
+                InstanceInvoker<T> instanceInvoker,
+                Class<?>[] parameterTypes,
                 FieldReader[] fieldReaders,
                 Map<String, FieldReader> fieldReaderMap,
                 FieldNameMatcher matcher,
@@ -2845,7 +2877,8 @@ public final class ObjectReaderCreator {
                 String[] requiredUnwrappedNames
         ) {
             this.objectClass = objectClass;
-            this.constructor = constructor;
+            this.instanceInvoker = instanceInvoker;
+            this.parameterTypes = parameterTypes;
             this.fieldReaders = fieldReaders;
             this.fieldReaderMap = fieldReaderMap;
             this.matcher = matcher;
@@ -3236,13 +3269,12 @@ public final class ObjectReaderCreator {
             // from sun.invoke.util.ValueConversions.primitiveConversion with
             // zero user-facing context. Catch it at the source and report the
             // missing field name.
-            Class<?>[] paramTypes = constructor.getParameterTypes();
             for (int slot = 0; slot < values.length; slot++) {
-                if (values[slot] == null && paramTypes[slot].isPrimitive()) {
+                if (values[slot] == null && parameterTypes[slot].isPrimitive()) {
                     String fieldName = findFieldNameForSlot(slot);
                     throw new JSONException(
                             "cannot construct record " + objectClass.getName()
-                                    + ": required " + paramTypes[slot].getName()
+                                    + ": required " + parameterTypes[slot].getName()
                                     + " field '" + fieldName + "' is missing or null"
                     );
                 }
@@ -3262,10 +3294,18 @@ public final class ObjectReaderCreator {
                 }
             }
             try {
-                return constructor.newInstance(values);
+                return instanceInvoker.invoke(values);
             } catch (Exception e) {
+                // Unwrap reflection wrappers — InvocationTargetException /
+                // UndeclaredThrowableException obscure the actual user-thrown
+                // cause so the message reader sees comes from the creator
+                // itself, not from the reflective-call scaffolding.
+                Throwable root = e;
+                if (e instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null) {
+                    root = ite.getCause();
+                }
                 throw new JSONException(
-                        "cannot construct record " + objectClass.getName() + ": " + e.getMessage(), e
+                        "cannot construct " + objectClass.getName() + ": " + root.getMessage(), root
                 );
             }
         }
@@ -3300,6 +3340,330 @@ public final class ObjectReaderCreator {
     }
 
     // ==================== Helper methods ====================
+
+    /**
+     * Locate a {@code static} factory method annotated with {@code @JSONCreator}
+     * (or Jackson {@code @JsonCreator} when {@code useJacksonAnnotation} is on)
+     * that returns an instance of {@code type}. Mirrors Jackson's behaviour
+     * where a class like {@code Money { static Money of(BigDecimal v) {...} }}
+     * is deserialised through the factory rather than through a constructor.
+     *
+     * <p>Returns {@code null} when no eligible factory is declared — the caller
+     * falls through to constructor resolution.</p>
+     */
+    private static Method resolveStaticFactoryMethod(Class<?> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        // Ambiguity must be detected ACROSS the class + mix-in boundary too —
+        // a factory declared on the class and another on the mix-in is just as
+        // non-deterministic as two on the same class. Thread the first hit
+        // through so the second scan throws if it finds a competitor.
+        Method chosen = scanStaticFactory(type, type, useJacksonAnnotation, null);
+        if (mixIn != null) {
+            chosen = scanStaticFactory(type, mixIn, useJacksonAnnotation, chosen);
+        }
+        return chosen;
+    }
+
+    /**
+     * Resolve the actual invocation target for a factory method chosen by
+     * {@link #resolveStaticFactoryMethod}. If the chosen method comes from
+     * the mix-in class, mix-in semantics say the body is METADATA and the
+     * target class's same-signature method supplies the body. Mirrors
+     * {@code resolveConstructor}'s constructor-side behaviour.
+     *
+     * @param factory the chosen factory (may be declared on target or mix-in)
+     * @param type    the target class
+     * @return the method to invoke — same as {@code factory} when it's declared
+     *         on the target, otherwise the target's matching static method
+     */
+    private static Method resolveFactoryInvocationTarget(Method factory, Class<?> type) {
+        Class<?> declaringClass = factory.getDeclaringClass();
+        if (declaringClass == type) {
+            return factory;
+        }
+        // Mix-in path: look up the same-signature static method on the target.
+        try {
+            Method onTarget = type.getDeclaredMethod(factory.getName(), factory.getParameterTypes());
+            if (!Modifier.isStatic(onTarget.getModifiers())
+                    || !type.isAssignableFrom(onTarget.getReturnType())) {
+                throw new JSONException("@JSONCreator mix-in factory "
+                        + declaringClass.getSimpleName() + "." + factory.getName()
+                        + " has no matching static method on target " + type.getName());
+            }
+            onTarget.setAccessible(true);
+            return onTarget;
+        } catch (NoSuchMethodException e) {
+            throw new JSONException("@JSONCreator mix-in factory "
+                    + declaringClass.getSimpleName() + "." + factory.getName()
+                    + " has no matching static method on target " + type.getName(), e);
+        }
+    }
+
+    /**
+     * Bind a factory method's method-scoped {@link java.lang.reflect.TypeVariable}s
+     * to concrete {@link java.lang.reflect.Type}s by unifying the factory's
+     * generic return type against the target {@code contextType}. For
+     * `<T> Box<T> of(T v)` with contextType `Box<Address>` this produces
+     * {@code T → Address}; without this step T collapses to its upper bound
+     * (usually Object) at {@link TypeUtils#resolve} time.
+     *
+     * <p>Returns an empty map when the factory has no method type parameters
+     * or the unification isn't possible (e.g., contextType is the raw class).
+     */
+    private static java.util.Map<java.lang.reflect.TypeVariable<?>, java.lang.reflect.Type> resolveMethodTypeVariables(
+            Method factory, java.lang.reflect.Type contextType) {
+        java.lang.reflect.TypeVariable<?>[] methodTypeParams = factory.getTypeParameters();
+        if (methodTypeParams.length == 0 || !(contextType instanceof ParameterizedType target)) {
+            return java.util.Map.of();
+        }
+        java.lang.reflect.Type genericReturn = factory.getGenericReturnType();
+        if (!(genericReturn instanceof ParameterizedType retPT)) {
+            return java.util.Map.of();
+        }
+        // Both sides must share the same raw class for positional arg unification to make sense.
+        if (retPT.getRawType() != target.getRawType()) {
+            return java.util.Map.of();
+        }
+        java.lang.reflect.Type[] retArgs = retPT.getActualTypeArguments();
+        java.lang.reflect.Type[] targetArgs = target.getActualTypeArguments();
+        int n = Math.min(retArgs.length, targetArgs.length);
+        java.util.Map<java.lang.reflect.TypeVariable<?>, java.lang.reflect.Type> bindings = new java.util.HashMap<>();
+        for (int i = 0; i < n; i++) {
+            if (retArgs[i] instanceof java.lang.reflect.TypeVariable<?> tv) {
+                // Only bind variables declared on this method — class-level
+                // TypeVariables are handled by TypeUtils.resolve against contextType.
+                // .equals() not == because Method instances returned by
+                // getDeclaredMethods() are freshly allocated per call.
+                if (factory.equals(tv.getGenericDeclaration())) {
+                    bindings.put(tv, targetArgs[i]);
+                }
+            }
+        }
+        return bindings;
+    }
+
+    /**
+     * Narrow {@code T}-shaped factory parameters: if the generic parameter
+     * type is itself a method-scoped TypeVariable present in {@code bindings},
+     * return the bound type. Otherwise return the parameter type unchanged and
+     * let {@link TypeUtils#resolve} handle class-level TypeVariables against
+     * the caller's contextType.
+     *
+     * <p>Scope is intentionally limited to the direct-TypeVariable case
+     * (`T v`) — the common Jackson-migration shape. Nested method-scoped
+     * TypeVariables (`List&lt;T&gt; v`) would require synthesising a
+     * ParameterizedType, which fj3 doesn't expose publicly. Those fall
+     * through to TypeUtils.resolve with class-scope bindings only, which
+     * collapses them to the bound (usually Object) — matching the
+     * pre-PR-123 behaviour.
+     */
+    private static java.lang.reflect.Type bindMethodScopedTypeVariable(
+            java.lang.reflect.Type paramGeneric,
+            java.util.Map<java.lang.reflect.TypeVariable<?>, java.lang.reflect.Type> bindings) {
+        if (paramGeneric instanceof java.lang.reflect.TypeVariable<?> tv) {
+            java.lang.reflect.Type bound = bindings.get(tv);
+            if (bound != null) {
+                return bound;
+            }
+        }
+        return paramGeneric;
+    }
+
+    private static Method scanStaticFactory(Class<?> owner, Class<?> annotationHost,
+                                            boolean useJacksonAnnotation, Method chosen) {
+        for (Method m : annotationHost.getDeclaredMethods()) {
+            if (!Modifier.isStatic(m.getModifiers())) {
+                continue;
+            }
+            if (!owner.isAssignableFrom(m.getReturnType())) {
+                continue;
+            }
+            boolean marked = m.isAnnotationPresent(JSONCreator.class)
+                    || (useJacksonAnnotation && JacksonAnnotationSupport.hasJsonCreator(m));
+            if (!marked) {
+                continue;
+            }
+            if (chosen != null) {
+                // Declared-method order is JVM-unspecified, so silently picking
+                // "first found" would be non-deterministic. Match Jackson's
+                // behaviour (InvalidDefinitionException on conflicting creators)
+                // — with both names and their declaring class so a class-vs-mix-in
+                // clash is attributable.
+                throw new JSONException("multiple @JSONCreator factory methods for "
+                        + owner.getName() + ": "
+                        + chosen.getDeclaringClass().getSimpleName() + "." + chosen.getName()
+                        + " and "
+                        + m.getDeclaringClass().getSimpleName() + "." + m.getName()
+                        + " — mark only one");
+            }
+            chosen = m;
+        }
+        return chosen;
+    }
+
+    /**
+     * Build a reader that invokes a {@code static} factory method to materialise
+     * the instance. Structurally identical to {@link #createConstructorReader}
+     * except the creator lambda calls {@code factory.invoke(null, values)}
+     * instead of {@code constructor.newInstance(values)}. All parameter-matching,
+     * unwrapped-expansion, and required-field machinery is shared through the
+     * single {@link RecordObjectReader} implementation.
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectReader<T> createStaticFactoryReader(
+            Class<T> type, java.lang.reflect.Type contextType, Method factory, Class<?> mixIn, boolean useJacksonAnnotation
+    ) {
+        factory.setAccessible(true);
+        // Mix-in methods carry the @JSONCreator metadata and parameter
+        // annotations, but their body is stub code — resolve the same-signature
+        // method on the target class for the actual invocation. When `factory`
+        // is already declared on `type`, `invocationTarget == factory`.
+        Method invocationTarget = resolveFactoryInvocationTarget(factory, type);
+        Class<?>[] paramTypes = factory.getParameterTypes();
+        java.lang.reflect.Type[] genericParamTypes = factory.getGenericParameterTypes();
+
+        // Method-scoped TypeVariable binding. For `<T> Box<T> of(T v)` with a
+        // target of `TypeReference<Box<Address>>`, we want parameter `v` to
+        // resolve to Address, not to T's erasure (Object). Class-level
+        // TypeUtils.resolve walks only class TypeVariables; method-scoped ones
+        // need to be bound from the unification of the factory's return type
+        // against the target contextType.
+        java.util.Map<java.lang.reflect.TypeVariable<?>, java.lang.reflect.Type> methodBindings
+                = resolveMethodTypeVariables(factory, contextType);
+
+        List<Field> instanceFields = getInstanceFieldsParentFirst(type);
+
+        JSONType jsonType = type.getAnnotation(JSONType.class);
+        if (jsonType == null && mixIn != null) {
+            jsonType = mixIn.getAnnotation(JSONType.class);
+        }
+        NamingStrategy naming = jsonType != null ? jsonType.naming() : NamingStrategy.NoneStrategy;
+        if (useJacksonAnnotation && naming == NamingStrategy.NoneStrategy) {
+            JacksonAnnotationSupport.BeanInfo jackson = JacksonAnnotationSupport.getBeanInfo(type);
+            if (jackson != null && jackson.naming() != null) {
+                naming = jackson.naming();
+            }
+        }
+
+        // Parameter-name source: @JSONCreator(parameterNames=) override first,
+        // then @JSONField(name=…) on each parameter, then the parameter's
+        // compiled name (requires -parameters on javac; falls back to arg0/arg1
+        // otherwise, which still works if every parameter carries @JSONField).
+        JSONCreator creatorAnn = factory.getAnnotation(JSONCreator.class);
+        String[] overrideNames = (creatorAnn != null) ? creatorAnn.parameterNames() : new String[0];
+        Parameter[] parameters = factory.getParameters();
+
+        List<FieldReader> fieldReaderList = new ArrayList<>();
+        for (int i = 0; i < paramTypes.length; i++) {
+            Parameter p = parameters[i];
+            JSONField annotation = p.getAnnotation(JSONField.class);
+
+            // @JSONField(unwrapped=true) would need the record/ctor-path's
+            // scratch-inner machinery (paramMapping + expandRecordUnwrapped),
+            // which this reader doesn't wire up. Silently dropping the
+            // annotation would lose inner-field routing; reject loudly so the
+            // user knows to use a constructor or direct record instead.
+            if (annotation != null && annotation.unwrapped()) {
+                throw new JSONException("@JSONField(unwrapped=true) on factory parameter '"
+                        + p.getName() + "' of " + factory.getDeclaringClass().getName()
+                        + "." + factory.getName()
+                        + " is not supported — use a constructor or record instead");
+            }
+
+            String rawName;
+            if (overrideNames.length > i && !overrideNames[i].isEmpty()) {
+                rawName = overrideNames[i];
+            } else if (annotation != null && !annotation.name().isEmpty()) {
+                rawName = annotation.name();
+            } else {
+                rawName = p.getName();
+            }
+
+            String jsonName = resolveFieldName(rawName, annotation, naming);
+            String[] alternateNames = annotation != null ? annotation.alternateNames() : new String[0];
+            int ordinal = annotation != null ? annotation.ordinal() : 0;
+            String defaultValue = annotation != null ? annotation.defaultValue() : "";
+            boolean required = annotation != null && annotation.required();
+            String format = (annotation != null && !annotation.format().isEmpty()) ? annotation.format() : null;
+            Class<?> deserializeUsingClass = (annotation != null && annotation.deserializeUsing() != Void.class)
+                    ? annotation.deserializeUsing() : null;
+            String schema = (annotation != null && !annotation.schema().isEmpty()) ? annotation.schema() : null;
+
+            // Two-step resolution: first bind any method-scoped TypeVariable
+            // direct hit from the unified bindings, then run the standard
+            // context-type resolve for class-level TypeVariables. When the
+            // binding substitutes `T` for a concrete class, the `fieldClass`
+            // must also follow — paramTypes[i] is already erased to Object
+            // by the compiler, so without this narrowing the Map→POJO
+            // conversion won't know what type to build.
+            java.lang.reflect.Type boundGeneric = methodBindings.isEmpty()
+                    ? genericParamTypes[i]
+                    : bindMethodScopedTypeVariable(genericParamTypes[i], methodBindings);
+            java.lang.reflect.Type resolvedType = TypeUtils.resolve(boundGeneric, contextType);
+            // Narrow `fieldClass` whenever the binding gives us a strictly
+            // more specific type than the erased paramTypes[i]. Round 4 only
+            // narrowed when paramTypes[i] was literally Object.class — but a
+            // BOUNDED TypeVariable like `<T extends Bean>` erases to Bean,
+            // not Object, so the narrow skipped and resolvedClass stayed at
+            // Bean, silently dropping SubBean-only fields for a target of
+            // Box<SubBean>. The widened check (isAssignableFrom) covers both
+            // cases without regressing the Object→Anything path.
+            Class<?> resolvedClass = paramTypes[i];
+            if (resolvedType instanceof Class<?> rc && paramTypes[i].isAssignableFrom(rc)) {
+                resolvedClass = rc;
+            } else if (resolvedType instanceof ParameterizedType rpt
+                    && rpt.getRawType() instanceof Class<?> rawRc
+                    && paramTypes[i].isAssignableFrom(rawRc)) {
+                resolvedClass = rawRc;
+            }
+            fieldReaderList.add(new FieldReader(
+                    jsonName, alternateNames,
+                    resolvedType, resolvedClass,
+                    ordinal, defaultValue, required,
+                    null, null, format, deserializeUsingClass, schema, 0, useJacksonAnnotation
+            ));
+        }
+
+        Collections.sort(fieldReaderList);
+        FieldReader[] fieldReaders = fieldReaderList.toArray(new FieldReader[0]);
+        FieldNameMatcher matcher = FieldNameMatcher.build(fieldReaders);
+
+        Map<String, FieldReader> fieldReaderMap = HashMap.newHashMap(fieldReaders.length * 2);
+        for (int i = 0; i < fieldReaders.length; i++) {
+            fieldReaders[i].index = i;
+            fieldReaderMap.put(fieldReaders[i].fieldName, fieldReaders[i]);
+            for (String alt : fieldReaders[i].alternateNames) {
+                fieldReaderMap.put(alt, fieldReaders[i]);
+            }
+        }
+
+        // paramMapping: fieldReader index → factory parameter slot. Parameters
+        // are filled positionally, so the fieldReader's *parameter index* (its
+        // declared order in the factory signature) is the slot.
+        int[] paramMapping = new int[fieldReaders.length];
+        for (int i = 0; i < fieldReaders.length; i++) {
+            String name = fieldReaders[i].fieldName;
+            for (int j = 0; j < paramTypes.length; j++) {
+                String pName;
+                if (overrideNames.length > j && !overrideNames[j].isEmpty()) {
+                    pName = overrideNames[j];
+                } else {
+                    JSONField pAnn = parameters[j].getAnnotation(JSONField.class);
+                    pName = (pAnn != null && !pAnn.name().isEmpty())
+                            ? pAnn.name()
+                            : applyNamingStrategy(parameters[j].getName(), naming);
+                }
+                if (pName.equals(name) || parameters[j].getName().equals(name)) {
+                    paramMapping[i] = j;
+                    break;
+                }
+            }
+        }
+
+        InstanceInvoker<T> invoker = values -> (T) invocationTarget.invoke(null, values);
+        return new RecordObjectReader<>(type, invoker, paramTypes, fieldReaders,
+                fieldReaderMap, matcher, paramTypes.length, paramMapping,
+                null, null, null);
+    }
 
     @SuppressWarnings("unchecked")
     private static <T> Constructor<T> resolveConstructor(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
