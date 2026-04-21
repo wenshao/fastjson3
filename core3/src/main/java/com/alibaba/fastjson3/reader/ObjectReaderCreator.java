@@ -3364,6 +3364,41 @@ public final class ObjectReaderCreator {
     }
 
     /**
+     * Resolve the actual invocation target for a factory method chosen by
+     * {@link #resolveStaticFactoryMethod}. If the chosen method comes from
+     * the mix-in class, mix-in semantics say the body is METADATA and the
+     * target class's same-signature method supplies the body. Mirrors
+     * {@code resolveConstructor}'s constructor-side behaviour.
+     *
+     * @param factory the chosen factory (may be declared on target or mix-in)
+     * @param type    the target class
+     * @return the method to invoke — same as {@code factory} when it's declared
+     *         on the target, otherwise the target's matching static method
+     */
+    private static Method resolveFactoryInvocationTarget(Method factory, Class<?> type) {
+        Class<?> declaringClass = factory.getDeclaringClass();
+        if (declaringClass == type) {
+            return factory;
+        }
+        // Mix-in path: look up the same-signature static method on the target.
+        try {
+            Method onTarget = type.getDeclaredMethod(factory.getName(), factory.getParameterTypes());
+            if (!Modifier.isStatic(onTarget.getModifiers())
+                    || !type.isAssignableFrom(onTarget.getReturnType())) {
+                throw new JSONException("@JSONCreator mix-in factory "
+                        + declaringClass.getSimpleName() + "." + factory.getName()
+                        + " has no matching static method on target " + type.getName());
+            }
+            onTarget.setAccessible(true);
+            return onTarget;
+        } catch (NoSuchMethodException e) {
+            throw new JSONException("@JSONCreator mix-in factory "
+                    + declaringClass.getSimpleName() + "." + factory.getName()
+                    + " has no matching static method on target " + type.getName(), e);
+        }
+    }
+
+    /**
      * Bind a factory method's method-scoped {@link java.lang.reflect.TypeVariable}s
      * to concrete {@link java.lang.reflect.Type}s by unifying the factory's
      * generic return type against the target {@code contextType}. For
@@ -3478,6 +3513,11 @@ public final class ObjectReaderCreator {
             Class<T> type, java.lang.reflect.Type contextType, Method factory, Class<?> mixIn, boolean useJacksonAnnotation
     ) {
         factory.setAccessible(true);
+        // Mix-in methods carry the @JSONCreator metadata and parameter
+        // annotations, but their body is stub code — resolve the same-signature
+        // method on the target class for the actual invocation. When `factory`
+        // is already declared on `type`, `invocationTarget == factory`.
+        Method invocationTarget = resolveFactoryInvocationTarget(factory, type);
         Class<?>[] paramTypes = factory.getParameterTypes();
         java.lang.reflect.Type[] genericParamTypes = factory.getGenericParameterTypes();
 
@@ -3619,7 +3659,7 @@ public final class ObjectReaderCreator {
             }
         }
 
-        InstanceInvoker<T> invoker = values -> (T) factory.invoke(null, values);
+        InstanceInvoker<T> invoker = values -> (T) invocationTarget.invoke(null, values);
         return new RecordObjectReader<>(type, invoker, paramTypes, fieldReaders,
                 fieldReaderMap, matcher, paramTypes.length, paramMapping,
                 null, null, null);

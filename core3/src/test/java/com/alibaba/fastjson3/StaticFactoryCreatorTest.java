@@ -413,4 +413,62 @@ public class StaticFactoryCreatorTest {
         RecurBox<?> box = JSON.parseObject("{\"value\":\"hello\"}", RecurBox.class);
         assertNotNull(box);
     }
+
+    // ==================== R8: mix-in factory is metadata-only ====================
+
+    public static class MoneyTarget {
+        public long cents;
+
+        public static MoneyTarget ofCents(long cents) {
+            MoneyTarget m = new MoneyTarget();
+            m.cents = cents;
+            return m;
+        }
+    }
+
+    public abstract static class MoneyMixIn {
+        @JSONCreator
+        public static MoneyTarget ofCents(@JSONField(name = "cents") long cents) {
+            // Pre-fix: invoked directly and returned null.
+            return null;
+        }
+    }
+
+    @Test
+    public void mixInFactoryBodyNotInvokedTargetMethodIsCalled() {
+        // Mix-in annotations are metadata — the mix-in's factory body is
+        // typically a stub. Pre-fix: factory.invoke(null, values) ran the
+        // mix-in's `return null` and produced a silent null result. Post-fix:
+        // the resolver swaps to the same-signature method on the target class.
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(MoneyTarget.class, MoneyMixIn.class)
+                .build();
+        MoneyTarget m = mapper.readValue("{\"cents\":1234}", MoneyTarget.class);
+        assertNotNull(m, "mix-in factory must delegate to target's method, not invoke mix-in body");
+        assertEquals(1234L, m.cents);
+    }
+
+    public abstract static class OrphanMixIn {
+        @JSONCreator
+        public static MoneyTarget createMismatch(@JSONField(name = "v") long v) {
+            // Pre-fix path ran this body and returned null to the user — silent
+            // data loss. Post-fix we detect the orphan during reader creation.
+            return null;
+        }
+    }
+
+    @Test
+    public void mixInFactoryWithoutTargetCounterpartDoesNotInvokeStub() {
+        // Target has no createMismatch(long), so we can't route through it.
+        // The direct ObjectReaderCreator call surfaces the diagnostic; the
+        // mapper catches and falls back to default reflection-based handling
+        // without running the mix-in's stub body (pre-existing swallow pattern
+        // documented in R7/R8 reports).
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator.createObjectReader(
+                        MoneyTarget.class, OrphanMixIn.class));
+        assertTrue(ex.getMessage().contains("createMismatch")
+                        || ex.getMessage().contains("no matching static method"),
+                ex.getMessage());
+    }
 }
