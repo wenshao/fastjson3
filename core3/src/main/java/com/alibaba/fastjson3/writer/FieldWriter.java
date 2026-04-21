@@ -702,8 +702,20 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         // to a fresh ReflectObjectWriter built with the mapper's config when the cached
         // writer is an ASM class.
         if (unwrapped) {
-            FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(generator, value.getClass());
-            ObjectWriterCreator.writeFields(generator, innerFieldWriters, value, features);
+            // Depth guard catches circular unwrap chains (A.b @unwrapped B,
+            // B.a @unwrapped A) that would otherwise recurse until the JVM
+            // stack overflows. The reader-side UNWRAP_VISITED mechanism only
+            // detects cycles at field-list expansion; on the writer, the cycle
+            // only manifests with actual object graphs, so we rely on the
+            // generator's existing depth counter to bound recursion to
+            // MAX_WRITE_DEPTH and surface a clean JSONException.
+            generator.incrementDepth();
+            try {
+                FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(generator, value.getClass());
+                ObjectWriterCreator.writeFields(generator, innerFieldWriters, value, features);
+            } finally {
+                generator.decrementDepth();
+            }
             return;
         }
         if (generator.notWriteEmptyArray) {
@@ -1203,8 +1215,20 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         // Unwrapped: write nested fields directly (no name, no braces)
         if (unwrapped) {
-            FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(generator, value.getClass());
-            ObjectWriterCreator.writeFields(generator, innerFieldWriters, value, features);
+            // Depth guard catches circular unwrap chains (A.b @unwrapped B,
+            // B.a @unwrapped A) that would otherwise recurse until the JVM
+            // stack overflows. The reader-side UNWRAP_VISITED mechanism only
+            // detects cycles at field-list expansion; on the writer, the cycle
+            // only manifests with actual object graphs, so we rely on the
+            // generator's existing depth counter to bound recursion to
+            // MAX_WRITE_DEPTH and surface a clean JSONException.
+            generator.incrementDepth();
+            try {
+                FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(generator, value.getClass());
+                ObjectWriterCreator.writeFields(generator, innerFieldWriters, value, features);
+            } finally {
+                generator.decrementDepth();
+            }
             return;
         }
         generator.writeName(name);

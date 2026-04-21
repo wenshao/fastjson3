@@ -1479,4 +1479,58 @@ public class UnwrappedDeserializeTest {
         assertEquals("bob", back.name);
         assertEquals("LA", back.addr.city);
     }
+
+    // Round-8 F1: cyclic @JSONField(unwrapped=true) chain on the writer side
+    // recursed until the JVM stack overflowed. Reader had class-level cycle
+    // detection but writer had no equivalent. Depth guard via generator's
+    // existing MAX_WRITE_DEPTH=512 now surfaces a clean JSONException.
+    public static class CircA {
+        @JSONField(unwrapped = true)
+        public CircB b;
+    }
+
+    public static class CircB {
+        @JSONField(unwrapped = true)
+        public CircA a;
+    }
+
+    @Test
+    public void circularUnwrapThrowsJSONExceptionNotStackOverflow() {
+        CircA a = new CircA();
+        a.b = new CircB();
+        a.b.a = a;
+        // Pre-fix: StackOverflowError. Post-fix: JSONException from depth cap.
+        JSONException ex = assertThrows(JSONException.class, () -> JSON.toJSONString(a));
+        assertTrue(ex.getMessage().contains("depth"), ex.getMessage());
+    }
+
+    // Round-8 F2: record components with @JSONField(unwrapped=true) silently
+    // emitted nested JSON because createRecordWriter never read jsonField.unwrapped().
+    // Reader-side expandRecordUnwrapped already flattens record components,
+    // producing a reader/writer asymmetry.
+    public record RecordHolder(@JSONField(unwrapped = true) Name inner, int extra) {
+    }
+
+    @Test
+    public void recordComponentUnwrapFlattens() {
+        Name n = new Name();
+        n.first = "ada";
+        n.last = "lovelace";
+        RecordHolder h = new RecordHolder(n, 42);
+
+        String json = JSON.toJSONString(h);
+        assertFalse(json.contains("\"inner\":"),
+                "record component @unwrapped must flatten: " + json);
+        assertTrue(json.contains("\"first\":\"ada\""), json);
+        assertTrue(json.contains("\"last\":\"lovelace\""), json);
+        assertTrue(json.contains("\"extra\":42"), json);
+
+        // Round-trip: reader-side already supports record-component unwrap, so
+        // the flattened payload must reconstruct to the same shape.
+        RecordHolder back = JSON.parse(json, RecordHolder.class);
+        assertNotNull(back.inner());
+        assertEquals("ada", back.inner().first);
+        assertEquals("lovelace", back.inner().last);
+        assertEquals(42, back.extra());
+    }
 }

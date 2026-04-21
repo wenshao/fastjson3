@@ -192,14 +192,28 @@ public final class ObjectWriterCreator {
             } catch (NoSuchFieldException ignored) {
             }
 
+            // Honour @JSONField(unwrapped=true) on record components. Pre-fix the
+            // record path silently emitted nested JSON while the reader-side
+            // expandRecordUnwrapped flattened the same annotation — round-trip
+            // asymmetry. Mirror the POJO branch: reject non-POJO inner types,
+            // pass unwrapped through to the FieldWriter so writeObject takes
+            // the flatten branch.
+            boolean unwrapped = jsonField != null && jsonField.unwrapped();
+            Class<?> accessorReturn = accessor.getReturnType();
+            if (unwrapped) {
+                rejectNonPojoUnwrappedInner(type, propertyName, accessorReturn);
+            }
+
             if (backingField != null) {
-                writerMap.put(propertyName, createFieldWriterForField(
-                        jsonName, ordinal, accessor.getGenericReturnType(), accessor.getReturnType(), backingField, fieldInclusion
+                writerMap.put(propertyName, FieldWriter.ofField(
+                        jsonName, ordinal, accessor.getGenericReturnType(), accessorReturn,
+                        backingField, fieldInclusion, null, null, null, 0L, unwrapped
                 ));
             } else {
                 accessor.setAccessible(true);
-                writerMap.put(propertyName, createFieldWriterForGetter(
-                        jsonName, ordinal, accessor.getGenericReturnType(), accessor.getReturnType(), accessor, fieldInclusion
+                writerMap.put(propertyName, FieldWriter.ofGetter(
+                        jsonName, ordinal, accessor.getGenericReturnType(), accessorReturn,
+                        accessor, fieldInclusion, null, null, null, 0L, unwrapped
                 ));
             }
         }
