@@ -95,7 +95,18 @@ public final class JSON {
         return value;
     }
 
-    // ==================== Parse ====================
+    // ==================== Parse: untyped (auto-detect) ====================
+    //
+    // This class groups 100+ static methods into these families:
+    //   * Untyped parse — this section
+    //   * Typed parse (modern) — see "Unified Parse API"
+    //   * Collection parse (modern) — see "Collection Type Parsing"
+    //   * Write (modern) — see "Unified Write API"
+    //   * fastjson2 compatibility — see sections tagged "(fastjson2-compat)"
+    //
+    // New code should prefer the modern families. fastjson2-compat methods
+    // are kept for migration from fastjson 1.x / 2.x and share behaviour
+    // with the modern ones, differing only in method name.
 
     /**
      * Parse JSON string to auto-detected type.
@@ -171,6 +182,15 @@ public final class JSON {
         }
         return parse(new String(chars));
     }
+
+    // ==================== Parse: parseObject (fastjson2-compat) ====================
+    //
+    // parseObject(...) overloads mirror fastjson 1.x / 2.x.
+    //   * Untyped JSONObject result  → prefer JSON.parse(String)
+    //   * Typed POJO result          → prefer JSON.parse(json, Class<T>)
+    //                                           JSON.parse(json, Type)
+    //                                           JSON.parse(json, TypeReference<T>)
+    // Behaviour is identical; only the method name differs.
 
     /**
      * Parse JSON string to JSONObject.
@@ -366,6 +386,14 @@ public final class JSON {
         }
     }
 
+    // ==================== Parse: parseArray (fastjson2-compat) ====================
+    //
+    // parseArray(...) overloads mirror fastjson 1.x / 2.x.
+    //   * Untyped JSONArray result     → prefer JSON.parse(String)
+    //   * Typed List<T> result         → prefer JSON.parseList(json, Class<T>)
+    //   * Typed POJO array             → prefer JSON.parseTypedArray(json, Class<T>)
+    // Behaviour is identical; only the method name differs.
+
     /**
      * Parse JSON string to JSONArray.
      */
@@ -477,7 +505,11 @@ public final class JSON {
         }
     }
 
-    // ==================== Parse: InputStream ====================
+    // ==================== Parse: parseObject(InputStream) (fastjson2-compat) ====================
+    //
+    // For new code, prefer JSON.parse(byte[], Class<T>) — reading the stream
+    // into a byte[] first gives identical behaviour with a name that matches
+    // the rest of the modern API.
 
     /**
      * Parse JSON from InputStream (UTF-8) to typed Java object.
@@ -535,7 +567,10 @@ public final class JSON {
         }
     }
 
-    // ==================== Parse: Reader ====================
+    // ==================== Parse: parseObject(Reader) (fastjson2-compat) ====================
+    //
+    // For new code, prefer JSON.parse(String, Class<T>) after reading the
+    // Reader into a String. Behaviour is identical.
 
     /**
      * Read all characters from a Reader into a String.
@@ -568,7 +603,13 @@ public final class JSON {
         return parseObject(readAllChars(reader), type);
     }
 
-    // ==================== Serialize ====================
+    // ==================== Serialize: toJSONString / toJSONBytes (fastjson2-compat) ====================
+    //
+    // toJSONString / toJSONBytes mirror fastjson 1.x / 2.x. For new code prefer:
+    //   toJSONString(obj)          → JSON.write(obj)
+    //   toJSONBytes(obj)           → JSON.writeBytes(obj)
+    //   toJSONString(obj, pretty)  → JSON.writePretty(obj)  /  JSON.writeCompact(obj)
+    // See "Unified Write API" section below for the modern entry points.
 
     /**
      * Serialize object to JSON string.
@@ -653,7 +694,7 @@ public final class JSON {
         }
     }
 
-    // ==================== Serialize: with Filters ====================
+    // ==================== Serialize: toJSONString / toJSONBytes with Filters (fastjson2-compat) ====================
 
     /**
      * Serialize object to JSON string with a single filter and features.
@@ -1163,7 +1204,12 @@ public final class JSON {
         return JSONPath.eval(json, path, type);
     }
 
-    // ==================== Unified Parse API ====================
+    // ==================== Unified Parse API (modern — preferred) ====================
+    //
+    // This is the recommended family for new code: a single verb `parse`
+    // covers String / byte[] / Class<T> / Type / TypeReference / TypeToken
+    // / ParseConfig. Call sites read uniformly and mirror the write-side
+    // `JSON.write(obj)` family.
 
     /**
      * Parse JSON string to specified type.
@@ -1771,7 +1817,15 @@ public final class JSON {
         return ObjectMapper.shared().readValue(json, typeRef.getType(), config.mask());
     }
 
-    // ==================== Unified Write API ====================
+    // ==================== Unified Write API (modern — preferred) ====================
+    //
+    // This is the recommended family for new code:
+    //   write(obj)                 → compact String
+    //   writePretty(obj)           → indented String
+    //   writeCompact(obj)          → compact String (explicit alias)
+    //   writeBytes(obj)            → compact byte[]
+    //   writeTo(OutputStream, obj) → streaming
+    // Prefer over the fastjson2-compat names (toJSONString / toJSONBytes).
 
     /**
      * Serialize object to JSON string.
