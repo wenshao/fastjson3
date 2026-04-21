@@ -715,4 +715,38 @@ class NumberEdgeCaseTest {
         assertEquals(new BigInteger(boundary), bi);
     }
 
+    // Round-11: JSONPath typed coercion was the only public Big* materialisation
+    // path still bypassing the cap. 1M-digit quoted string → 12.7s pre-fix.
+    @Test
+    void jsonPathTypedBigDecimalCapsQuotedString() {
+        String huge = "1".repeat(10_000);
+        String json = "{\"v\":\"" + huge + "\"}";
+        JSONPath path = JSONPath.of(new String[]{"$.v"}, new java.lang.reflect.Type[]{BigDecimal.class});
+        long t0 = System.nanoTime();
+        assertThrows(JSONException.class, () -> path.extract(json));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(elapsedMs < 1000,
+                "JSONPath typed BigDecimal over-cap reject must be fast, took " + elapsedMs + "ms");
+    }
+
+    @Test
+    void jsonPathTypedBigIntegerCapsQuotedString() {
+        String huge = "1".repeat(10_000);
+        String json = "{\"v\":\"" + huge + "\"}";
+        JSONPath path = JSONPath.of(new String[]{"$.v"}, new java.lang.reflect.Type[]{BigInteger.class});
+        long t0 = System.nanoTime();
+        assertThrows(JSONException.class, () -> path.extract(json));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(elapsedMs < 1000,
+                "JSONPath typed BigInteger over-cap reject must be fast, took " + elapsedMs + "ms");
+    }
+
+    @Test
+    void jsonPathTypedBigDecimalSmallValueStillWorks() {
+        // Regression: legitimate small value must still parse through JSONPath coercion.
+        JSONPath path = JSONPath.of(new String[]{"$.v"}, new java.lang.reflect.Type[]{BigDecimal.class});
+        Object[] result = (Object[]) path.extract("{\"v\":\"3.14\"}");
+        assertEquals(new BigDecimal("3.14"), result[0]);
+    }
+
 }

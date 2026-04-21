@@ -1183,10 +1183,20 @@ public abstract sealed class JSONPath {
                         return Byte.parseByte(s);
                     }
                     if (clazz == BigDecimal.class) {
-                        return new BigDecimal(s);
+                        JSONParser.checkBigNumberMagnitude(s);
+                        try {
+                            return new BigDecimal(s);
+                        } catch (NumberFormatException e) {
+                            throw new JSONException("parse BigDecimal error at JSONPath: " + s, e);
+                        }
                     }
                     if (clazz == BigInteger.class) {
-                        return new BigInteger(s);
+                        JSONParser.checkBigNumberMagnitude(s);
+                        try {
+                            return new BigInteger(s);
+                        } catch (NumberFormatException e) {
+                            throw new JSONException("parse BigInteger error at JSONPath: " + s, e);
+                        }
                     }
                     if (clazz == boolean.class || clazz == Boolean.class) {
                         return Boolean.parseBoolean(s);
