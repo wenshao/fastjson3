@@ -64,6 +64,12 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     // For TYPE_OBJECT / TYPE_LIST_OBJECT: cached ObjectWriter + class guard
     private volatile ObjectWriter<Object> cachedWriter;
     private volatile Class<?> cachedWriterClass;
+    // Separate cache for @JSONField(unwrapped=true): we need a FieldWriter[] to
+    // iterate, and ASM writers don't expose theirs. Populated from a dedicated
+    // ReflectObjectWriter so the unwrap path works regardless of what kind of
+    // writer the global mapper cached for the inner type.
+    private volatile FieldWriter[] cachedUnwrapFieldWriters;
+    private volatile Class<?> cachedUnwrapFieldWritersClass;
 
     // For TYPE_LIST_STRING / TYPE_LIST_OBJECT: element class
     public final Class<?> elementClass;
@@ -689,14 +695,26 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         if (inclusion == Inclusion.NON_EMPTY && isEmpty(value)) {
             return;
         }
-        // Unwrapped: write nested object's fields directly into parent (no field name, no braces)
+        // Unwrapped: write nested object's fields directly into parent (no field name, no braces).
+        // We need a concrete FieldWriter[] to iterate; ASM writers don't publish theirs, so
+        // we prefer the mapper's cached writer when it's a ReflectObjectWriter (already
+        // configured with the owning mapper's mix-in + useJacksonAnnotation), and fall back
+        // to a fresh ReflectObjectWriter built with the mapper's config when the cached
+        // writer is an ASM class.
         if (unwrapped) {
-            ObjectWriter<Object> writer = resolveObjectWriter(generator, value.getClass());
-            if (writer instanceof ObjectWriterCreator.ReflectObjectWriter row) {
-                ObjectWriterCreator.writeFields(generator, row.writers, value, features);
-            } else {
-                throw new JSONException("@JSONField(unwrapped=true) requires a POJO type; "
-                        + value.getClass().getName() + " is not supported");
+            // Depth guard catches circular unwrap chains (A.b @unwrapped B,
+            // B.a @unwrapped A) that would otherwise recurse until the JVM
+            // stack overflows. The reader-side UNWRAP_VISITED mechanism only
+            // detects cycles at field-list expansion; on the writer, the cycle
+            // only manifests with actual object graphs, so we rely on the
+            // generator's existing depth counter to bound recursion to
+            // MAX_WRITE_DEPTH and surface a clean JSONException.
+            generator.incrementDepth();
+            try {
+                FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(generator, value.getClass());
+                ObjectWriterCreator.writeFields(generator, innerFieldWriters, value, features);
+            } finally {
+                generator.decrementDepth();
             }
             return;
         }
@@ -1050,6 +1068,52 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         return writer;
     }
 
+    /**
+     * Resolve the inner type's {@link FieldWriter} array for unwrap-time
+     * emission. Prefers the mapper's cached writer when it's a
+     * {@link ObjectWriterCreator.ReflectObjectWriter} — that writer was
+     * already built with the mapper's own mix-in + useJacksonAnnotation
+     * config, so field renames from a mix-in or Jackson's {@code @JsonProperty}
+     * are honoured. Only when the cached writer is an ASM class (which
+     * conceals its internal FieldWriter[]) do we fall back to building a
+     * fresh ReflectObjectWriter — and then we rebuild it with the mapper's
+     * mix-in lookup and useJacksonAnnotation flag so the inner's rename
+     * rules still apply on the flattened keys.
+     */
+    private FieldWriter[] resolveUnwrapFieldWriters(JSONGenerator generator, Class<?> valueClass) {
+        FieldWriter[] writers = cachedUnwrapFieldWriters;
+        if (writers != null && cachedUnwrapFieldWritersClass == valueClass) {
+            return writers;
+        }
+        // Mapper's cached writer may already be a ReflectObjectWriter with the
+        // correct config — take its writers array directly.
+        ObjectMapper mapper = generator.effectiveMapper();
+        ObjectWriter<?> cached = mapper.getObjectWriter(valueClass);
+        if (cached instanceof ObjectWriterCreator.ReflectObjectWriter cachedRow) {
+            writers = cachedRow.writers;
+        } else {
+            // ASM or custom — build a reflect writer with the SAME config the
+            // mapper uses (mix-in lookup + useJacksonAnnotation) so rename
+            // rules stay consistent between nested and flattened shapes.
+            Class<?> innerMixIn = mapper.getMixIn(valueClass);
+            boolean jackson = mapper.useJacksonAnnotation();
+            ObjectWriter<?> reflect = ObjectWriterCreator.createObjectWriter(
+                    valueClass, innerMixIn, jackson);
+            if (reflect instanceof ObjectWriterCreator.ReflectObjectWriter row) {
+                writers = row.writers;
+            } else {
+                // Inner type uses a custom @JSONType(serializer=…) / @JsonAnyGetter
+                // lambda path — no accessible FieldWriter[] to flatten.
+                throw new JSONException("@JSONField(unwrapped=true) on " + fieldName
+                        + ": inner type " + valueClass.getName()
+                        + " uses a custom serializer or anyGetter and cannot be flattened");
+            }
+        }
+        cachedUnwrapFieldWriters = writers;
+        cachedUnwrapFieldWritersClass = valueClass;
+        return writers;
+    }
+
     // ==================== Filter-aware write ====================
 
     /**
@@ -1151,12 +1215,19 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         }
         // Unwrapped: write nested fields directly (no name, no braces)
         if (unwrapped) {
-            ObjectWriter<Object> writer = resolveObjectWriter(generator, value.getClass());
-            if (writer instanceof ObjectWriterCreator.ReflectObjectWriter row) {
-                ObjectWriterCreator.writeFields(generator, row.writers, value, features);
-            } else {
-                throw new JSONException("@JSONField(unwrapped=true) requires a POJO type; "
-                        + value.getClass().getName() + " is not supported");
+            // Depth guard catches circular unwrap chains (A.b @unwrapped B,
+            // B.a @unwrapped A) that would otherwise recurse until the JVM
+            // stack overflows. The reader-side UNWRAP_VISITED mechanism only
+            // detects cycles at field-list expansion; on the writer, the cycle
+            // only manifests with actual object graphs, so we rely on the
+            // generator's existing depth counter to bound recursion to
+            // MAX_WRITE_DEPTH and surface a clean JSONException.
+            generator.incrementDepth();
+            try {
+                FieldWriter[] innerFieldWriters = resolveUnwrapFieldWriters(generator, value.getClass());
+                ObjectWriterCreator.writeFields(generator, innerFieldWriters, value, features);
+            } finally {
+                generator.decrementDepth();
             }
             return;
         }

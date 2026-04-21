@@ -1181,6 +1181,12 @@ public final class ObjectReaderCreator {
         // Check the more specific classifications first — an array has
         // Modifier.ABSTRACT, and a Collection-typed field is always an
         // interface, so a plain interface/abstract check would mis-label both.
+        // Round-5 audit: extended to mirror the writer-side guard
+        // (rejectNonPojoUnwrappedInner in ObjectWriterCreator). Previously a
+        // holder typed as Object / String / boxed numeric / Optional would
+        // pass the reader guard while the writer guard rejected it —
+        // asymmetric, and the reader's "silent null" worse than the writer's
+        // explicit rejection.
         String reason = null;
         if (innerClass.isArray()) {
             reason = "array";
@@ -1196,6 +1202,24 @@ public final class ObjectReaderCreator {
             reason = "abstract class";
         } else if (JDKUtils.isRecord(innerClass)) {
             reason = "record";
+        } else if (innerClass == Object.class) {
+            reason = "Object";
+        } else if (innerClass == String.class
+                || innerClass == Integer.class || innerClass == Long.class
+                || innerClass == Short.class || innerClass == Byte.class
+                || innerClass == Double.class || innerClass == Float.class
+                || innerClass == Boolean.class || innerClass == Character.class
+                || innerClass == java.math.BigInteger.class
+                || innerClass == java.math.BigDecimal.class
+                || Number.class.isAssignableFrom(innerClass)) {
+            reason = "scalar wrapper";
+        } else if (java.util.Optional.class.isAssignableFrom(innerClass)
+                || java.util.OptionalInt.class == innerClass
+                || java.util.OptionalLong.class == innerClass
+                || java.util.OptionalDouble.class == innerClass) {
+            reason = "Optional wrapper";
+        } else if (java.util.concurrent.atomic.AtomicReference.class.isAssignableFrom(innerClass)) {
+            reason = "AtomicReference wrapper";
         }
         if (reason != null) {
             throw new JSONException(site + ": inner type " + innerClass.getName()

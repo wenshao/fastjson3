@@ -1188,4 +1188,349 @@ public class UnwrappedDeserializeTest {
         assertInstanceOf(SchemaAdultCat.class, parsed);
         assertEquals(3, ((SchemaAdultCat) parsed).age);
     }
+
+    // ==================== Writer round-trip when inner uses ASM writer ====================
+    // Round-3 usability audit F6: the writer's @JSONField(unwrapped=true) path
+    // used to accept only ReflectObjectWriter, crashing with "requires a POJO
+    // type; InnerC is not supported" whenever the inner class was ASM-compiled
+    // (which is the majority of POJOs). After the fix, the writer resolves a
+    // dedicated ReflectObjectWriter for the inner type regardless of what the
+    // global mapper cached, making round-trip symmetric with the reader.
+
+    public static class InnerAddr {
+        public String city;
+        public String zip;
+    }
+
+    public static class OuterWithAddr {
+        @JSONField(unwrapped = true)
+        public InnerAddr addr;
+        public String name;
+    }
+
+    @Test
+    public void writerUnwrapsAsmInnerRoundTrip() {
+        OuterWithAddr o = new OuterWithAddr();
+        o.addr = new InnerAddr();
+        o.addr.city = "SF";
+        o.addr.zip = "94103";
+        o.name = "alice";
+
+        // Write via JSON.toJSONString — the global mapper will typically
+        // produce ASM writers for the inner type. Must NOT crash.
+        String json = JSON.toJSONString(o);
+        assertTrue(json.contains("\"city\":\"SF\""), json);
+        assertTrue(json.contains("\"zip\":\"94103\""), json);
+        assertTrue(json.contains("\"name\":\"alice\""), json);
+        assertFalse(json.contains("\"addr\":"), "inner should be flattened, not wrapped: " + json);
+
+        OuterWithAddr back = JSON.parse(json, OuterWithAddr.class);
+        assertEquals("alice", back.name);
+        assertNotNull(back.addr);
+        assertEquals("SF", back.addr.city);
+        assertEquals("94103", back.addr.zip);
+    }
+
+    @Test
+    public void writerRejectsRecordInnerAtConstruction() {
+        // Writer-side mirror of the reader's guard: emitting flattened keys
+        // from a record inner would produce a payload the reader rejects,
+        // so the writer rejects at construction time instead of silently
+        // producing un-round-trippable JSON.
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.toJSONString(new RecordInnerHost(new RecordInner("a"))));
+        assertTrue(ex.getMessage().toLowerCase().contains("record"), ex.getMessage());
+    }
+
+    public record RecordInner(String tag) {}
+
+    public static class RecordInnerHost {
+        @JSONField(unwrapped = true)
+        public RecordInner leaf;
+
+        public RecordInnerHost() {}
+        public RecordInnerHost(RecordInner leaf) { this.leaf = leaf; }
+    }
+
+    // ==================== Mix-in / Jackson config preserved on unwrap ====================
+    // Round-1 audit on PR #125 found that building a fresh ReflectObjectWriter
+    // via the 1-arg factory dropped the mapper's mix-in map + useJacksonAnnotation
+    // flag, so a Jackson-renamed inner field emitted its raw Java name instead.
+
+    public static class RenamedInner {
+        @com.fasterxml.jackson.annotation.JsonProperty("renamed")
+        public String a;
+    }
+
+    public static class JacksonRenameHost {
+        @JSONField(unwrapped = true)
+        public RenamedInner inner;
+        public String name;
+    }
+
+    @Test
+    public void unwrapHonoursJacksonRenamingOnInnerField() {
+        JacksonRenameHost h = new JacksonRenameHost();
+        h.inner = new RenamedInner();
+        h.inner.a = "hello";
+        h.name = "bob";
+
+        ObjectMapper jackson = ObjectMapper.builder().useJacksonAnnotation(true).build();
+        String json = jackson.writeValueAsString(h);
+        assertTrue(json.contains("\"renamed\":\"hello\""),
+                "inner field should emit as 'renamed' not raw 'a': " + json);
+        assertFalse(json.contains("\"a\":\"hello\""), json);
+        assertTrue(json.contains("\"name\":\"bob\""), json);
+    }
+
+    public static class MixInRenamedInner {
+        public String a;
+    }
+
+    public interface InnerMixIn {
+        @JSONField(name = "renamed")
+        String a = null;
+    }
+
+    public static class MixInRenameHost {
+        @JSONField(unwrapped = true)
+        public MixInRenamedInner inner;
+        public String name;
+    }
+
+    @Test
+    public void unwrapHonoursMixInRenamingOnInnerField() {
+        MixInRenameHost h = new MixInRenameHost();
+        h.inner = new MixInRenamedInner();
+        h.inner.a = "hello";
+        h.name = "bob";
+
+        ObjectMapper mapper = ObjectMapper.builder()
+                .addMixIn(MixInRenamedInner.class, InnerMixIn.class)
+                .build();
+        String json = mapper.writeValueAsString(h);
+        assertTrue(json.contains("\"renamed\":\"hello\""),
+                "mix-in-renamed inner should emit as 'renamed': " + json);
+        assertFalse(json.contains("\"a\":\"hello\""), json);
+    }
+
+    // Round-4: rejectNonPojoUnwrappedInner previously only caught structural
+    // non-POJOs (Collection / Map / enum / array / abstract / record). Scalar
+    // wrappers (String, Integer, Long, BigDecimal, Object, …) slipped through
+    // and produced `"field":value` output that the reader couldn't recombine.
+
+    public static class ScalarStringUnwrapHolder {
+        @JSONField(unwrapped = true)
+        public String payload;
+    }
+
+    public static class ScalarIntegerUnwrapHolder {
+        @JSONField(unwrapped = true)
+        public Integer counter;
+    }
+
+    public static class ScalarObjectUnwrapHolder {
+        @JSONField(unwrapped = true)
+        public Object payload;
+    }
+
+    @Test
+    public void writerRejectsScalarStringInnerAtConstruction() {
+        ScalarStringUnwrapHolder h = new ScalarStringUnwrapHolder();
+        h.payload = "hi";
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.toJSONString(h));
+        assertTrue(ex.getMessage().contains("scalar")
+                        || ex.getMessage().toLowerCase().contains("string"),
+                ex.getMessage());
+    }
+
+    @Test
+    public void writerRejectsScalarIntegerInnerAtConstruction() {
+        ScalarIntegerUnwrapHolder h = new ScalarIntegerUnwrapHolder();
+        h.counter = 42;
+        assertThrows(JSONException.class, () -> JSON.toJSONString(h));
+    }
+
+    @Test
+    public void writerRejectsObjectInnerAtConstruction() {
+        ScalarObjectUnwrapHolder h = new ScalarObjectUnwrapHolder();
+        h.payload = java.util.Map.of("k", "v");
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.toJSONString(h));
+        assertTrue(ex.getMessage().contains("Object"), ex.getMessage());
+    }
+
+    // Round-5: Optional and AtomicReference slipped through the R4 guard.
+
+    public static class OptionalHolder {
+        @JSONField(unwrapped = true)
+        public java.util.Optional<String> payload;
+    }
+
+    @Test
+    public void writerRejectsOptionalInnerAtConstruction() {
+        OptionalHolder h = new OptionalHolder();
+        h.payload = java.util.Optional.of("hi");
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.toJSONString(h));
+        assertTrue(ex.getMessage().contains("Optional"), ex.getMessage());
+    }
+
+    @Test
+    public void readerRejectsOptionalInnerAtConstruction() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(OptionalHolder.class));
+        assertTrue(ex.getMessage().contains("Optional"), ex.getMessage());
+    }
+
+    public static class AtomicReferenceHolder {
+        @JSONField(unwrapped = true)
+        public java.util.concurrent.atomic.AtomicReference<String> payload;
+    }
+
+    @Test
+    public void writerRejectsAtomicReferenceInnerAtConstruction() {
+        AtomicReferenceHolder h = new AtomicReferenceHolder();
+        h.payload = new java.util.concurrent.atomic.AtomicReference<>("hi");
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSON.toJSONString(h));
+        assertTrue(ex.getMessage().contains("AtomicReference"), ex.getMessage());
+    }
+
+    // Round-5 reader symmetry with writer's R4 scalar/Object rejection.
+
+    @Test
+    public void readerRejectsScalarStringInnerAtConstruction() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(ScalarStringUnwrapHolder.class));
+        assertTrue(ex.getMessage().toLowerCase().contains("scalar")
+                        || ex.getMessage().toLowerCase().contains("string"),
+                ex.getMessage());
+    }
+
+    @Test
+    public void readerRejectsObjectInnerAtConstruction() {
+        JSONException ex = assertThrows(JSONException.class,
+                () -> com.alibaba.fastjson3.reader.ObjectReaderCreator
+                        .createObjectReader(ScalarObjectUnwrapHolder.class));
+        assertTrue(ex.getMessage().contains("Object"), ex.getMessage());
+    }
+
+    // Round-5 ASM bypass: without unwrap in canGenerate, ASM writer got
+    // chosen for unwrap fields with inclusion=ALWAYS and emitted nested
+    // shape instead of flattened.
+
+    public static class AsmBypassInner {
+        public String city;
+    }
+
+    public static class AsmBypassOuter {
+        @JSONField(unwrapped = true, serialize = true)
+        public AsmBypassInner addr;
+        public String name;
+    }
+
+    @Test
+    public void asmWriterRejectsUnwrappedForReflectPath() {
+        AsmBypassOuter o = new AsmBypassOuter();
+        o.addr = new AsmBypassInner();
+        o.addr.city = "SF";
+        o.name = "alice";
+
+        String json = JSON.toJSONString(o);
+        assertTrue(json.contains("\"city\":\"SF\""),
+                "unwrap must flatten — nested means ASM bypass re-opened: " + json);
+        assertFalse(json.contains("\"addr\":"), json);
+
+        AsmBypassOuter back = JSON.parse(json, AsmBypassOuter.class);
+        assertEquals("alice", back.name);
+        assertEquals("SF", back.addr.city);
+    }
+
+    // Round-6: ASM canGenerate checked only `type.getDeclaredFields()`, so
+    // an INHERITED public field with @JSONField(unwrapped=true) passed the
+    // gate and ASM emitted nested JSON. Scan superclass chain.
+
+    public static class ParentWithUnwrap {
+        @JSONField(unwrapped = true, serialize = true)
+        public AsmBypassInner addr;
+    }
+
+    public static class InheritedUnwrap extends ParentWithUnwrap {
+        public String name;
+    }
+
+    @Test
+    public void asmWriterRejectsInheritedUnwrappedField() {
+        InheritedUnwrap o = new InheritedUnwrap();
+        o.addr = new AsmBypassInner();
+        o.addr.city = "LA";
+        o.name = "bob";
+
+        String json = JSON.toJSONString(o);
+        assertTrue(json.contains("\"city\":\"LA\""),
+                "inherited unwrap must flatten — if nested the ASM gate still misses inherited: " + json);
+        assertFalse(json.contains("\"addr\":"), json);
+
+        InheritedUnwrap back = JSON.parse(json, InheritedUnwrap.class);
+        assertEquals("bob", back.name);
+        assertEquals("LA", back.addr.city);
+    }
+
+    // Round-8 F1: cyclic @JSONField(unwrapped=true) chain on the writer side
+    // recursed until the JVM stack overflowed. Reader had class-level cycle
+    // detection but writer had no equivalent. Depth guard via generator's
+    // existing MAX_WRITE_DEPTH=512 now surfaces a clean JSONException.
+    public static class CircA {
+        @JSONField(unwrapped = true)
+        public CircB b;
+    }
+
+    public static class CircB {
+        @JSONField(unwrapped = true)
+        public CircA a;
+    }
+
+    @Test
+    public void circularUnwrapThrowsJSONExceptionNotStackOverflow() {
+        CircA a = new CircA();
+        a.b = new CircB();
+        a.b.a = a;
+        // Pre-fix: StackOverflowError. Post-fix: JSONException from depth cap.
+        JSONException ex = assertThrows(JSONException.class, () -> JSON.toJSONString(a));
+        assertTrue(ex.getMessage().contains("depth"), ex.getMessage());
+    }
+
+    // Round-8 F2: record components with @JSONField(unwrapped=true) silently
+    // emitted nested JSON because createRecordWriter never read jsonField.unwrapped().
+    // Reader-side expandRecordUnwrapped already flattens record components,
+    // producing a reader/writer asymmetry.
+    public record RecordHolder(@JSONField(unwrapped = true) Name inner, int extra) {
+    }
+
+    @Test
+    public void recordComponentUnwrapFlattens() {
+        Name n = new Name();
+        n.first = "ada";
+        n.last = "lovelace";
+        RecordHolder h = new RecordHolder(n, 42);
+
+        String json = JSON.toJSONString(h);
+        assertFalse(json.contains("\"inner\":"),
+                "record component @unwrapped must flatten: " + json);
+        assertTrue(json.contains("\"first\":\"ada\""), json);
+        assertTrue(json.contains("\"last\":\"lovelace\""), json);
+        assertTrue(json.contains("\"extra\":42"), json);
+
+        // Round-trip: reader-side already supports record-component unwrap, so
+        // the flattened payload must reconstruct to the same shape.
+        RecordHolder back = JSON.parse(json, RecordHolder.class);
+        assertNotNull(back.inner());
+        assertEquals("ada", back.inner().first);
+        assertEquals("lovelace", back.inner().last);
+        assertEquals(42, back.extra());
+    }
 }
