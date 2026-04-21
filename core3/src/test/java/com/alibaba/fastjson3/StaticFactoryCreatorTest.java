@@ -386,4 +386,31 @@ public class StaticFactoryCreatorTest {
         // Subtype-only field must survive the narrowing:
         assertEquals(3, ((SubBean) box.value).age);
     }
+
+    // Round-6: F-bounded TypeVariable `<T extends Comparable<T>>` caused
+    // infinite recursion in TypeUtils.resolve — T's bound is Comparable<T>,
+    // resolving Comparable's type args recurses back into T → StackOverflow.
+    // Idiomatic Jackson-migration pattern (Enum<E> shape). Fix: visited
+    // set breaks cycles by falling back to the raw bound.
+
+    public static final class RecurBox<T extends Comparable<T>> {
+        public T value;
+
+        private RecurBox(T v) {
+            this.value = v;
+        }
+
+        @JSONCreator
+        public static <T extends Comparable<T>> RecurBox<T> of(@JSONField(name = "value") T value) {
+            return new RecurBox<>(value);
+        }
+    }
+
+    @Test
+    public void fBoundedTypeVariableDoesNotStackOverflow() {
+        // Pre-fix: StackOverflowError after ~1024 frames.
+        // Post-fix: raw-bound erasure (Comparable) kicks in on cycle.
+        RecurBox<?> box = JSON.parseObject("{\"value\":\"hello\"}", RecurBox.class);
+        assertNotNull(box);
+    }
 }

@@ -106,28 +106,64 @@ public final class TypeUtils {
     }
 
     private static Type resolve(Type type, Map<TypeVariable<?>, Type> bindings) {
+        return resolve(type, bindings, null);
+    }
+
+    /**
+     * Inner recursion carries a {@code visited} set to detect F-bounded
+     * TypeVariable cycles. Without it, a factory / field typed
+     * {@code <T extends Comparable<T>>} or {@code <E extends Enum<E>>}
+     * triggers infinite recursion: resolve(T) → bound = Comparable&lt;T&gt; →
+     * recurse into Comparable's type args → back to T → StackOverflowError.
+     * When a TypeVariable is already on the resolution stack, fall back to
+     * its raw bound's erasure to break the cycle.
+     */
+    private static Type resolve(Type type, Map<TypeVariable<?>, Type> bindings,
+                                 java.util.Set<TypeVariable<?>> visited) {
         if (type instanceof Class<?>) {
             return type;
         }
         if (type instanceof TypeVariable<?> tv) {
+            if (visited != null && visited.contains(tv)) {
+                // Cycle: erase to the first bound's raw class. Comparable<T> → Comparable.
+                Type[] bounds = tv.getBounds();
+                return bounds.length > 0 ? getRawClass(bounds[0]) : Object.class;
+            }
             Type bound = bindings.get(tv);
             if (bound == null || bound.equals(tv)) {
                 Type[] bounds = tv.getBounds();
-                return bounds.length > 0 ? resolve(bounds[0], bindings) : Object.class;
+                if (bounds.length == 0) {
+                    return Object.class;
+                }
+                java.util.Set<TypeVariable<?>> newVisited = visited == null
+                        ? new java.util.HashSet<>() : visited;
+                newVisited.add(tv);
+                try {
+                    return resolve(bounds[0], bindings, newVisited);
+                } finally {
+                    newVisited.remove(tv);
+                }
             }
             // Recurse in case the bound is itself a TypeVariable or parameterized.
-            return resolve(bound, bindings);
+            java.util.Set<TypeVariable<?>> newVisited = visited == null
+                    ? new java.util.HashSet<>() : visited;
+            newVisited.add(tv);
+            try {
+                return resolve(bound, bindings, newVisited);
+            } finally {
+                newVisited.remove(tv);
+            }
         }
         if (type instanceof WildcardType wt) {
             Type[] upper = wt.getUpperBounds();
-            return upper.length > 0 ? resolve(upper[0], bindings) : Object.class;
+            return upper.length > 0 ? resolve(upper[0], bindings, visited) : Object.class;
         }
         if (type instanceof ParameterizedType pt) {
             Type[] args = pt.getActualTypeArguments();
             Type[] resolved = new Type[args.length];
             boolean changed = false;
             for (int i = 0; i < args.length; i++) {
-                resolved[i] = resolve(args[i], bindings);
+                resolved[i] = resolve(args[i], bindings, visited);
                 if (resolved[i] != args[i]) {
                     changed = true;
                 }
@@ -138,7 +174,7 @@ public final class TypeUtils {
             return new ResolvedParameterizedType(pt.getRawType(), resolved, pt.getOwnerType());
         }
         if (type instanceof GenericArrayType gat) {
-            Type comp = resolve(gat.getGenericComponentType(), bindings);
+            Type comp = resolve(gat.getGenericComponentType(), bindings, visited);
             if (comp instanceof Class<?> c) {
                 return java.lang.reflect.Array.newInstance(c, 0).getClass();
             }
