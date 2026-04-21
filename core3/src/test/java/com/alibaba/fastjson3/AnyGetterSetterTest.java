@@ -551,4 +551,58 @@ public class AnyGetterSetterTest {
                 "covariant-return mix-in @JsonAnyGetter must not throw: " + json);
         assertTrue(json.contains("\"c\":3"), json);
     }
+
+    // Round-8: pre-fix the anyGetter path used a minimal lambda that dropped
+    // type discriminators, filters, depth tracking, and capacity pre-allocation
+    // vs the regular ReflectObjectWriter.write path. Polymorphic round-trips
+    // silently lost "@type" when the target carried @JsonAnyGetter.
+    @com.alibaba.fastjson3.annotation.JSONType(typeName = "DogType")
+    public static class TypeNameAnyGetterDog {
+        public String name = "Rex";
+        private final Map<String, Object> ext = new LinkedHashMap<>();
+
+        public TypeNameAnyGetterDog() {
+            ext.put("e", 1);
+        }
+
+        @JSONField(anyGetter = true)
+        public Map<String, Object> getExt() {
+            return ext;
+        }
+    }
+
+    @Test
+    public void anyGetterPreservesJsonTypeTypeName() {
+        String json = MAPPER.writeValueAsString(new TypeNameAnyGetterDog());
+        assertTrue(json.contains("\"@type\":\"DogType\""),
+                "@JSONType(typeName=) must be preserved with anyGetter: " + json);
+        assertTrue(json.contains("\"name\":\"Rex\""), json);
+        assertTrue(json.contains("\"e\":1"), json);
+    }
+
+    public static class WriteClassNameAnyGetterDog {
+        public String name = "Rex";
+        private final Map<String, Object> ext = new LinkedHashMap<>();
+
+        public WriteClassNameAnyGetterDog() {
+            ext.put("e", 1);
+        }
+
+        @JSONField(anyGetter = true)
+        public Map<String, Object> getExt() {
+            return ext;
+        }
+    }
+
+    @Test
+    public void anyGetterPreservesWriteClassNameFeature() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .enableWrite(WriteFeature.WriteClassName)
+                .build();
+        String json = mapper.writeValueAsString(new WriteClassNameAnyGetterDog());
+        assertTrue(json.contains("\"@type\":\""),
+                "WriteClassName must be honoured when anyGetter is attached: " + json);
+        assertTrue(json.contains(WriteClassNameAnyGetterDog.class.getName()), json);
+        assertTrue(json.contains("\"e\":1"), json);
+    }
 }

@@ -655,29 +655,12 @@ public final class ObjectWriterCreator {
     @SuppressWarnings("unchecked")
     private static <T> ObjectWriter<T> buildObjectWriter(FieldWriter[] writers, Method anyGetterMethod,
                                                           String typeName, String typeKey) {
-        if (anyGetterMethod == null) {
-            // Concrete final class — JIT can devirtualize + inline write() for nested objects
-            return (ObjectWriter<T>) new ReflectObjectWriter(writers, typeName, typeKey);
-        }
-        // Lambda fallback for anyGetter (rare)
-        return (generator, object, fieldName, fieldType, features) -> {
-            generator.startObject();
-            writeFields(generator, writers, object, features);
-            try {
-                java.util.Map<?, ?> extra = (java.util.Map<?, ?>) anyGetterMethod.invoke(object);
-                if (extra != null) {
-                    for (java.util.Map.Entry<?, ?> e : extra.entrySet()) {
-                        generator.writeName(String.valueOf(e.getKey()));
-                        generator.writeAny(e.getValue());
-                    }
-                }
-            } catch (java.lang.reflect.InvocationTargetException e) {
-                throw new com.alibaba.fastjson3.JSONException("anyGetter error", e.getTargetException());
-            } catch (Exception e) {
-                throw new com.alibaba.fastjson3.JSONException("anyGetter error", e);
-            }
-            generator.endObject();
-        };
+        // Always route through ReflectObjectWriter so type discriminators
+        // (@JSONType/@JsonTypeInfo, WriteClassName), before/after filters,
+        // depth tracking, and capacity pre-allocation are preserved whether
+        // or not the type declares an @JsonAnyGetter. Pre-fix, the anyGetter
+        // path used a minimal lambda that silently dropped all of those.
+        return (ObjectWriter<T>) new ReflectObjectWriter(writers, typeName, typeKey, anyGetterMethod);
     }
 
     static void writeFields(com.alibaba.fastjson3.JSONGenerator generator, FieldWriter[] writers, Object object, long features) {
@@ -722,16 +705,25 @@ public final class ObjectWriterCreator {
         // Pre-computed from @JSONType — null if not annotated (zero overhead)
         final String typeName;  // @JSONType(typeName="Dog") → "Dog"
         final String typeKey;   // @JSONType(typeKey="type") → "type", default "@type"
+        // Jackson @JsonAnyGetter / fj3 @JSONField(anyGetter=true): dynamic keys
+        // emitted after the explicit field writers. Null when the type has no
+        // anyGetter — hot path pays zero overhead.
+        final Method anyGetterMethod;
 
         ReflectObjectWriter(FieldWriter[] writers) {
-            this(writers, null, null);
+            this(writers, null, null, null);
         }
 
         ReflectObjectWriter(FieldWriter[] writers, String typeName, String typeKey) {
+            this(writers, typeName, typeKey, null);
+        }
+
+        ReflectObjectWriter(FieldWriter[] writers, String typeName, String typeKey, Method anyGetterMethod) {
             this.writers = writers;
             this.estimatedSize = writers.length * 32 + 16;
             this.typeName = typeName;
             this.typeKey = typeKey;
+            this.anyGetterMethod = anyGetterMethod;
         }
 
         @Override
@@ -769,6 +761,21 @@ public final class ObjectWriterCreator {
                     }
                 }
                 writeFields(generator, writers, object, features);
+                if (anyGetterMethod != null) {
+                    try {
+                        java.util.Map<?, ?> extra = (java.util.Map<?, ?>) anyGetterMethod.invoke(object);
+                        if (extra != null) {
+                            for (java.util.Map.Entry<?, ?> e : extra.entrySet()) {
+                                generator.writeName(String.valueOf(e.getKey()));
+                                generator.writeAny(e.getValue());
+                            }
+                        }
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        throw new com.alibaba.fastjson3.JSONException("anyGetter error", e.getTargetException());
+                    } catch (Exception e) {
+                        throw new com.alibaba.fastjson3.JSONException("anyGetter error", e);
+                    }
+                }
                 // After filters
                 if (generator.afterFilters != null) {
                     for (var af : generator.afterFilters) {
