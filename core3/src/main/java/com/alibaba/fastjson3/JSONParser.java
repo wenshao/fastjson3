@@ -1163,9 +1163,39 @@ public abstract sealed class JSONParser implements Closeable
                 return;
             }
         }
+        // Fast-path rejection for pathological exponents BEFORE calling
+        // `new BigDecimal(numStr)` — a 13-char input `"1e2147483647"` would
+        // otherwise build a BigDecimal whose .precision() - .scale() int
+        // subtraction OVERFLOWS to Integer.MIN_VALUE, wrapping past the
+        // `> MAX_BIG_INTEGER_DIGITS` check and letting a 2.1-billion-digit
+        // bignum through. Scan the exponent substring and reject early.
+        if (hasExp) {
+            int eIdx = numStr.indexOf('e');
+            if (eIdx < 0) {
+                eIdx = numStr.indexOf('E');
+            }
+            // Parse the exponent digits (skipping optional sign) into a long.
+            // Rejecting any |exp| > MAX_BIG_INTEGER_DIGITS early catches the
+            // overflow-eligible inputs. Non-integer exponents throw NFE,
+            // propagated to the caller's handler.
+            int expStart = eIdx + 1;
+            if (expStart < len && (numStr.charAt(expStart) == '+' || numStr.charAt(expStart) == '-')) {
+                expStart++;
+            }
+            // A 10-digit exponent already exceeds MAX_BIG_INTEGER_DIGITS (4096).
+            // A 12+ digit exponent risks int-overflow during BigDecimal parse.
+            if (len - expStart > 10) {
+                throw new JSONException("exponent length " + (len - expStart)
+                        + " exceeds the maximum safe bound for BigInteger/BigDecimal parsing");
+            }
+        }
         try {
             java.math.BigDecimal bd = new java.math.BigDecimal(numStr);
-            int digits = bd.precision() - bd.scale();
+            // Use long arithmetic — precision() and scale() are each `int`,
+            // so their subtraction can wrap. With the early-exponent gate
+            // above, we shouldn't actually reach pathological values here,
+            // but belt-and-braces.
+            long digits = (long) bd.precision() - (long) bd.scale();
             if (digits > MAX_BIG_INTEGER_DIGITS) {
                 throw new JSONException("BigInteger/BigDecimal magnitude "
                         + digits + " digits exceeds maximum " + MAX_BIG_INTEGER_DIGITS);
@@ -1269,7 +1299,18 @@ public abstract sealed class JSONParser implements Closeable
 
         if (isFloat) {
             if (isEnabled(ReadFeature.UseBigDecimalForDoubles)) {
-                return new BigDecimal(numStr);
+                // Apply the magnitude cap BEFORE allocating the BigDecimal —
+                // without it, `parseObject("1e1000000", Object.class,
+                // UseBigDecimalForDoubles)` spends 70+ ms producing a
+                // 1M-digit bignum. Matches the protection on the typed-target
+                // readBigDecimalLiteral path. NFE is wrapped for the
+                // framework exception contract.
+                checkBigNumberMagnitude(numStr);
+                try {
+                    return new BigDecimal(numStr);
+                } catch (NumberFormatException e) {
+                    throw new JSONException("invalid number literal '" + numStr + "'", e);
+                }
             }
             return Double.parseDouble(numStr);
         }

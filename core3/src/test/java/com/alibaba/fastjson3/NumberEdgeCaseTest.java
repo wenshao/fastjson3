@@ -561,4 +561,60 @@ class NumberEdgeCaseTest {
         assertEquals(new BigInteger(boundary), bi);
     }
 
+    // Round-6: R5 cap reopened on 3 adjacent paths.
+    //
+    // F1: `precision() - scale()` was `int` subtraction — "1e2147483647"
+    //     (13 chars) overflows to Integer.MIN_VALUE, wrapping past the cap.
+    //     Fix: reject absurd exponents BEFORE BigDecimal parse, use long
+    //     arithmetic in the post-parse check.
+    // F2: readNumber float branch with UseBigDecimalForDoubles was uncapped.
+    //     `parseObject("1e1000000", Object.class, UseBigDecimalForDoubles)`
+    //     produced a 1M-digit BigDecimal.
+    // F3: JSONObject.getBigDecimal / getBigInteger on a String value
+    //     called new BigDecimal/new BigInteger with no cap.
+
+    @Test
+    void hugeExponentIntOverflowBlocked() {
+        // Pre-fix: "1e2147483647" was 13 chars, passed length check,
+        // BigDecimal.precision - scale overflowed to Integer.MIN_VALUE,
+        // passed the `> 4096` check, expanded to a 2B-digit bignum.
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("1e2147483647", BigInteger.class));
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("1e2147483647", BigDecimal.class));
+    }
+
+    @Test
+    void readNumberFloatBranchCapsUseBigDecimalForDoubles() {
+        // parseObject with Object target + UseBigDecimalForDoubles goes
+        // through readNumber's float branch (not readBigDecimalLiteral).
+        // Must apply the same magnitude cap.
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject("1e1000000", Object.class,
+                        ReadFeature.UseBigDecimalForDoubles));
+    }
+
+    @Test
+    void jsonObjectGetBigDecimalCapsStringValue() {
+        // 1 MB of digits in a JSONObject string value. getBigDecimal must
+        // enforce the cap — pre-fix it did `new BigDecimal(str)` unchecked.
+        String huge = "1".repeat(10_000);
+        JSONObject obj = JSON.parseObject("{\"v\":\"" + huge + "\"}");
+        assertThrows(JSONException.class, () -> obj.getBigDecimal("v"));
+    }
+
+    @Test
+    void jsonObjectGetBigIntegerCapsStringValue() {
+        String huge = "1".repeat(10_000);
+        JSONObject obj = JSON.parseObject("{\"v\":\"" + huge + "\"}");
+        assertThrows(JSONException.class, () -> obj.getBigInteger("v"));
+    }
+
+    @Test
+    void jsonObjectGetBigDecimalSmallValueStillWorks() {
+        // Regression: legitimate small values must still parse through.
+        JSONObject obj = JSON.parseObject("{\"v\":\"3.14\"}");
+        assertEquals(new BigDecimal("3.14"), obj.getBigDecimal("v"));
+    }
+
 }

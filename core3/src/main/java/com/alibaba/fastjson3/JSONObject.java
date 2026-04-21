@@ -426,7 +426,17 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             if (str.isEmpty()) {
                 return null;
             }
-            return new BigDecimal(str);
+            // Same magnitude cap the typed-target parse path applies —
+            // otherwise a 1 MB `{"v":"111...1"}` payload accessed via
+            // getBigDecimal would parse into a 1M-digit bignum at accessor
+            // call time, re-opening the DoS primitive on a different path.
+            JSONParser.checkBigNumberMagnitude(str);
+            try {
+                return new BigDecimal(str);
+            } catch (NumberFormatException e) {
+                throw new JSONException("invalid BigDecimal literal '" + str
+                        + "' at key '" + key + "'", e);
+            }
         }
         throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
             + val.getClass().getSimpleName() + " to BigDecimal: " + val);
@@ -451,7 +461,13 @@ public class JSONObject extends LinkedHashMap<String, Object> {
             if (str.isEmpty()) {
                 return null;
             }
-            return new BigInteger(str);
+            JSONParser.checkBigNumberMagnitude(str);
+            try {
+                return new BigInteger(str);
+            } catch (NumberFormatException e) {
+                throw new JSONException("invalid BigInteger literal '" + str
+                        + "' at key '" + key + "'", e);
+            }
         }
         throw new JSONException("Cannot cast JSONObject['" + key + "'] from "
             + val.getClass().getSimpleName() + " to BigInteger: " + val);
