@@ -617,4 +617,54 @@ class NumberEdgeCaseTest {
         assertEquals(new BigDecimal("3.14"), obj.getBigDecimal("v"));
     }
 
+    // Round-7 F1: symmetric JSONArray accessors missed the cap.
+    @Test
+    void jsonArrayGetBigDecimalCapsStringValue() {
+        String huge = "1".repeat(10_000);
+        JSONArray arr = JSON.parseArray("[\"" + huge + "\"]");
+        assertThrows(JSONException.class, () -> arr.getBigDecimal(0));
+    }
+
+    @Test
+    void jsonArrayGetBigIntegerCapsStringValue() {
+        String huge = "1".repeat(10_000);
+        JSONArray arr = JSON.parseArray("[\"" + huge + "\"]");
+        assertThrows(JSONException.class, () -> arr.getBigInteger(0));
+    }
+
+    @Test
+    void jsonArrayGetBigDecimalSmallValueStillWorks() {
+        JSONArray arr = JSON.parseArray("[\"3.14\"]");
+        assertEquals(new BigDecimal("3.14"), arr.getBigDecimal(0));
+    }
+
+    // Round-7 F2: long-mantissa + short-exponent bypassed the helper's
+    // own gating. "1" + "0"*1_000_000 + "e1" had hasExp=true (so the raw
+    // length shortcut was skipped), short post-e digits (so the exponent
+    // gate passed), and fell into `new BigDecimal(numStr)` — 12+ seconds
+    // to reject. Must reject on mantissa length before allocating.
+    @Test
+    void hugeMantissaWithShortExponentRejectedFast() {
+        String huge = "1" + "0".repeat(10_000) + "e1";
+        long t0 = System.nanoTime();
+        JSONException ex = assertThrows(JSONException.class,
+                () -> JSONParser.checkBigNumberMagnitude(huge));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+        // The pre-fix path took ~200ms for a 10k mantissa; the post-fix
+        // reject is string-length-bounded and completes in single-digit
+        // milliseconds. Generous budget avoids flake on slow CI.
+        assertTrue(elapsedMs < 1000,
+                "checkBigNumberMagnitude should reject huge mantissa quickly, took " + elapsedMs + "ms");
+        assertTrue(ex.getMessage().contains("mantissa length"), ex.getMessage());
+    }
+
+    @Test
+    void hugeMantissaViaParseObjectRejected() {
+        // End-to-end: the same payload reaching BigDecimal materialisation
+        // via parseObject must reject via the helper.
+        String huge = "\"1" + "0".repeat(10_000) + "e1\"";
+        assertThrows(JSONException.class,
+                () -> JSON.parseObject(huge, BigDecimal.class));
+    }
+
 }

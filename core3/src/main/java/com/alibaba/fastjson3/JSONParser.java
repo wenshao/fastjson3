@@ -1188,6 +1188,19 @@ public abstract sealed class JSONParser implements Closeable
                 throw new JSONException("exponent length " + (len - expStart)
                         + " exceeds the maximum safe bound for BigInteger/BigDecimal parsing");
             }
+            // Mantissa-length gate. Without this, a payload like
+            // "1" + "0"*1_000_000 + "e1" bypasses the length shortcut above
+            // (hasExp=true) and the exponent gate (exp is short), falling
+            // into `new BigDecimal(numStr)` which burns 12+ seconds on a
+            // 1MB-digit mantissa. The mantissa directly bounds
+            // BigDecimal.precision(), so a mantissa exceeding the cap is
+            // guaranteed to trip the digits check — reject before allocating.
+            int mantissaSignAdjust = (numStr.charAt(0) == '-' || numStr.charAt(0) == '+') ? 1 : 0;
+            if (eIdx - mantissaSignAdjust > MAX_BIG_INTEGER_DIGITS + 1) {
+                throw new JSONException("BigInteger/BigDecimal mantissa length "
+                        + (eIdx - mantissaSignAdjust)
+                        + " exceeds the maximum safe bound for parsing");
+            }
         }
         try {
             java.math.BigDecimal bd = new java.math.BigDecimal(numStr);
