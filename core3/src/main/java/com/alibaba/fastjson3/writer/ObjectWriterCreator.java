@@ -1181,6 +1181,14 @@ public final class ObjectWriterCreator {
                     || java.lang.reflect.Modifier.isStatic(method.getModifiers())) {
                 continue;
             }
+            // Skip compiler-generated bridge methods. A covariant-return override
+            // (e.g. Child.getExtras() narrowing Map → LinkedHashMap) emits both
+            // the erased-signature bridge and the narrowed declared method. Both
+            // match a mix-in's signature filter and trip the ambiguity guard
+            // below with "getExtras and getExtras" against itself.
+            if (method.isBridge()) {
+                continue;
+            }
             if (!java.util.Map.class.isAssignableFrom(method.getReturnType())) {
                 continue;
             }

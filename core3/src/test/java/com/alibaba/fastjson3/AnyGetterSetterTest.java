@@ -509,4 +509,46 @@ public class AnyGetterSetterTest {
         assertTrue(json.contains("\"z\":7"), json);
         assertTrue(json.contains("\"id\":\"S\""), json);
     }
+
+    // Round-7: covariant-return override emits a bridge method with the
+    // erased Map signature alongside the narrowed declared method. Both
+    // share (name, paramTypes) and both match a mix-in's signature filter.
+    // Pre-fix: `findAnyGetterMethod` counted both, tripping the ambiguity
+    // guard with "getExtras and getExtras" against itself.
+    public static class BaseCovariantTarget {
+        public Map<String, Object> getExtras() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("b", 2);
+            return m;
+        }
+    }
+
+    public static class ChildCovariantTarget extends BaseCovariantTarget {
+        @Override
+        public LinkedHashMap<String, Object> getExtras() {
+            LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+            m.put("c", 3);
+            return m;
+        }
+    }
+
+    public abstract static class ChildCovariantMix {
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        public abstract LinkedHashMap<String, Object> getExtras();
+    }
+
+    @Test
+    public void mixInJacksonAnyGetterCovariantReturnNoAmbiguity() {
+        // Pre-fix: threw JSONException "multiple anyGetter methods on
+        // ChildCovariantTarget: getExtras and getExtras". Post-fix: bridge
+        // method is skipped, only the narrowed declared method is chosen.
+        ObjectMapper jackson = ObjectMapper.builder()
+                .useJacksonAnnotation(true)
+                .addMixIn(ChildCovariantTarget.class, ChildCovariantMix.class)
+                .build();
+        String json = jackson.writeValueAsString(new ChildCovariantTarget());
+        assertFalse(json.contains("\"extras\":"),
+                "covariant-return mix-in @JsonAnyGetter must not throw: " + json);
+        assertTrue(json.contains("\"c\":3"), json);
+    }
 }
