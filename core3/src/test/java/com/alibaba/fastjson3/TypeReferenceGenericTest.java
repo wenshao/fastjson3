@@ -10,6 +10,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -130,5 +131,125 @@ public class TypeReferenceGenericTest {
         byte[] bytes = "[{\"name\":\"a\",\"age\":1}]".getBytes();
         List<User> users = JSON.parseObject(bytes, new TypeReference<List<User>>() {}.getType());
         assertEquals(1, users.size());
+    }
+
+    // ==================== null elements / values in typed collections ====================
+    // Round-3 usability audit finding F2: null element in List<String> / value in
+    // Map<String,String> used to throw "expected quote" at the null token because
+    // the typed-target dispatch called readString() directly, with no null guard.
+
+    @Test
+    public void typedStringListAcceptsNullElements() {
+        List<String> list = JSON.parseObject("[null,\"a\",null]", new TypeReference<List<String>>() {});
+        assertEquals(3, list.size());
+        assertNull(list.get(0));
+        assertEquals("a", list.get(1));
+        assertNull(list.get(2));
+    }
+
+    @Test
+    public void typedStringMapAcceptsNullValues() {
+        Map<String, String> m = JSON.parseObject("{\"a\":null,\"b\":\"x\",\"c\":null}",
+                new TypeReference<Map<String, String>>() {});
+        assertEquals(3, m.size());
+        assertNull(m.get("a"));
+        assertEquals("x", m.get("b"));
+        assertNull(m.get("c"));
+    }
+
+    @Test
+    public void typedStringSetAcceptsNullElements() {
+        Set<String> s = JSON.parseObject("[\"a\",null,\"b\"]", new TypeReference<Set<String>>() {});
+        assertEquals(3, s.size());
+        assertTrue(s.contains(null));
+        assertTrue(s.contains("a"));
+    }
+
+    @Test
+    public void typedBoxedNumberListAcceptsNullElements() {
+        // Same null-literal courtesy extended to boxed wrappers.
+        List<Integer> li = JSON.parseObject("[1,null,3]", new TypeReference<List<Integer>>() {});
+        assertEquals(java.util.Arrays.asList(1, null, 3), li);
+
+        List<Long> ll = JSON.parseObject("[null,2]", new TypeReference<List<Long>>() {});
+        assertNull(ll.get(0));
+        assertEquals(2L, ll.get(1));
+
+        List<Boolean> lb = JSON.parseObject("[true,null,false]", new TypeReference<List<Boolean>>() {});
+        assertEquals(java.util.Arrays.asList(true, null, false), lb);
+    }
+
+    // Round-4: the BuiltinCodecs String-family readers (UUID, Date/time,
+    // URI, Path, …) called readString() unconditionally — null elements
+    // in a typed collection of those types threw. Fix at the codec layer
+    // (readString → readNullableString).
+
+    @Test
+    public void typedLocalDateTimeListAcceptsNullElements() {
+        List<java.time.LocalDateTime> ldts = JSON.parseObject(
+                "[\"2026-04-20T10:00:00\",null,\"2026-04-21T11:00:00\"]",
+                new TypeReference<List<java.time.LocalDateTime>>() {});
+        assertEquals(3, ldts.size());
+        assertNull(ldts.get(1));
+        assertEquals(java.time.LocalDateTime.parse("2026-04-20T10:00:00"), ldts.get(0));
+    }
+
+    @Test
+    public void typedUuidListAcceptsNullElements() {
+        List<java.util.UUID> uuids = JSON.parseObject(
+                "[\"00000000-0000-0000-0000-000000000001\",null]",
+                new TypeReference<List<java.util.UUID>>() {});
+        assertEquals(2, uuids.size());
+        assertNull(uuids.get(1));
+    }
+
+    @Test
+    public void typedInstantListAcceptsNullElements() {
+        List<java.time.Instant> ins = JSON.parseObject(
+                "[null,\"2026-04-20T10:00:00Z\"]",
+                new TypeReference<List<java.time.Instant>>() {});
+        assertEquals(2, ins.size());
+        assertNull(ins.get(0));
+        assertNotNull(ins.get(1));
+    }
+
+    @Test
+    public void typedBigDecimalListAcceptsNullElements() {
+        // Focus: null element no longer throws. Element-type fidelity is
+        // tracked by a separate PR; here we only assert null + non-null arity.
+        List<java.math.BigDecimal> bds = JSON.parseObject(
+                "[1.5,null,2.5]", new TypeReference<List<java.math.BigDecimal>>() {});
+        assertEquals(3, bds.size());
+        assertNull(bds.get(1));
+        assertNotNull(bds.get(0));
+    }
+
+    @Test
+    public void typedBigIntegerListAcceptsNullElements() {
+        List<java.math.BigInteger> bis = JSON.parseObject(
+                "[42,null]", new TypeReference<List<java.math.BigInteger>>() {});
+        assertEquals(2, bis.size());
+        assertNotNull(bis.get(0));
+        assertNull(bis.get(1));
+    }
+
+    @Test
+    public void topLevelBigDecimalNull() {
+        assertNull(JSON.parseObject("null", java.math.BigDecimal.class));
+    }
+
+    @Test
+    public void topLevelBigIntegerNull() {
+        assertNull(JSON.parseObject("null", java.math.BigInteger.class));
+    }
+
+    @Test
+    public void topLevelJSONObjectNull() {
+        assertNull(JSON.parseObject("null", JSONObject.class));
+    }
+
+    @Test
+    public void topLevelJSONArrayNull() {
+        assertNull(JSON.parseObject("null", JSONArray.class));
     }
 }

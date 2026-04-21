@@ -466,6 +466,21 @@ public abstract sealed class JSONParser implements Closeable
         }
     }
 
+    /**
+     * Read a String token, accepting a null literal as {@code null}. Used by
+     * collection/map dispatch paths where a null element inside a
+     * {@code List<String>} or a null value inside a {@code Map<String, String>}
+     * is legal JSON but not a valid string token. The bare {@link #readString()}
+     * entry point throws on null so that callers reading a required string (field
+     * readers that need the value) still see a clear diagnostic.
+     */
+    public String readNullableString() {
+        if (readNull()) {
+            return null;
+        }
+        return readString();
+    }
+
     public String readString() {
         skipWhitespace();
         if (offset >= end()) {
@@ -859,21 +874,56 @@ public abstract sealed class JSONParser implements Closeable
             return (T) readAny();
         }
         if (type == String.class) {
-            return (T) readString();
+            // Null literal is a valid JSON element for any reference type.
+            // Without this guard, `[null, "a"]` through
+            // TypeReference<List<String>> / readGenericList throws
+            // "expected quote" at the null token, and Map<String,String>
+            // with a null value fails the same way.
+            return (T) readNullableString();
         }
-        if (type == int.class || type == Integer.class) {
+        if (type == Integer.class) {
+            if (readNull()) {
+                return null;
+            }
             return (T) Integer.valueOf(readInt());
         }
-        if (type == long.class || type == Long.class) {
+        if (type == int.class) {
+            return (T) Integer.valueOf(readInt());
+        }
+        if (type == Long.class) {
+            if (readNull()) {
+                return null;
+            }
             return (T) Long.valueOf(readLong());
         }
-        if (type == double.class || type == Double.class) {
+        if (type == long.class) {
+            return (T) Long.valueOf(readLong());
+        }
+        if (type == Double.class) {
+            if (readNull()) {
+                return null;
+            }
             return (T) Double.valueOf(readDouble());
         }
-        if (type == float.class || type == Float.class) {
+        if (type == double.class) {
+            return (T) Double.valueOf(readDouble());
+        }
+        if (type == Float.class) {
+            if (readNull()) {
+                return null;
+            }
             return (T) Float.valueOf((float) readDouble());
         }
-        if (type == boolean.class || type == Boolean.class) {
+        if (type == float.class) {
+            return (T) Float.valueOf((float) readDouble());
+        }
+        if (type == Boolean.class) {
+            if (readNull()) {
+                return null;
+            }
+            return (T) Boolean.valueOf(readBoolean());
+        }
+        if (type == boolean.class) {
             return (T) Boolean.valueOf(readBoolean());
         }
         if (type == BigDecimal.class) {
@@ -889,9 +939,15 @@ public abstract sealed class JSONParser implements Closeable
             return (T) readBigIntegerLiteral();
         }
         if (type == JSONObject.class) {
+            if (readNull()) {
+                return null;
+            }
             return (T) readObject();
         }
         if (type == JSONArray.class) {
+            if (readNull()) {
+                return null;
+            }
             return (T) readArray();
         }
         if (type == AtomicInteger.class) {
