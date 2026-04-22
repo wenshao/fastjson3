@@ -405,8 +405,10 @@ public final class JSON {
     //
     // Caveat: the untyped `parseArray(String)` returns JSONArray; modern
     // JSON.parse(String) is untyped auto-detect with a broader return
-    // contract. parseArray also reads globalReadFeatures, JSON.parseList
-    // does not — see the parseObject note above.
+    // contract. parseArray and the two-arg parseList / parseTypedArray
+    // forms both read globalReadFeatures; only the `parse(json, Class<T>)`
+    // family and the 3-arg `parseList(json, Class<T>, ParseConfig)` form
+    // use the explicit config mask without consulting the global.
 
     /**
      * Parse JSON string to JSONArray.
@@ -631,9 +633,14 @@ public final class JSON {
     // toJSONString / toJSONBytes mirror fastjson 1.x / 2.x. Modern
     // counterparts (see "Unified Write API"):
     //   toJSONString(obj)                        ↔ JSON.write(obj)
-    //   toJSONString(obj, WriteFeature...)       ↔ JSON.write(obj, WriteConfig)  (WriteConfig wraps feature flags)
     //   toJSONBytes(obj)                         ↔ JSON.writeBytes(obj)
-    //   toJSONBytes(obj, WriteFeature...)        ↔ JSON.writeBytes(obj, WriteConfig)
+    //
+    // The `toJSONString(obj, WriteFeature...)` and
+    // `toJSONBytes(obj, WriteFeature...)` overloads have NO direct modern
+    // counterpart that accepts arbitrary feature varargs — WriteConfig is
+    // a fixed enum (DEFAULT/PRETTY/WITH_NULLS/PRETTY_WITH_NULLS) and cannot
+    // encode arbitrary feature combinations. Keep the compat overloads
+    // when you need granular WriteFeature control.
     //
     // Caveats before migrating:
     //   * Pretty/compact output: no toJSONString(obj, boolean) overload
@@ -1870,9 +1877,14 @@ public final class JSON {
     // Fine-grained control: `write(obj, WriteConfig)` / `writeBytes(obj,
     // WriteConfig)` take a preset (DEFAULT/PRETTY/WITH_NULLS/etc.).
     //
-    // Unlike `toJSONString` / `toJSONBytes`, these do NOT read
-    // globalWriteFeatures — the WriteConfig mask is the only source of
-    // feature flags, so output is reproducible regardless of JVM-wide state.
+    // `write(obj)` / `write(obj, WriteConfig)` / `writeBytes(obj)` /
+    // `writeBytes(obj, WriteConfig)` / `writePretty` / `writeCompact` take
+    // the WriteConfig mask as the only source of feature flags and do NOT
+    // read globalWriteFeatures — output is reproducible regardless of
+    // JVM-wide state. `writeTo(OutputStream, obj)` is the exception: it
+    // delegates to `toJSONBytes(obj)` and thus DOES apply the global mask
+    // (use `writeTo(OutputStream, obj, WriteFeature...)` for explicit
+    // feature control that bypasses the global).
 
     /**
      * Serialize object to JSON string.
