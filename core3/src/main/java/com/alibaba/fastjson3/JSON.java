@@ -95,7 +95,20 @@ public final class JSON {
         return value;
     }
 
-    // ==================== Parse ====================
+    // ==================== Parse: untyped (auto-detect) ====================
+    //
+    // This class groups 100+ static methods into these families:
+    //   * Untyped parse — this section
+    //   * Typed parse (modern) — see "Unified Parse API"
+    //   * Collection parse (modern) — see "Collection Type Parsing"
+    //   * Write (modern) — see "Unified Write API"
+    //   * fastjson2 compatibility — see sections tagged "(fastjson2-compat)"
+    //
+    // New code should prefer the modern families. fastjson2-compat methods
+    // are kept for migration from fastjson 1.x / 2.x; many typed overloads
+    // have a close modern counterpart, but some overloads differ in return
+    // contract, global feature handling, and available signatures. Check
+    // the per-section caveats before doing a mechanical rename.
 
     /**
      * Parse JSON string to auto-detected type.
@@ -171,6 +184,23 @@ public final class JSON {
         }
         return parse(new String(chars));
     }
+
+    // ==================== Parse: parseObject (fastjson2-compat) ====================
+    //
+    // parseObject(...) overloads mirror fastjson 1.x / 2.x. Typed overloads
+    // have a modern counterpart in "Unified Parse API":
+    //   parseObject(json, Class<T>)       ↔ JSON.parse(json, Class<T>)
+    //   parseObject(json, Type)           ↔ JSON.parse(json, Type)
+    //   parseObject(json, TypeReference)  ↔ JSON.parse(json, TypeReference)
+    //
+    // Caveats before migrating:
+    //   * The untyped overload `parseObject(String)` returns JSONObject;
+    //     JSON.parse(String) is untyped auto-detect and may return
+    //     JSONObject / JSONArray / scalar / null.
+    //   * parseObject honours globalReadFeatures (set via JSON.config(
+    //     ReadFeature...)); JSON.parse routes through a ParseConfig mask
+    //     and does NOT read the thread-local global. Verify your call
+    //     sites don't depend on a globally-enabled feature before switching.
 
     /**
      * Parse JSON string to JSONObject.
@@ -366,6 +396,20 @@ public final class JSON {
         }
     }
 
+    // ==================== Parse: parseArray (fastjson2-compat) ====================
+    //
+    // parseArray(...) overloads mirror fastjson 1.x / 2.x. Typed overloads
+    // have a modern counterpart:
+    //   parseArray(json, Class<T>)  ↔ JSON.parseList(json, Class<T>) (returns List<T>)
+    //                               ↔ JSON.parseTypedArray(json, Class<T>) (returns T[])
+    //
+    // Caveat: the untyped `parseArray(String)` returns JSONArray; modern
+    // JSON.parse(String) is untyped auto-detect with a broader return
+    // contract. parseArray and the two-arg parseList / parseTypedArray
+    // forms both read globalReadFeatures; only the `parse(json, Class<T>)`
+    // family and the 3-arg `parseList(json, Class<T>, ParseConfig)` form
+    // use the explicit config mask without consulting the global.
+
     /**
      * Parse JSON string to JSONArray.
      */
@@ -477,7 +521,17 @@ public final class JSON {
         }
     }
 
-    // ==================== Parse: InputStream ====================
+    // ==================== Parse: parseObject(InputStream) (fastjson2-compat) ====================
+    //
+    // These overloads exist for migration from fastjson 1.x / 2.x. The
+    // modern API has no direct stream-typed counterpart — callers who
+    // want the modern `parse(...)` verb must buffer the stream themselves.
+    // Note: the untyped `parseObject(InputStream)` and the `ReadFeature...`
+    // overloads always buffer through an internal oversized-input guard
+    // (readAllBytesWithLimit); the typed `parseObject(InputStream, Class)`
+    // and `parseObject(InputStream, Type)` overloads only engage that
+    // guard when globalReadFeatures != 0 and otherwise delegate straight
+    // to ObjectMapper.readValue(in, ...). Behaviour varies by overload.
 
     /**
      * Parse JSON from InputStream (UTF-8) to typed Java object.
@@ -535,7 +589,13 @@ public final class JSON {
         }
     }
 
-    // ==================== Parse: Reader ====================
+    // ==================== Parse: parseObject(Reader) (fastjson2-compat) ====================
+    //
+    // Same story as the InputStream overloads above — no modern
+    // Reader-typed counterpart. Migrating means the caller reads the
+    // Reader into a String first; the current Reader compat overloads
+    // already buffer the full contents via readAllChars (no size guard),
+    // so the memory profile is the same.
 
     /**
      * Read all characters from a Reader into a String.
@@ -568,7 +628,28 @@ public final class JSON {
         return parseObject(readAllChars(reader), type);
     }
 
-    // ==================== Serialize ====================
+    // ==================== Serialize: toJSONString / toJSONBytes (fastjson2-compat) ====================
+    //
+    // toJSONString / toJSONBytes mirror fastjson 1.x / 2.x. Modern
+    // counterparts (see "Unified Write API"):
+    //   toJSONString(obj)                        ↔ JSON.write(obj)
+    //   toJSONBytes(obj)                         ↔ JSON.writeBytes(obj)
+    //
+    // The `toJSONString(obj, WriteFeature...)` and
+    // `toJSONBytes(obj, WriteFeature...)` overloads have NO direct modern
+    // counterpart that accepts arbitrary feature varargs — WriteConfig is
+    // a fixed enum (DEFAULT/PRETTY/WITH_NULLS/PRETTY_WITH_NULLS) and cannot
+    // encode arbitrary feature combinations. Keep the compat overloads
+    // when you need granular WriteFeature control.
+    //
+    // Caveats before migrating:
+    //   * Pretty/compact output: no toJSONString(obj, boolean) overload
+    //     exists; in fj3 use either a WriteFeature... vararg here, or
+    //     JSON.writePretty(obj) / JSON.writeCompact(obj) on the modern side.
+    //   * toJSONString / toJSONBytes honour globalWriteFeatures (set via
+    //     JSON.config(WriteFeature...)); JSON.write / JSON.writeBytes route
+    //     through a WriteConfig mask and do NOT read the global. Verify no
+    //     call site depends on a globally-enabled feature before switching.
 
     /**
      * Serialize object to JSON string.
@@ -653,7 +734,7 @@ public final class JSON {
         }
     }
 
-    // ==================== Serialize: with Filters ====================
+    // ==================== Serialize: toJSONString / toJSONBytes with Filters (fastjson2-compat) ====================
 
     /**
      * Serialize object to JSON string with a single filter and features.
@@ -1163,7 +1244,19 @@ public final class JSON {
         return JSONPath.eval(json, path, type);
     }
 
-    // ==================== Unified Parse API ====================
+    // ==================== Unified Parse API (modern — preferred) ====================
+    //
+    // This is the recommended family for new code: a single verb `parse`
+    // covers the typed-parse surface. Available overloads:
+    //   String  + Class<T>  / Type / TypeReference<T> / TypeToken<T>
+    //   byte[]  + Class<T>  / TypeToken<T>
+    // Each form also accepts an optional ParseConfig for explicit feature
+    // control. Call sites read uniformly and mirror the write-side
+    // `JSON.write(obj)` family.
+    //
+    // Unlike `parseObject` / `parseArray`, these do NOT read
+    // globalReadFeatures — the ParseConfig mask is the only source of
+    // feature flags, so parsing is reproducible regardless of JVM-wide state.
 
     /**
      * Parse JSON string to specified type.
@@ -1771,7 +1864,27 @@ public final class JSON {
         return ObjectMapper.shared().readValue(json, typeRef.getType(), config.mask());
     }
 
-    // ==================== Unified Write API ====================
+    // ==================== Unified Write API (modern — preferred) ====================
+    //
+    // This is the recommended family for new code:
+    //   write(obj)                 → compact String
+    //   writePretty(obj)           → indented String
+    //   writeCompact(obj)          → compact String (explicit alias)
+    //   writeBytes(obj)            → compact byte[]
+    //   writeTo(OutputStream, obj) → writes UTF-8 bytes to OutputStream
+    //                                (buffers via toJSONBytes first — not
+    //                                 true chunked streaming)
+    // Fine-grained control: `write(obj, WriteConfig)` / `writeBytes(obj,
+    // WriteConfig)` take a preset (DEFAULT/PRETTY/WITH_NULLS/etc.).
+    //
+    // `write(obj)` / `write(obj, WriteConfig)` / `writeBytes(obj)` /
+    // `writeBytes(obj, WriteConfig)` / `writePretty` / `writeCompact` take
+    // the WriteConfig mask as the only source of feature flags and do NOT
+    // read globalWriteFeatures — output is reproducible regardless of
+    // JVM-wide state. `writeTo(OutputStream, obj)` is the exception: it
+    // delegates to `toJSONBytes(obj)` and thus DOES apply the global mask
+    // (use `writeTo(OutputStream, obj, WriteFeature...)` for explicit
+    // feature control that bypasses the global).
 
     /**
      * Serialize object to JSON string.
