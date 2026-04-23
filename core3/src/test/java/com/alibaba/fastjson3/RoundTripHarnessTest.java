@@ -2,6 +2,7 @@ package com.alibaba.fastjson3;
 
 import com.alibaba.fastjson3.annotation.JSONCreator;
 import com.alibaba.fastjson3.annotation.JSONField;
+import com.alibaba.fastjson3.annotation.JSONType;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
 
@@ -32,6 +33,9 @@ import static org.junit.jupiter.api.DynamicTest.dynamicTest;
  */
 public class RoundTripHarnessTest {
     static final ObjectMapper SHARED = ObjectMapper.shared();
+    static final ObjectMapper WRITE_CLASS_NAME = ObjectMapper.builder()
+            .enableWrite(WriteFeature.WriteClassName)
+            .build();
 
     record Fixture<T>(String name, T instance, Class<T> type, ObjectMapper mapper) {
         static <T> Fixture<T> of(String name, T instance, Class<T> type) {
@@ -143,12 +147,22 @@ public class RoundTripHarnessTest {
         list.add(Fixture.of("anygetter/with-anysetter",
                 ag, AnyGetterPojo.class));
 
-        // KNOWN GAP — not yet in the harness:
-        //   * anyGetter + @JSONType(typeName=) / WriteClassName + anySetter:
-        //     the reader currently routes "@type" to the anySetter, so
-        //     re-write emits "@type" twice. Writer fix (PR #124 R8) is
-        //     correct on first write; reader needs a symmetric guard.
-        //     Add a fixture here once the reader is fixed.
+        // --- anyGetter + anySetter + @JSONType(typeName) — reader must
+        //     skip the type discriminator key from anySetter routing,
+        //     otherwise re-write emits "@type" twice ---
+        TypedAnyGetter tag = new TypedAnyGetter();
+        tag.name = "Rex";
+        tag.extras.put("color", "red");
+        list.add(Fixture.of("anygetter/with-jsontype-typename",
+                tag, TypedAnyGetter.class));
+
+        // --- anyGetter + anySetter + WriteClassName feature — same
+        //     symmetric-discriminator concern, for the untagged class ---
+        AnyGetterPojo agWcn = new AnyGetterPojo();
+        agWcn.id = "Y";
+        agWcn.extras.put("k", 2);
+        list.add(Fixture.of("anygetter/with-writeclassname",
+                agWcn, AnyGetterPojo.class, WRITE_CLASS_NAME));
 
         // --- @JSONCreator factory method (PR #123) ---
         list.add(Fixture.of("factory/static-of",
@@ -253,6 +267,23 @@ public class RoundTripHarnessTest {
     public abstract static class CovariantMixIn {
         @com.fasterxml.jackson.annotation.JsonAnyGetter
         public abstract LinkedHashMap<String, Object> getExtras();
+    }
+
+    // --- anyGetter + anySetter with @JSONType(typeName) ---
+    @JSONType(typeName = "TaggedType")
+    public static class TypedAnyGetter {
+        public String name;
+        private final LinkedHashMap<String, Object> extras = new LinkedHashMap<>();
+
+        @JSONField(anyGetter = true)
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+
+        @JSONField(anySetter = true)
+        public void putExtra(String key, Object value) {
+            extras.put(key, value);
+        }
     }
 
     // --- anyGetter + anySetter pair (round-trippable shape) ---

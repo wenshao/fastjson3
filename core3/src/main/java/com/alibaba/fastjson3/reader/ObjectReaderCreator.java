@@ -173,8 +173,30 @@ public final class ObjectReaderCreator {
         // Parse class-level @JSONType(schema=)
         JSONSchema typeSchema = parseTypeSchema(type);
 
+        // Type-discriminator key to exclude from anySetter routing. If the
+        // writer emits "@type" (either via @JSONType(typeName=) or the
+        // WriteClassName feature), the reader sees it as an unknown property
+        // on a non-polymorphic class and would otherwise route it to the
+        // anySetter map — re-write then emits "@type" twice (once from the
+        // annotation/feature, once from the anyGetter map).  Always skip
+        // "@type" as a safe default for the reserved convention; honour a
+        // custom @JSONType(typeKey=) when the class sets one.  Zero cost
+        // when the class has no anySetter.
+        String anySetterTypeKey = null;
+        if (anySetter != null) {
+            anySetterTypeKey = "@type";
+            JSONType jsonType = type.getAnnotation(JSONType.class);
+            if (jsonType == null && mixIn != null) {
+                jsonType = mixIn.getAnnotation(JSONType.class);
+            }
+            if (jsonType != null && !jsonType.typeKey().isEmpty()) {
+                anySetterTypeKey = jsonType.typeKey();
+            }
+        }
+
         return new ReflectionObjectReader<>(type, constructor, collection.fieldReaders,
-                collection.fieldReaderMap, collection.matcher, useUnsafeAlloc, anySetter, typeSchema,
+                collection.fieldReaderMap, collection.matcher, useUnsafeAlloc, anySetter,
+                anySetterTypeKey, typeSchema,
                 collection.unwrappedEntries, collection.requiredUnwrappedHolders);
     }
 
@@ -1397,6 +1419,7 @@ public final class ObjectReaderCreator {
         private final FieldNameMatcher matcher;
         private final boolean useUnsafeAlloc;
         private final Method anySetterMethod; // nullable
+        private final String anySetterTypeKey; // nullable — type-discriminator key to exclude from anySetter routing
         private final JSONSchema typeSchema; // nullable, from @JSONType(schema=)
         private final boolean hasDefaultsOrRequired; // skip applyDefaults when false
 
@@ -1428,6 +1451,7 @@ public final class ObjectReaderCreator {
                 FieldNameMatcher matcher,
                 boolean useUnsafeAlloc,
                 Method anySetterMethod,
+                String anySetterTypeKey,
                 JSONSchema typeSchema,
                 List<UnwrappedEntry> unwrappedEntries,
                 List<Field[]> requiredUnwrappedHolders
@@ -1439,6 +1463,7 @@ public final class ObjectReaderCreator {
             this.matcher = matcher;
             this.useUnsafeAlloc = useUnsafeAlloc;
             this.anySetterMethod = anySetterMethod;
+            this.anySetterTypeKey = anySetterTypeKey;
             this.typeSchema = typeSchema;
             if (unwrappedEntries != null && !unwrappedEntries.isEmpty()) {
                 java.util.Map<String, UnwrappedEntry> map = HashMap.newHashMap(unwrappedEntries.size() * 2);
@@ -1803,10 +1828,18 @@ public final class ObjectReaderCreator {
                             String fname = utf8.readFieldName();
                             Object fvalue = utf8.readAny();
                             off = utf8.getOffset();
-                            try {
-                                anySetterMethod.invoke(instance, fname, fvalue);
-                            } catch (Exception e) {
-                                throw new JSONException("anySetter error for '" + fname + "'", e);
+                            // Skip the type-discriminator key: when the writer
+                            // emits "@type" (via @JSONType(typeName=) or
+                            // WriteClassName), routing it to anySetter causes
+                            // re-write to duplicate the key.
+                            if (anySetterTypeKey != null && anySetterTypeKey.equals(fname)) {
+                                // value already consumed above; drop it
+                            } else {
+                                try {
+                                    anySetterMethod.invoke(instance, fname, fvalue);
+                                } catch (Exception e) {
+                                    throw new JSONException("anySetter error for '" + fname + "'", e);
+                                }
                             }
                         } else if (errorOnUnknown) {
                             throw new JSONException("unknown property in " + objectClass.getName());
@@ -1952,10 +1985,15 @@ public final class ObjectReaderCreator {
                             parser.setOffset(fieldStart);
                             String fname = parser.readFieldName();
                             Object fvalue = parser.readAny();
-                            try {
-                                anySetterMethod.invoke(instance, fname, fvalue);
-                            } catch (Exception e) {
-                                throw new JSONException("anySetter error for '" + fname + "'", e);
+                            // Skip the type-discriminator key (see UTF8 path).
+                            if (anySetterTypeKey != null && anySetterTypeKey.equals(fname)) {
+                                // value consumed, drop
+                            } else {
+                                try {
+                                    anySetterMethod.invoke(instance, fname, fvalue);
+                                } catch (Exception e) {
+                                    throw new JSONException("anySetter error for '" + fname + "'", e);
+                                }
                             }
                         } else if (errorOnUnknown) {
                             throw new JSONException("unknown property in " + objectClass.getName());
@@ -2659,6 +2697,13 @@ public final class ObjectReaderCreator {
                     // sub-reader's type. Skip it so ErrorOnUnknownProperties + anySetter
                     // don't mistakenly treat the type-key as a real user property.
                     if (discriminatorKey != null && discriminatorKey.equals(key)) {
+                        continue;
+                    }
+                    // Same reasoning for non-polymorphic classes whose writer emits
+                    // "@type" (via @JSONType(typeName=) or WriteClassName) — routing
+                    // it to the anySetter map would duplicate the discriminator on
+                    // the next write.
+                    if (anySetterTypeKey != null && anySetterTypeKey.equals(key)) {
                         continue;
                     }
                     if (unwrappedByName != null) {
