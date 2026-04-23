@@ -173,26 +173,22 @@ public final class ObjectReaderCreator {
         // Parse class-level @JSONType(schema=)
         JSONSchema typeSchema = parseTypeSchema(type);
 
-        // Type-discriminator key to exclude from anySetter routing. If the
-        // writer emits "@type" (either via @JSONType(typeName=) or the
-        // WriteClassName feature), the reader sees it as an unknown property
-        // on a non-polymorphic class and would otherwise route it to the
-        // anySetter map — re-write then emits "@type" twice (once from the
-        // annotation/feature, once from the anyGetter map).  Always skip
-        // "@type" as a safe default for the reserved convention; honour a
-        // custom @JSONType(typeKey=) when the class sets one.  Zero cost
-        // when the class has no anySetter.
-        String anySetterTypeKey = null;
-        if (anySetter != null) {
-            anySetterTypeKey = "@type";
-            JSONType jsonType = type.getAnnotation(JSONType.class);
-            if (jsonType == null && mixIn != null) {
-                jsonType = mixIn.getAnnotation(JSONType.class);
-            }
-            if (jsonType != null && !jsonType.typeKey().isEmpty()) {
-                anySetterTypeKey = jsonType.typeKey();
-            }
-        }
+        // Type-discriminator key to exclude from anySetter routing. Only set
+        // when the class has annotation-driven evidence that the writer WILL
+        // emit a discriminator — mirrors ObjectWriterCreator's typeKey
+        // resolution so a non-polymorphic class with @JSONType(typeName=) or
+        // an ancestor with @JSONType(seeAlso=) doesn't round-trip the
+        // discriminator through the anySetter map (which causes re-write to
+        // emit it twice). Null for plain POJOs — "@type" stays a valid
+        // business field for users who want to capture it via anySetter.
+        //
+        // Runtime WriteFeature.WriteClassName can't be mirrored here: the
+        // reader has no way to know at construction whether the writer
+        // enabled it, so the round-trip duplication on WriteClassName +
+        // anySetter + no-@JSONType is a documented gap, not a silent bug.
+        String anySetterTypeKey = (anySetter != null)
+                ? resolveAnySetterTypeKey(type, mixIn, useJacksonAnnotation)
+                : null;
 
         return new ReflectionObjectReader<>(type, constructor, collection.fieldReaders,
                 collection.fieldReaderMap, collection.matcher, useUnsafeAlloc, anySetter,
@@ -3884,6 +3880,90 @@ public final class ObjectReaderCreator {
             JSONObject schemaObj = com.alibaba.fastjson3.JSON.parseObject(jsonType.schema());
             if (schemaObj != null && !schemaObj.isEmpty()) {
                 return JSONSchema.of(schemaObj);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Mirror {@link com.alibaba.fastjson3.writer.ObjectWriterCreator}'s typeKey
+     * resolution so anySetter routing can skip the same discriminator key the
+     * writer will emit. Returns null when no annotation source dictates a
+     * discriminator (the class serializes without @type and the user may use
+     * "@type" as a legitimate business field).
+     *
+     * <p>Resolution order matches the writer:
+     * <ol>
+     *   <li>@JSONType(typeKey=) on class or mix-in</li>
+     *   <li>@JSONType(typeName=) present (defaults to "@type")</li>
+     *   <li>Jackson @JsonTypeInfo via bean info, when useJacksonAnnotation</li>
+     *   <li>Inherited @JSONType(seeAlso=) ancestor (defaults to "@type")</li>
+     * </ol>
+     */
+    private static String resolveAnySetterTypeKey(Class<?> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        JSONType jsonType = type.getAnnotation(JSONType.class);
+        if (jsonType == null && mixIn != null) {
+            jsonType = mixIn.getAnnotation(JSONType.class);
+        }
+        if (jsonType != null) {
+            if (!jsonType.typeKey().isEmpty()) {
+                return jsonType.typeKey();
+            }
+            if (!jsonType.typeName().isEmpty()) {
+                return "@type";
+            }
+        }
+        if (useJacksonAnnotation) {
+            JacksonAnnotationSupport.BeanInfo bean = JacksonAnnotationSupport.getBeanInfo(type);
+            if (bean != null && bean.typeKey() != null && !bean.typeKey().isEmpty()) {
+                return bean.typeKey();
+            }
+        }
+        // Inherited @JSONType(seeAlso=) ancestor — if any ancestor lists this
+        // type as a sub-type, the writer will emit the ancestor's discriminator.
+        JSONType ancestor = findSeeAlsoAncestorForTypeKey(type);
+        if (ancestor != null) {
+            return !ancestor.typeKey().isEmpty() ? ancestor.typeKey() : "@type";
+        }
+        return null;
+    }
+
+    /**
+     * Walk the superclass + interface closure looking for an ancestor whose
+     * {@code @JSONType(seeAlso)} lists {@code type}. Returns the ancestor's
+     * JSONType annotation or null. Minimal mirror of
+     * {@code ObjectWriterCreator.findSeeAlsoAncestor} scoped to the fields
+     * {@code resolveAnySetterTypeKey} needs.
+     */
+    private static JSONType findSeeAlsoAncestorForTypeKey(Class<?> type) {
+        java.util.Set<Class<?>> visited = new java.util.HashSet<>();
+        java.util.Deque<Class<?>> stack = new java.util.ArrayDeque<>();
+        Class<?> superCls = type.getSuperclass();
+        if (superCls != null && superCls != Object.class) {
+            stack.push(superCls);
+        }
+        for (Class<?> i : type.getInterfaces()) {
+            stack.push(i);
+        }
+        while (!stack.isEmpty()) {
+            Class<?> current = stack.pop();
+            if (!visited.add(current) || current == Object.class) {
+                continue;
+            }
+            JSONType jt = current.getAnnotation(JSONType.class);
+            if (jt != null) {
+                for (Class<?> sub : jt.seeAlso()) {
+                    if (sub == type) {
+                        return jt;
+                    }
+                }
+            }
+            Class<?> sup = current.getSuperclass();
+            if (sup != null && sup != Object.class) {
+                stack.push(sup);
+            }
+            for (Class<?> i : current.getInterfaces()) {
+                stack.push(i);
             }
         }
         return null;

@@ -33,9 +33,6 @@ import static org.junit.jupiter.api.DynamicTest.dynamicTest;
  */
 public class RoundTripHarnessTest {
     static final ObjectMapper SHARED = ObjectMapper.shared();
-    static final ObjectMapper WRITE_CLASS_NAME = ObjectMapper.builder()
-            .enableWrite(WriteFeature.WriteClassName)
-            .build();
 
     record Fixture<T>(String name, T instance, Class<T> type, ObjectMapper mapper) {
         static <T> Fixture<T> of(String name, T instance, Class<T> type) {
@@ -156,13 +153,23 @@ public class RoundTripHarnessTest {
         list.add(Fixture.of("anygetter/with-jsontype-typename",
                 tag, TypedAnyGetter.class));
 
-        // --- anyGetter + anySetter + WriteClassName feature — same
-        //     symmetric-discriminator concern, for the untagged class ---
-        AnyGetterPojo agWcn = new AnyGetterPojo();
-        agWcn.id = "Y";
-        agWcn.extras.put("k", 2);
-        list.add(Fixture.of("anygetter/with-writeclassname",
-                agWcn, AnyGetterPojo.class, WRITE_CLASS_NAME));
+        // --- anyGetter + anySetter + "@type" as business data — reader must
+        //     NOT skip "@type" when the class has no annotation-driven
+        //     discriminator (silent-data-loss guard) ---
+        AnyGetterPojo literalType = new AnyGetterPojo();
+        literalType.id = "Z";
+        literalType.extras.put("@type", "literal-user-data");
+        literalType.extras.put("k", 3);
+        list.add(Fixture.of("anygetter/at-type-as-business-data",
+                literalType, AnyGetterPojo.class));
+
+        // KNOWN GAP — not in the harness:
+        //   anyGetter + anySetter + WriteFeature.WriteClassName (no
+        //   @JSONType on the class): the reader has no way to know at
+        //   construction that WriteClassName was runtime-enabled on the
+        //   writer side, so "@type" would round-trip through anySetter
+        //   and duplicate on re-write. Opt-in reader-side feature would
+        //   be needed to close; currently documented as a gap.
 
         // --- @JSONCreator factory method (PR #123) ---
         list.add(Fixture.of("factory/static-of",
