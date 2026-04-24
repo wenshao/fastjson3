@@ -314,16 +314,7 @@ public class EnumValueFieldTest {
         assertEquals(Grade.A, back.grade);
     }
 
-    // ==================== canGenerate gate coverage (qwen review) ====================
-    //
-    // Below cover the additional paths the first qwen review surfaced:
-    //   (r3) getter-only enum properties (no declared field)
-    //   (r3) explicit WriterCreatorType.ASM (not just AUTO)
-    //
-    // Jackson @JsonValue isn't included in the gate — when
-    // useJacksonAnnotation=true, ObjectMapper routes around the writer
-    // provider entirely (ObjectMapper:1648), so the gate can't be
-    // reached in Jackson-annotation mode.
+    // ==================== canGenerate gate coverage ====================
 
     @Test
     public void asmExplicitModeAlsoRoutesEnumValueClassToReflection() {

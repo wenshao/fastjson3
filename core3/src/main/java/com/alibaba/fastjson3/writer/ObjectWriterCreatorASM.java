@@ -209,12 +209,12 @@ public final class ObjectWriterCreatorASM {
             return false;
         }
 
-        // Enum field / getter whose enum type declares @JSONField(value=true)
-        // or Jackson @JsonValue: the ASM writer's TYPE_ENUM fast path bakes
-        // `"field":"<enum.name()>",` blobs per ordinal (see generateWriter
-        // line ~311) and has no hook for the reflect path's findValueWriter
-        // routing. Reject here so AUTO and ASM providers both fall back to
-        // the reflect writer when a value-annotated enum is reachable.
+        // A serializable enum-typed property whose enum declares
+        // @JSONField(value=true): the ASM writer's TYPE_ENUM fast path
+        // bakes `"field":"<enum.name()>",` blobs per ordinal (see
+        // generateWriter line ~311) and has no hook for the reflect
+        // path's findValueWriter routing. Reject here so AUTO and ASM
+        // providers both fall back to the reflect writer.
         if (hasEnumWithValueAccessor(type)) {
             return false;
         }
@@ -223,25 +223,32 @@ public final class ObjectWriterCreatorASM {
     }
 
     /**
-     * True when any serializable property of {@code type} is an enum whose
-     * class declares a {@code @JSONField(value=true)} getter (or Jackson
-     * {@code @JsonValue}). Walks:
-     *   * declared instance fields along the superclass chain
-     *   * public no-arg methods returning an enum type
-     *       (covers calculated / getter-only properties)
+     * True when a serializable property of {@code type} is an enum whose
+     * class declares a {@code @JSONField(value=true)} accessor. Mirrors
+     * {@code ObjectWriterCreator.createPojoWriter}'s property selection
+     * so the gate doesn't over-reject: walks public fields (the
+     * reflect path serializes those directly) and JavaBean-recognized
+     * getters ({@code getXxx} / {@code isXxx} per
+     * {@code extractPropertyName}). Members tagged
+     * {@code @JSONField(serialize=false)} are skipped since the reflect
+     * path would also skip them.
      */
     private static boolean hasEnumWithValueAccessor(Class<?> type) {
-        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
-            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
-                int mod = f.getModifiers();
-                if (Modifier.isStatic(mod) || Modifier.isTransient(mod)) {
-                    continue;
-                }
-                Class<?> ft = f.getType();
-                if (ft.isEnum() && enumHasValueAccessor(ft)) {
-                    return true;
-                }
+        for (java.lang.reflect.Field f : type.getFields()) {
+            int mod = f.getModifiers();
+            if (Modifier.isStatic(mod) || Modifier.isTransient(mod)) {
+                continue;
             }
+            Class<?> ft = f.getType();
+            if (!ft.isEnum() || !enumHasValueAccessor(ft)) {
+                continue;
+            }
+            com.alibaba.fastjson3.annotation.JSONField jf =
+                    f.getAnnotation(com.alibaba.fastjson3.annotation.JSONField.class);
+            if (jf != null && !jf.serialize()) {
+                continue;
+            }
+            return true;
         }
         for (java.lang.reflect.Method m : type.getMethods()) {
             if (m.getDeclaringClass() == Object.class
@@ -250,9 +257,22 @@ public final class ObjectWriterCreatorASM {
                 continue;
             }
             Class<?> rt = m.getReturnType();
-            if (rt.isEnum() && enumHasValueAccessor(rt)) {
-                return true;
+            if (!rt.isEnum() || !enumHasValueAccessor(rt)) {
+                continue;
             }
+            // JavaBean-getter recognition: `getXxx` (any return type) or
+            // `isXxx` with a boolean return. Enums aren't boolean, so only
+            // `getXxx` is a match here.
+            String name = m.getName();
+            if (!(name.length() > 3 && name.startsWith("get"))) {
+                continue;
+            }
+            com.alibaba.fastjson3.annotation.JSONField jf =
+                    m.getAnnotation(com.alibaba.fastjson3.annotation.JSONField.class);
+            if (jf != null && !jf.serialize()) {
+                continue;
+            }
+            return true;
         }
         return false;
     }
