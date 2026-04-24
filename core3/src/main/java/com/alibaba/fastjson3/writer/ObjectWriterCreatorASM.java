@@ -224,14 +224,19 @@ public final class ObjectWriterCreatorASM {
 
     /**
      * True when a serializable property of {@code type} is an enum whose
-     * class declares a {@code @JSONField(value=true)} accessor. Mirrors
+     * class declares a {@code @JSONField(value=true)} accessor. Gate is
+     * deliberately conservative: approximates
      * {@code ObjectWriterCreator.createPojoWriter}'s property selection
-     * so the gate doesn't over-reject: walks public fields (the
-     * reflect path serializes those directly) and JavaBean-recognized
-     * getters ({@code getXxx} / {@code isXxx} per
-     * {@code extractPropertyName}). Members tagged
-     * {@code @JSONField(serialize=false)} are skipped since the reflect
-     * path would also skip them.
+     * (public fields + JavaBean getters, skip members with
+     * {@code @JSONField(serialize=false)}) but doesn't cross-reference
+     * {@code @JSONType(includes/ignores)}, backing-field annotations for
+     * getter-only properties, or {@code WriteFeature.IgnoreNonFieldGetter}.
+     * False positives here cost the ASM fast path but never affect
+     * output correctness; chasing exact parity would duplicate
+     * {@code collectFields}'s filtering and risk drift if that logic
+     * changes. This gate exists purely to prevent the enum value-method
+     * annotation from silently being ignored by the ASM TYPE_ENUM
+     * precompute, not to optimize ASM eligibility.
      */
     private static boolean hasEnumWithValueAccessor(Class<?> type) {
         for (java.lang.reflect.Field f : type.getFields()) {
