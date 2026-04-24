@@ -41,6 +41,48 @@
     </organization>
 
     <dependencies>
+        <!--
+          Jazzer fuzz harness. Default test runs execute only the REGRESSION
+          mode — corpus seed files under
+          src/test/resources/com/alibaba/fastjson3/fuzz/<TestClass>Inputs/<method>/
+          are replayed as unit tests in milliseconds. To enable adaptive
+          mutation fuzzing locally, set `JAZZER_FUZZ=1` in the environment
+          (or `-Djazzer.fuzz=true`) before invoking surefire; each
+          @FuzzTest then runs for its declared maxDuration. Parking behind
+          a property, not a Maven profile, so the regression corpus is
+          always exercised.
+        -->
+        <dependency>
+            <groupId>com.code-intelligence</groupId>
+            <artifactId>jazzer-junit</artifactId>
+            <version>0.22.1</version>
+            <scope>test</scope>
+            <!--
+              Jazzer 0.22.1 pulls junit-jupiter-api / junit-platform-* 5.9.0
+              transitively, which is missing TempDirFactory (added in 5.10).
+              That breaks discovery in a project using 5.11+. Exclude the
+              bundled JUnit modules so the project's junit-jupiter 5.11.4
+              wins classpath resolution.
+            -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.junit.jupiter</groupId>
+                    <artifactId>junit-jupiter-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.junit.jupiter</groupId>
+                    <artifactId>junit-jupiter-params</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.junit.platform</groupId>
+                    <artifactId>junit-platform-commons</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.junit.platform</groupId>
+                    <artifactId>junit-platform-launcher</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
