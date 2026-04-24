@@ -16,8 +16,9 @@ import java.math.BigDecimal;
  * src/test/resources/com/alibaba/fastjson3/fuzz/JSONParseFuzzTestInputs/
  * <methodName>/} is replayed as a unit test. Run mutation fuzzing
  * locally via {@code JAZZER_FUZZ=1 mvn test -pl core3
- * -Dtest=JSONParseFuzzTest}; each target will then explore for the
- * declared {@code maxDuration}.
+ * -Dtest=JSONParseFuzzTest} — jazzer-junit inspects the env var only
+ * (a {@code -D} system property of the same name is NOT wired). Each
+ * target then explores for its declared {@code maxDuration}.
  *
  * <p>Current targets focus on DoS-adjacent surfaces the 12-round
  * audit surfaced: untyped top-level parse (String + byte[]),

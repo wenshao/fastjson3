@@ -47,10 +47,11 @@
           src/test/resources/com/alibaba/fastjson3/fuzz/<TestClass>Inputs/<method>/
           are replayed as unit tests in milliseconds. To enable adaptive
           mutation fuzzing locally, set `JAZZER_FUZZ=1` in the environment
-          (or `-Djazzer.fuzz=true`) before invoking surefire; each
-          @FuzzTest then runs for its declared maxDuration. Parking behind
-          a property, not a Maven profile, so the regression corpus is
-          always exercised.
+          before invoking surefire (the env var is what jazzer-junit
+          inspects; a `-D` system property of the same name is NOT wired
+          through). Each @FuzzTest then runs for its declared maxDuration.
+          Parking behind an env var, not a Maven profile, so the
+          regression corpus is always exercised.
         -->
         <dependency>
             <groupId>com.code-intelligence</groupId>
@@ -152,6 +153,7 @@
                         <configuration>
                             <excludes>
                                 <exclude>com.sun.*</exclude>
+                                <exclude>sun.*</exclude>
                                 <exclude>jdk.*</exclude>
                                 <exclude>com.code_intelligence.jazzer.*</exclude>
                             </excludes>
