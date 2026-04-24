@@ -163,6 +163,26 @@ public class RoundTripHarnessTest {
         list.add(Fixture.of("anygetter/at-type-as-business-data",
                 literalType, AnyGetterPojo.class));
 
+        // --- anyGetter + anySetter + Jackson @JsonTypeInfo — reader must
+        //     derive the discriminator key ("kind" here) from BeanInfo and
+        //     skip it, matching the writer's Jackson-aware resolution ---
+        JacksonTypeInfoAnyGetter jtag = new JacksonTypeInfoAnyGetter();
+        jtag.name = "fluffy";
+        jtag.extras.put("color", "grey");
+        list.add(Fixture.of("anygetter/with-jackson-typeinfo",
+                jtag, JacksonTypeInfoAnyGetter.class,
+                ObjectMapper.builder().useJacksonAnnotation(true).build()));
+
+        // --- anyGetter + anySetter + inherited @JSONType(seeAlso) ancestor ---
+        //     Subclass has no @JSONType; writer emits the parent's typeKey
+        //     + this subclass's simple name. Reader must walk ancestors to
+        //     resolve the discriminator key.
+        SeeAlsoChild sac = new SeeAlsoChild();
+        sac.name = "kid";
+        sac.extras.put("color", "blue");
+        list.add(Fixture.of("anygetter/with-seealso-ancestor",
+                sac, SeeAlsoChild.class));
+
         // KNOWN GAP — not in the harness:
         //   anyGetter + anySetter + WriteFeature.WriteClassName (no
         //   @JSONType on the class): the reader has no way to know at
@@ -279,6 +299,48 @@ public class RoundTripHarnessTest {
     // --- anyGetter + anySetter with @JSONType(typeName) ---
     @JSONType(typeName = "TaggedType")
     public static class TypedAnyGetter {
+        public String name;
+        private final LinkedHashMap<String, Object> extras = new LinkedHashMap<>();
+
+        @JSONField(anyGetter = true)
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+
+        @JSONField(anySetter = true)
+        public void putExtra(String key, Object value) {
+            extras.put(key, value);
+        }
+    }
+
+    // --- anyGetter + anySetter with Jackson @JsonTypeInfo ---
+    // Jackson's typeKey = "kind" feeds the reader via JacksonAnnotationSupport
+    // BeanInfo; writer emits {"kind":"JacksonTypeInfoAnyGetter",...}.
+    @com.fasterxml.jackson.annotation.JsonTypeInfo(
+            use = com.fasterxml.jackson.annotation.JsonTypeInfo.Id.NAME,
+            property = "kind")
+    public static class JacksonTypeInfoAnyGetter {
+        public String name;
+        private final LinkedHashMap<String, Object> extras = new LinkedHashMap<>();
+
+        @JSONField(anyGetter = true)
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
+
+        @JSONField(anySetter = true)
+        public void putExtra(String key, Object value) {
+            extras.put(key, value);
+        }
+    }
+
+    // --- @JSONType(seeAlso) ancestor — reader walks the inheritance
+    //     chain for the discriminator key ("kind") ---
+    @JSONType(seeAlso = {SeeAlsoChild.class}, typeKey = "kind")
+    public abstract static class SeeAlsoParent {
+    }
+
+    public static class SeeAlsoChild extends SeeAlsoParent {
         public String name;
         private final LinkedHashMap<String, Object> extras = new LinkedHashMap<>();
 
