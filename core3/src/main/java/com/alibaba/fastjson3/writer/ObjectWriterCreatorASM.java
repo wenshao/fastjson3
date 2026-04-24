@@ -259,9 +259,18 @@ public final class ObjectWriterCreatorASM {
 
     /**
      * True when {@code enumType} declares a {@code @JSONField(value=true)}
-     * accessor or a Jackson {@code @JsonValue} accessor. Mirrors
-     * {@code ObjectWriterCreator.findValueWriter}'s detection rules so the
-     * two paths agree on which enums need the custom value-writer.
+     * accessor. Checking only fastjson's own annotation (not Jackson
+     * {@code @JsonValue}) is intentional: the reflect path's
+     * {@code findValueWriter} only honours {@code @JsonValue} when
+     * {@code useJacksonAnnotation=true}, and in that mode
+     * {@code ObjectMapper} already bypasses the writer provider entirely
+     * (see {@code ObjectMapper.getObjectWriterSlow} — any mapper with
+     * Jackson annotations enabled goes straight to
+     * {@code ObjectWriterCreator}). So a Jackson-annotation path through
+     * this ASM gate doesn't exist; treating {@code @JsonValue} as a
+     * rejection signal here would only over-reject Jackson-annotated
+     * classes used by a non-Jackson-enabled mapper and cost them the
+     * ASM fast path for no behavioural benefit.
      */
     private static boolean enumHasValueAccessor(Class<?> enumType) {
         for (java.lang.reflect.Method m : enumType.getMethods()) {
@@ -273,16 +282,6 @@ public final class ObjectWriterCreatorASM {
             com.alibaba.fastjson3.annotation.JSONField jf =
                     m.getAnnotation(com.alibaba.fastjson3.annotation.JSONField.class);
             if (jf != null && jf.value()) {
-                return true;
-            }
-            // Jackson @JsonValue detection matches findValueWriter's
-            // `jacksonInfo.isValue()` check. Classpath-tolerant: when
-            // Jackson annotations aren't on the classpath, getAnnotations()
-            // returns an empty array and getFieldInfo returns null.
-            com.alibaba.fastjson3.annotation.JacksonAnnotationSupport.FieldInfo ji =
-                    com.alibaba.fastjson3.annotation.JacksonAnnotationSupport
-                            .getFieldInfo(m.getAnnotations());
-            if (ji != null && ji.isValue()) {
                 return true;
             }
         }

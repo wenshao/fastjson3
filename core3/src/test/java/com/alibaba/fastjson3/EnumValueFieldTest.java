@@ -317,9 +317,13 @@ public class EnumValueFieldTest {
     // ==================== canGenerate gate coverage (qwen review) ====================
     //
     // Below cover the additional paths the first qwen review surfaced:
-    //   (r1) Jackson @JsonValue detection on top of @JSONField(value=true)
     //   (r3) getter-only enum properties (no declared field)
     //   (r3) explicit WriterCreatorType.ASM (not just AUTO)
+    //
+    // Jackson @JsonValue isn't included in the gate — when
+    // useJacksonAnnotation=true, ObjectMapper routes around the writer
+    // provider entirely (ObjectMapper:1648), so the gate can't be
+    // reached in Jackson-annotation mode.
 
     @Test
     public void asmExplicitModeAlsoRoutesEnumValueClassToReflection() {
@@ -367,29 +371,4 @@ public class EnumValueFieldTest {
         assertFalse(json.contains("\"A\","), json);
     }
 
-    // Jackson @JsonValue on an enum — same gate, different detection path.
-    public enum JacksonGrade {
-        A("A+"), B("B"), C("C-");
-        private final String code;
-        JacksonGrade(String c) { code = c; }
-        @com.fasterxml.jackson.annotation.JsonValue
-        public String getCode() { return code; }
-    }
-
-    public static class JacksonReportCard {
-        public String student;
-        public JacksonGrade grade;
-    }
-
-    @Test
-    public void asmGateDetectsJacksonJsonValueEnum() {
-        ObjectMapper jackson = ObjectMapper.builder().useJacksonAnnotation(true).build();
-        JacksonReportCard rc = new JacksonReportCard();
-        rc.student = "frank";
-        rc.grade = JacksonGrade.A;
-        String json = jackson.writeValueAsString(rc);
-        assertTrue(json.contains("\"grade\":\"A+\""),
-                "Jackson @JsonValue on enum must also be honoured: " + json);
-        assertFalse(json.contains("\"A\","), json);
-    }
 }
