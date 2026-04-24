@@ -55,14 +55,13 @@
         <dependency>
             <groupId>com.code-intelligence</groupId>
             <artifactId>jazzer-junit</artifactId>
-            <version>0.22.1</version>
+            <version>0.24.0</version>
             <scope>test</scope>
             <!--
-              Jazzer 0.22.1 pulls junit-jupiter-api / junit-platform-* 5.9.0
-              transitively, which is missing TempDirFactory (added in 5.10).
-              That breaks discovery in a project using 5.11+. Exclude the
-              bundled JUnit modules so the project's junit-jupiter 5.11.4
-              wins classpath resolution.
+              Jazzer pulls older junit-jupiter-api / junit-platform-*
+              transitively. Exclude them so the project's junit-jupiter
+              5.11.4 wins classpath resolution (otherwise TempDirFactory
+              from 5.10+ is not found and engine discovery fails).
             -->
             <exclusions>
                 <exclusion>
@@ -124,11 +123,34 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.12</version>
+                <!--
+                  Skip JDK-internal classes at agent instrumentation time.
+                  JaCoCo 0.8.12 defaults don't exclude `com.sun.*` / `jdk.*`,
+                  so when Jazzer's fuzz agent attaches and loads
+                  com.sun.tools.attach.VirtualMachine, JaCoCo tries to
+                  instrument it and emits repeated
+                  "Unsupported class file major version 69" warnings on
+                  JDK 25. Tests still pass but the log noise is confusing.
+                  The fuzz test class itself is excluded from the report
+                  since fuzz regression coverage isn't meaningful per-file.
+                -->
+                <configuration>
+                    <excludes>
+                        <exclude>com/alibaba/fastjson3/fuzz/**</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
                             <goal>prepare-agent</goal>
                         </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>com.sun.*</exclude>
+                                <exclude>jdk.*</exclude>
+                                <exclude>com.code_intelligence.jazzer.*</exclude>
+                            </excludes>
+                        </configuration>
                     </execution>
                     <execution>
                         <id>report</id>

@@ -19,10 +19,13 @@ import java.math.BigDecimal;
  * -Dtest=JSONParseFuzzTest}; each target will then explore for the
  * declared {@code maxDuration}.
  *
- * <p>Targets focus on DoS-adjacent surfaces the 12-round audit
- * surfaced: untyped top-level parse, BigDecimal/BigInteger magnitude,
- * typed POJO parse, JSONPath typed coercion. Adding a new target is
- * a single {@code @FuzzTest} method + a seed directory.
+ * <p>Current targets focus on DoS-adjacent surfaces the 12-round
+ * audit surfaced: untyped top-level parse (String + byte[]),
+ * {@link JSONParser#checkBigNumberMagnitude} directly,
+ * {@code parseObject(json, BigDecimal.class)} end-to-end, and
+ * {@link JSONPath} typed coercion. Follow-up targets (BigInteger,
+ * typed POJO, generic Map/List) can be added as single
+ * {@code @FuzzTest} methods + seed directories.
  *
  * <p>Expected failure modes ({@code JSONException},
  * {@code NumberFormatException}, {@code ArithmeticException}) are
