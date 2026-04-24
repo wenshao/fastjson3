@@ -313,4 +313,83 @@ public class EnumValueFieldTest {
         assertEquals("carol", back.student);
         assertEquals(Grade.A, back.grade);
     }
+
+    // ==================== canGenerate gate coverage (qwen review) ====================
+    //
+    // Below cover the additional paths the first qwen review surfaced:
+    //   (r1) Jackson @JsonValue detection on top of @JSONField(value=true)
+    //   (r3) getter-only enum properties (no declared field)
+    //   (r3) explicit WriterCreatorType.ASM (not just AUTO)
+
+    @Test
+    public void asmExplicitModeAlsoRoutesEnumValueClassToReflection() {
+        // Same fixture as above but via the explicit ASM provider.
+        // canGenerate's hasEnumWithValueAccessor check now rejects, so
+        // ObjectWriterCreatorASM falls back to the reflect writer.
+        // Using Grade.C whose code ("C-") is unambiguously distinct
+        // from enum.name() ("C").
+        ObjectMapper asmMapper = ObjectMapper.builder()
+                .writerCreatorType(com.alibaba.fastjson3.writer.WriterCreatorType.ASM)
+                .build();
+        ReportCard rc = new ReportCard();
+        rc.student = "dave";
+        rc.grade = Grade.C;
+        String json = asmMapper.writeValueAsString(rc);
+        assertTrue(json.contains("\"grade\":\"C-\""),
+                "ASM provider must honour @JSONField(value=true) too: " + json);
+        assertFalse(json.contains("\"grade\":\"C\""), json); // would be enum.name()
+    }
+
+    // Getter-only enum property: no declared field, only a calculated
+    // getter returning the enum type. canGenerate must detect this shape.
+    public static class GetterOnlyReport {
+        private int internal;
+
+        public GetterOnlyReport(int internal) {
+            this.internal = internal;
+        }
+
+        public String getStudent() {
+            return "eve";
+        }
+
+        public Grade getGrade() {
+            return internal >= 90 ? Grade.A : Grade.B;
+        }
+    }
+
+    @Test
+    public void asmGateDetectsGetterOnlyEnumProperty() {
+        GetterOnlyReport r = new GetterOnlyReport(95);
+        String json = MAPPER.writeValueAsString(r);
+        assertTrue(json.contains("\"grade\":\"A+\""),
+                "calculated getter returning enum must also honour value-method: " + json);
+        assertFalse(json.contains("\"A\","), json);
+    }
+
+    // Jackson @JsonValue on an enum — same gate, different detection path.
+    public enum JacksonGrade {
+        A("A+"), B("B"), C("C-");
+        private final String code;
+        JacksonGrade(String c) { code = c; }
+        @com.fasterxml.jackson.annotation.JsonValue
+        public String getCode() { return code; }
+    }
+
+    public static class JacksonReportCard {
+        public String student;
+        public JacksonGrade grade;
+    }
+
+    @Test
+    public void asmGateDetectsJacksonJsonValueEnum() {
+        ObjectMapper jackson = ObjectMapper.builder().useJacksonAnnotation(true).build();
+        JacksonReportCard rc = new JacksonReportCard();
+        rc.student = "frank";
+        rc.grade = JacksonGrade.A;
+        String json = jackson.writeValueAsString(rc);
+        assertTrue(json.contains("\"grade\":\"A+\""),
+                "Jackson @JsonValue on enum must also be honoured: " + json);
+        assertFalse(json.contains("\"A\","), json);
+    }
 }

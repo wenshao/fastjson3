@@ -77,7 +77,7 @@ public final class AutoObjectWriterProvider extends AbstractObjectWriterProvider
         }
 
         // For simple POJOs, try ASM first (if available)
-        if (ASM_AVAILABLE && isSimplePOJO(type) && !hasEnumFieldWithValueAccessor(type)) {
+        if (ASM_AVAILABLE && isSimplePOJO(type)) {
             try {
                 return ObjectWriterCreatorASM.createObjectWriter(type);
             } catch (Throwable e) {
@@ -88,46 +88,6 @@ public final class AutoObjectWriterProvider extends AbstractObjectWriterProvider
 
         // Default to reflection
         return ObjectWriterCreator.createObjectWriter(type);
-    }
-
-    /**
-     * Check whether any non-static enum field's type declares a
-     * {@code @JSONField(value=true)} getter (or Jackson {@code @JsonValue}).
-     * When yes, the ASM writer's TYPE_ENUM fast path — which bakes
-     * {@code enum.name()} bytes per ordinal — would emit the constant
-     * name instead of the value-method result. The reflect path's
-     * per-field {@code findValueWriter} lookup (ObjectWriterCreator
-     * line ~481) handles this correctly, so route to it.
-     */
-    private static boolean hasEnumFieldWithValueAccessor(Class<?> type) {
-        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
-            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
-                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())
-                        || java.lang.reflect.Modifier.isTransient(f.getModifiers())) {
-                    continue;
-                }
-                Class<?> ft = f.getType();
-                if (ft.isEnum() && hasValueAnnotatedMethod(ft)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean hasValueAnnotatedMethod(Class<?> enumType) {
-        for (java.lang.reflect.Method m : enumType.getMethods()) {
-            if (m.getDeclaringClass() == Object.class || m.getParameterCount() != 0
-                    || java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
-                continue;
-            }
-            com.alibaba.fastjson3.annotation.JSONField jf =
-                    m.getAnnotation(com.alibaba.fastjson3.annotation.JSONField.class);
-            if (jf != null && jf.value()) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

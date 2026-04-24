@@ -209,7 +209,84 @@ public final class ObjectWriterCreatorASM {
             return false;
         }
 
+        // Enum field / getter whose enum type declares @JSONField(value=true)
+        // or Jackson @JsonValue: the ASM writer's TYPE_ENUM fast path bakes
+        // `"field":"<enum.name()>",` blobs per ordinal (see generateWriter
+        // line ~311) and has no hook for the reflect path's findValueWriter
+        // routing. Reject here so AUTO and ASM providers both fall back to
+        // the reflect writer when a value-annotated enum is reachable.
+        if (hasEnumWithValueAccessor(type)) {
+            return false;
+        }
+
         return true;
+    }
+
+    /**
+     * True when any serializable property of {@code type} is an enum whose
+     * class declares a {@code @JSONField(value=true)} getter (or Jackson
+     * {@code @JsonValue}). Walks:
+     *   * declared instance fields along the superclass chain
+     *   * public no-arg methods returning an enum type
+     *       (covers calculated / getter-only properties)
+     */
+    private static boolean hasEnumWithValueAccessor(Class<?> type) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                int mod = f.getModifiers();
+                if (Modifier.isStatic(mod) || Modifier.isTransient(mod)) {
+                    continue;
+                }
+                Class<?> ft = f.getType();
+                if (ft.isEnum() && enumHasValueAccessor(ft)) {
+                    return true;
+                }
+            }
+        }
+        for (java.lang.reflect.Method m : type.getMethods()) {
+            if (m.getDeclaringClass() == Object.class
+                    || m.getParameterCount() != 0
+                    || Modifier.isStatic(m.getModifiers())) {
+                continue;
+            }
+            Class<?> rt = m.getReturnType();
+            if (rt.isEnum() && enumHasValueAccessor(rt)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * True when {@code enumType} declares a {@code @JSONField(value=true)}
+     * accessor or a Jackson {@code @JsonValue} accessor. Mirrors
+     * {@code ObjectWriterCreator.findValueWriter}'s detection rules so the
+     * two paths agree on which enums need the custom value-writer.
+     */
+    private static boolean enumHasValueAccessor(Class<?> enumType) {
+        for (java.lang.reflect.Method m : enumType.getMethods()) {
+            if (m.getDeclaringClass() == Object.class
+                    || m.getParameterCount() != 0
+                    || Modifier.isStatic(m.getModifiers())) {
+                continue;
+            }
+            com.alibaba.fastjson3.annotation.JSONField jf =
+                    m.getAnnotation(com.alibaba.fastjson3.annotation.JSONField.class);
+            if (jf != null && jf.value()) {
+                return true;
+            }
+            // Jackson @JsonValue detection matches findValueWriter's
+            // `jacksonInfo.isValue()` check. Classpath-tolerant: when
+            // Jackson annotations aren't on the classpath, getAnnotations()
+            // returns an empty array and getFieldInfo returns null.
+            com.alibaba.fastjson3.annotation.JacksonAnnotationSupport.FieldInfo ji =
+                    com.alibaba.fastjson3.annotation.JacksonAnnotationSupport
+                            .getFieldInfo(m.getAnnotations());
+            if (ji != null && ji.isValue()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static ObjectWriter<?> generateWriter(Class<?> beanType) {
