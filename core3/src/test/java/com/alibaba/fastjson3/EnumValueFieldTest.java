@@ -276,4 +276,41 @@ public class EnumValueFieldTest {
         Score high = JSON.parse("{\"rate\":1.9}", Score.class);
         assertEquals(Rate.HIGH, high.rate);
     }
+
+    // AutoObjectWriterProvider fix: classes that hold an enum field whose
+    // enum declares @JSONField(value=true) must be routed away from the
+    // ASM TYPE_ENUM fast path (which bakes enum.name() per ordinal) into
+    // the reflection writer (which honours findValueWriter). Uses fresh
+    // fixture classes — Grade / ReportCard — so no prior test warms up
+    // the shared-provider cache for these types.
+
+    public enum Grade {
+        A("A+"), B("B"), C("C-");
+        private final String code;
+        Grade(String c) { this.code = c; }
+        @JSONField(value = true)
+        public String getCode() { return code; }
+    }
+
+    public static class ReportCard {
+        public String student;
+        public Grade grade;
+    }
+
+    @Test
+    public void autoProviderRoutesEnumValueClassToReflection() {
+        ReportCard rc = new ReportCard();
+        rc.student = "carol";
+        rc.grade = Grade.A;
+        String json = MAPPER.writeValueAsString(rc);
+        assertTrue(json.contains("\"grade\":\"A+\""),
+                "AUTO provider must honour @JSONField(value=true) on enum field: " + json);
+        assertFalse(json.contains("\"A\","), "must not emit enum.name(): " + json);
+
+        // Round-trip: the reflect path's inverse value map accepts both the
+        // code ("A+") and the enum name ("A") — see stringValuedEnumRoundTrip.
+        ReportCard back = MAPPER.readValue(json, ReportCard.class);
+        assertEquals("carol", back.student);
+        assertEquals(Grade.A, back.grade);
+    }
 }
