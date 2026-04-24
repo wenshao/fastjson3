@@ -41,6 +41,49 @@
     </organization>
 
     <dependencies>
+        <!--
+          Jazzer fuzz harness. Default test runs execute only the REGRESSION
+          mode — corpus seed files under
+          src/test/resources/com/alibaba/fastjson3/fuzz/<TestClass>Inputs/<method>/
+          are replayed as unit tests in milliseconds. To enable adaptive
+          mutation fuzzing locally, set `JAZZER_FUZZ=1` in the environment
+          before invoking surefire (the env var is what jazzer-junit
+          inspects; a `-D` system property of the same name is NOT wired
+          through). Each @FuzzTest then runs for its declared maxDuration.
+          Parking behind an env var, not a Maven profile, so the
+          regression corpus is always exercised.
+        -->
+        <dependency>
+            <groupId>com.code-intelligence</groupId>
+            <artifactId>jazzer-junit</artifactId>
+            <version>0.24.0</version>
+            <scope>test</scope>
+            <!--
+              Jazzer pulls older junit-jupiter-api / junit-platform-*
+              transitively. Exclude them so the project-managed JUnit
+              (${junit5.version}) wins classpath resolution; otherwise
+              the older TempDirFactory (required by engine 5.10+) isn't
+              found and engine discovery fails.
+            -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.junit.jupiter</groupId>
+                    <artifactId>junit-jupiter-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.junit.jupiter</groupId>
+                    <artifactId>junit-jupiter-params</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.junit.platform</groupId>
+                    <artifactId>junit-platform-commons</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.junit.platform</groupId>
+                    <artifactId>junit-platform-launcher</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
@@ -82,11 +125,39 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.12</version>
+                <!--
+                  Report-side: exclude the fuzz package from JaCoCo reports.
+                  Fuzz regression coverage is a measure of input-corpus
+                  reach into the parser, not of the fuzz class itself.
+                  Agent-side: skip `com.sun.*`, `jdk.*`, and Jazzer
+                  internals so JaCoCo doesn't try to instrument classes
+                  it shouldn't (Jazzer loads a few JDK internals that
+                  JaCoCo's default filter doesn't cover).
+
+                  Note: these excludes do NOT silence Jazzer's own JDK 25
+                  "Unsupported class file major version 69" warning —
+                  that comes from Jazzer 0.24's bundled ASM failing to
+                  parse v69 classes. The warning is cosmetic; tests pass.
+                  A newer Jazzer with updated ASM would remove it.
+                -->
+                <configuration>
+                    <excludes>
+                        <exclude>com/alibaba/fastjson3/fuzz/**</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
                             <goal>prepare-agent</goal>
                         </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>com.sun.*</exclude>
+                                <exclude>sun.*</exclude>
+                                <exclude>jdk.*</exclude>
+                                <exclude>com.code_intelligence.jazzer.*</exclude>
+                            </excludes>
+                        </configuration>
                     </execution>
                     <execution>
                         <id>report</id>
