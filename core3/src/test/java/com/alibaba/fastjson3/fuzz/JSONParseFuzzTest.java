@@ -45,9 +45,15 @@ import java.util.Map;
  * <p>Expected failure modes ({@code JSONException},
  * {@code NumberFormatException}, {@code ArithmeticException}) are
  * caught and ignored. Anything else — {@code NullPointerException},
- * {@code StackOverflowError}, {@code ClassCastException},
- * {@code IllegalArgumentException}, {@code OutOfMemoryError} — is
- * treated by Jazzer as a finding.
+ * {@code StackOverflowError}, {@code IllegalArgumentException},
+ * {@code OutOfMemoryError} — is treated by Jazzer as a finding.
+ *
+ * <p>Exception: the generic-collection targets
+ * ({@link #fuzzParseMapStringInteger}, {@link #fuzzParseListString})
+ * also catch {@code ClassCastException} because the parser's untyped
+ * dispatch can produce shapes that don't fit a strict
+ * {@code Map<String,Integer>} / {@code List<String>} contract, and
+ * those type-mismatches would otherwise drown the real fuzz signal.
  */
 public class JSONParseFuzzTest {
 
