@@ -360,4 +360,57 @@ class StringEncodingEdgeTest {
         String json = new String(jsonBytes, StandardCharsets.UTF_8);
         assertEquals(text, JSON.parseObject(json, String.class), "Round-trip for tail Latin-1 bytes");
     }
+
+    // ==================== Lone surrogate handling (UTF-8 byte path) ====================
+    // RFC 3629 \u00a73 forbids isolated surrogate code points in UTF-8. The byte
+    // generator must replace lone surrogates with U+FFFD when serialising.
+
+    @Test
+    void writeBytes_loneHighSurrogate_emitsReplacementChar() {
+        String input = "x" + (char) 0xD800 + "y";
+        byte[] bytes = JSON.toJSONBytes(input);
+        // Expected: "x" + \xEF\xBF\xBD (U+FFFD) + "y" wrapped in quotes
+        assertArrayEquals(
+                new byte[]{'"', 'x', (byte) 0xEF, (byte) 0xBF, (byte) 0xBD, 'y', '"'},
+                bytes,
+                "Lone high surrogate in value must emit U+FFFD");
+    }
+
+    @Test
+    void writeBytes_loneLowSurrogate_emitsReplacementChar() {
+        String input = "x" + (char) 0xDC00 + "y";
+        byte[] bytes = JSON.toJSONBytes(input);
+        // Pre-fix this emitted CESU-8 bytes 0xED 0xB0 0x80 (invalid UTF-8).
+        assertArrayEquals(
+                new byte[]{'"', 'x', (byte) 0xEF, (byte) 0xBF, (byte) 0xBD, 'y', '"'},
+                bytes,
+                "Lone low surrogate in value must emit U+FFFD");
+    }
+
+    @Test
+    void writeBytes_pairedSurrogates_emitsFourByteUtf8() {
+        // U+1F600 (\ud83d\ude00) round-trips correctly via 4-byte UTF-8.
+        String input = "x" + new String(Character.toChars(0x1F600)) + "y";
+        byte[] bytes = JSON.toJSONBytes(input);
+        assertArrayEquals(
+                new byte[]{'"', 'x', (byte) 0xF0, (byte) 0x9F, (byte) 0x98, (byte) 0x80, 'y', '"'},
+                bytes);
+        assertEquals(input, JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), String.class));
+    }
+
+    @Test
+    void writeBytes_loneLowSurrogateInFieldName_emitsReplacementChar() {
+        // Same fix applies to writeName UTF-8 path (both quoted and the
+        // unquoteFieldName branch). Field name with a lone low surrogate
+        // must produce valid UTF-8.
+        String key = "a" + (char) 0xDC00 + "b";
+        JSONObject obj = new JSONObject();
+        obj.put(key, "v");
+        byte[] bytes = JSON.toJSONBytes(obj);
+        // Validate output decodes cleanly as UTF-8 (no CESU-8 bytes).
+        String decoded = new String(bytes, StandardCharsets.UTF_8);
+        JSONObject reparsed = JSON.parseObject(decoded);
+        assertTrue(reparsed.containsKey("a\ufffdb"));
+        assertEquals("v", reparsed.get("a\ufffdb"));
+    }
 }

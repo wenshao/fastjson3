@@ -2333,6 +2333,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                             buf[count++] = (byte) 0xBF;
                             buf[count++] = (byte) 0xBD;
                         }
+                    } else if (Character.isLowSurrogate(ch)) {
+                        // Lone low surrogate — emit U+FFFD (matches the
+                        // lone-high branch above; the general 3-byte else
+                        // would produce CESU-8 bytes that are invalid UTF-8
+                        // per RFC 3629 §3).
+                        buf[count++] = (byte) 0xEF;
+                        buf[count++] = (byte) 0xBF;
+                        buf[count++] = (byte) 0xBD;
                     } else {
                         buf[count++] = (byte) (0xE0 | (ch >> 12));
                         buf[count++] = (byte) (0x80 | ((ch >> 6) & 0x3F));
@@ -2393,6 +2401,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                             buf[count++] = (byte) 0xBF;
                             buf[count++] = (byte) 0xBD;
                         }
+                    } else if (Character.isLowSurrogate(ch)) {
+                        // Lone low surrogate — emit U+FFFD (matches the
+                        // lone-high branch above; the general 3-byte else
+                        // would produce CESU-8 bytes that are invalid UTF-8
+                        // per RFC 3629 §3).
+                        buf[count++] = (byte) 0xEF;
+                        buf[count++] = (byte) 0xBF;
+                        buf[count++] = (byte) 0xBD;
                     } else {
                         buf[count++] = (byte) (0xE0 | (ch >> 12));
                         buf[count++] = (byte) (0x80 | ((ch >> 6) & 0x3F));
@@ -2896,6 +2912,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         buf[pos++] = (byte) 0xBF;
                         buf[pos++] = (byte) 0xBD;
                     }
+                } else if (Character.isLowSurrogate(ch)) {
+                    // Lone low surrogate (any preceding high would have
+                    // consumed it via i++). Pre-fix the general 3-byte
+                    // else branch emitted CESU-8 bytes (ed bX XX) which
+                    // are invalid UTF-8 per RFC 3629 §3. Match the lone-
+                    // high branch's U+FFFD replacement.
+                    buf[pos++] = (byte) 0xEF;
+                    buf[pos++] = (byte) 0xBF;
+                    buf[pos++] = (byte) 0xBD;
                 } else {
                     buf[pos++] = (byte) (0xE0 | (ch >> 12));
                     buf[pos++] = (byte) (0x80 | ((ch >> 6) & 0x3F));
