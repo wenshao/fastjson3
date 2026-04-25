@@ -595,10 +595,16 @@ public final class ObjectWriterCreatorASM {
                 .astore(7);
 
         // Pre-compute total estimated capacity: sum of all name bytes + 48 per field + 2 for {}
-        // This allows Compact methods to skip per-field ensureCapacity
+        // This allows Compact methods to skip per-field ensureCapacity. Use the
+        // escape-aware encoder so the estimate matches the actual wire bytes
+        // emitted at runtime — a special-char field name produces longer bytes
+        // (control char escape is 6 bytes) and the prior raw-string estimate
+        // would have under-allocated. Live overflow was masked by BufferPool's
+        // 8KB initial size + 512-byte SAFE_MARGIN slack inside ensureCapacity,
+        // but the gap is still an audit-grade correctness fix.
         int totalEstimated = 2; // for { and }
         for (FieldWriterInfo fi : fields) {
-            int nameEncodedLen = ("\"" + fi.jsonName + "\":").getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            int nameEncodedLen = FieldWriter.encodeNameBytes(fi.jsonName).length;
             totalEstimated += nameEncodedLen + 48; // name + max value size
         }
         mw.chain()
