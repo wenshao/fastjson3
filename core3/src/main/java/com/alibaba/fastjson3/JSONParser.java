@@ -2044,11 +2044,13 @@ public abstract sealed class JSONParser implements Closeable
             }
             // Boundary check BEFORE accessing b[off]
             if (off >= e) {
+                this.offset = off;
                 throw new JSONException("expected quote for field name at " + locationAt(off));
             }
             final byte quote = b[off];
             // Single quote only allowed when AllowSingleQuotes feature is enabled
             if (quote != '"' && !(quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
+                this.offset = off;
                 throw new JSONException("expected quote for field name at " + locationAt(off));
             }
             off++;
@@ -2065,6 +2067,7 @@ public abstract sealed class JSONParser implements Closeable
                         off++;
                     }
                     if (off >= e || b[off] != ':') {
+                        this.offset = off;
                         throw new JSONException("expected ':' at " + locationAt(off));
                     }
                     off++; // skip ':'
@@ -2111,6 +2114,7 @@ public abstract sealed class JSONParser implements Closeable
                 }
                 hash = matcher.hashStep(hash, ch);
             }
+            this.offset = off;
             throw new JSONException("unterminated field name");
         }
 
