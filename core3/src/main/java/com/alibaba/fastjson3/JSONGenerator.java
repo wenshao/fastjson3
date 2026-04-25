@@ -1567,6 +1567,31 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 name.getChars(0, len, buf, count);
                 count += len;
             } else {
+                // Scan for chars that need JSON escaping. Field names with
+                // backslash / quote / control bytes / (when escapeNoneAscii)
+                // non-ASCII must escape, otherwise the parser sees a
+                // different key after round-trip. Pre-fix this method just
+                // dumped getChars verbatim — silent data corruption.
+                boolean needsEscape = false;
+                for (int i = 0; i < len; i++) {
+                    char ch = name.charAt(i);
+                    if (ch < 0x20 || ch == '"' || ch == '\\'
+                            || (escapeNoneAscii && ch >= 128)) {
+                        needsEscape = true;
+                        break;
+                    }
+                }
+                if (needsEscape) {
+                    // Delegate to writeString — handles every escape form
+                    // already exercised by value-side serialisation. It
+                    // emits trailing `,`; we patch that to `:` below.
+                    writeString(name);
+                    buf[count - 1] = ':';
+                    if (pretty) {
+                        buf[count++] = ' ';
+                    }
+                    return;
+                }
                 buf[count++] = (char) quoteChar;
                 name.getChars(0, len, buf, count);
                 count += len;
@@ -2273,35 +2298,84 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             } else {
                 ensureCapacity(len * 4 + 4);
             }
-            if (!unquoteFieldName) {
-                buf[count++] = quoteChar;
-            }
-            for (int i = 0; i < len; i++) {
-                char ch = name.charAt(i);
-                if (ch < 0x80) {
-                    buf[count++] = (byte) ch;
-                } else if (ch < 0x800) {
-                    buf[count++] = (byte) (0xC0 | (ch >> 6));
-                    buf[count++] = (byte) (0x80 | (ch & 0x3F));
-                } else if (Character.isHighSurrogate(ch)) {
-                    if (i + 1 < len && Character.isLowSurrogate(name.charAt(i + 1))) {
-                        int cp = Character.toCodePoint(ch, name.charAt(++i));
-                        buf[count++] = (byte) (0xF0 | (cp >> 18));
-                        buf[count++] = (byte) (0x80 | ((cp >> 12) & 0x3F));
-                        buf[count++] = (byte) (0x80 | ((cp >> 6) & 0x3F));
-                        buf[count++] = (byte) (0x80 | (cp & 0x3F));
+            if (unquoteFieldName) {
+                for (int i = 0; i < len; i++) {
+                    char ch = name.charAt(i);
+                    if (ch < 0x80) {
+                        buf[count++] = (byte) ch;
+                    } else if (ch < 0x800) {
+                        buf[count++] = (byte) (0xC0 | (ch >> 6));
+                        buf[count++] = (byte) (0x80 | (ch & 0x3F));
+                    } else if (Character.isHighSurrogate(ch)) {
+                        if (i + 1 < len && Character.isLowSurrogate(name.charAt(i + 1))) {
+                            int cp = Character.toCodePoint(ch, name.charAt(++i));
+                            buf[count++] = (byte) (0xF0 | (cp >> 18));
+                            buf[count++] = (byte) (0x80 | ((cp >> 12) & 0x3F));
+                            buf[count++] = (byte) (0x80 | ((cp >> 6) & 0x3F));
+                            buf[count++] = (byte) (0x80 | (cp & 0x3F));
+                        } else {
+                            buf[count++] = (byte) 0xEF;
+                            buf[count++] = (byte) 0xBF;
+                            buf[count++] = (byte) 0xBD;
+                        }
                     } else {
-                        buf[count++] = (byte) 0xEF;
-                        buf[count++] = (byte) 0xBF;
-                        buf[count++] = (byte) 0xBD;
+                        buf[count++] = (byte) (0xE0 | (ch >> 12));
+                        buf[count++] = (byte) (0x80 | ((ch >> 6) & 0x3F));
+                        buf[count++] = (byte) (0x80 | (ch & 0x3F));
                     }
-                } else {
-                    buf[count++] = (byte) (0xE0 | (ch >> 12));
-                    buf[count++] = (byte) (0x80 | ((ch >> 6) & 0x3F));
-                    buf[count++] = (byte) (0x80 | (ch & 0x3F));
                 }
-            }
-            if (!unquoteFieldName) {
+            } else {
+                // Scan for chars that need JSON escaping. Pre-fix this
+                // method emitted UTF-8 verbatim with no escape pass —
+                // backslash / quote / control bytes in field names round-
+                // tripped to a different key.
+                boolean needsEscape = false;
+                for (int i = 0; i < len; i++) {
+                    char ch = name.charAt(i);
+                    if (ch < 0x20 || ch == '"' || ch == '\\'
+                            || (escapeNoneAscii && ch >= 128)) {
+                        needsEscape = true;
+                        break;
+                    }
+                }
+                if (needsEscape) {
+                    // Delegate to writeString — already handles every
+                    // escape form including escapeNoneAscii / surrogate
+                    // pairs / Latin1 fast path. It emits trailing `,`;
+                    // we patch to `:` below.
+                    writeString(name);
+                    buf[count - 1] = ':';
+                    if (pretty) {
+                        buf[count++] = ' ';
+                    }
+                    return;
+                }
+                buf[count++] = quoteChar;
+                for (int i = 0; i < len; i++) {
+                    char ch = name.charAt(i);
+                    if (ch < 0x80) {
+                        buf[count++] = (byte) ch;
+                    } else if (ch < 0x800) {
+                        buf[count++] = (byte) (0xC0 | (ch >> 6));
+                        buf[count++] = (byte) (0x80 | (ch & 0x3F));
+                    } else if (Character.isHighSurrogate(ch)) {
+                        if (i + 1 < len && Character.isLowSurrogate(name.charAt(i + 1))) {
+                            int cp = Character.toCodePoint(ch, name.charAt(++i));
+                            buf[count++] = (byte) (0xF0 | (cp >> 18));
+                            buf[count++] = (byte) (0x80 | ((cp >> 12) & 0x3F));
+                            buf[count++] = (byte) (0x80 | ((cp >> 6) & 0x3F));
+                            buf[count++] = (byte) (0x80 | (cp & 0x3F));
+                        } else {
+                            buf[count++] = (byte) 0xEF;
+                            buf[count++] = (byte) 0xBF;
+                            buf[count++] = (byte) 0xBD;
+                        }
+                    } else {
+                        buf[count++] = (byte) (0xE0 | (ch >> 12));
+                        buf[count++] = (byte) (0x80 | ((ch >> 6) & 0x3F));
+                        buf[count++] = (byte) (0x80 | (ch & 0x3F));
+                    }
+                }
                 buf[count++] = quoteChar;
             }
             buf[count++] = ':';
