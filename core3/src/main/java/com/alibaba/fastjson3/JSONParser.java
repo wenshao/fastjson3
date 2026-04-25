@@ -2495,7 +2495,11 @@ public abstract sealed class JSONParser implements Closeable
             int c = b[off] & 0xFF;
             if (c == '-') {
                 neg = true;
-                c = b[++off] & 0xFF;
+                off++;
+                if (off >= end) {
+                    throw new JSONException("unexpected end in number");
+                }
+                c = b[off] & 0xFF;
             }
             if (c < '0' || c > '9') {
                 // Non-numeric value: fall back to readAny + conversion
@@ -2682,7 +2686,11 @@ public abstract sealed class JSONParser implements Closeable
             int c = b[off] & 0xFF;
             if (c == '-') {
                 neg = true;
-                c = b[++off] & 0xFF;
+                off++;
+                if (off >= end) {
+                    throw new JSONException("unexpected end in number");
+                }
+                c = b[off] & 0xFF;
             }
             if (c < '0' || c > '9') {
                 this.offset = off - (neg ? 1 : 0);
@@ -2784,7 +2792,11 @@ public abstract sealed class JSONParser implements Closeable
             int c = b[off] & 0xFF;
             if (c == '-') {
                 neg = true;
-                c = b[++off] & 0xFF;
+                off++;
+                if (off >= end) {
+                    throw new JSONException("unexpected end in number");
+                }
+                c = b[off] & 0xFF;
             }
             if (c < '0' || c > '9') {
                 this.offset = off - (neg ? 1 : 0);
@@ -2836,7 +2848,11 @@ public abstract sealed class JSONParser implements Closeable
             int c = b[off] & 0xFF;
             if (c == '-') {
                 neg = true;
-                c = b[++off] & 0xFF;
+                off++;
+                if (off >= end) {
+                    throw new JSONException("unexpected end in number");
+                }
+                c = b[off] & 0xFF;
             }
             if (c < '0' || c > '9') {
                 this.offset = off - (neg ? 1 : 0);
@@ -2954,7 +2970,11 @@ public abstract sealed class JSONParser implements Closeable
             int c = b[off] & 0xFF;
             if (c == '-') {
                 neg = true;
-                c = b[++off] & 0xFF;
+                off++;
+                if (off >= end) {
+                    throw new JSONException("unexpected end in number");
+                }
+                c = b[off] & 0xFF;
             }
             if (c < '0' || c > '9') {
                 this.offset = off - (neg ? 1 : 0);
@@ -2996,7 +3016,11 @@ public abstract sealed class JSONParser implements Closeable
             int c = b[off] & 0xFF;
             if (c == '-') {
                 neg = true;
-                c = b[++off] & 0xFF;
+                off++;
+                if (off >= end) {
+                    throw new JSONException("unexpected end in number");
+                }
+                c = b[off] & 0xFF;
             }
             if (c < '0' || c > '9') {
                 this.offset = off - (neg ? 1 : 0);
