@@ -3,6 +3,8 @@ package com.alibaba.fastjson3;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -400,9 +402,9 @@ class StringEncodingEdgeTest {
 
     @Test
     void writeBytes_loneLowSurrogateInFieldName_emitsReplacementChar() {
-        // Same fix applies to writeName UTF-8 path (both quoted and the
-        // unquoteFieldName branch). Field name with a lone low surrogate
-        // must produce valid UTF-8.
+        // Default writeName path (quoted) \u2014 first of the two writeName
+        // branches the fix touches. See the UnquoteFieldName variant below
+        // for the second branch.
         String key = "a" + (char) 0xDC00 + "b";
         JSONObject obj = new JSONObject();
         obj.put(key, "v");
@@ -412,5 +414,61 @@ class StringEncodingEdgeTest {
         JSONObject reparsed = JSON.parseObject(decoded);
         assertTrue(reparsed.containsKey("a\ufffdb"));
         assertEquals("v", reparsed.get("a\ufffdb"));
+    }
+
+    @Test
+    void writeBytes_loneLowSurrogateInFieldName_unquoteFieldName() {
+        // Second writeName branch \u2014 gated by WriteFeature.UnquoteFieldName.
+        // The fix touched both branches identically; this exercises the
+        // one the default-feature test above doesn't reach.
+        String key = "a" + (char) 0xDC00 + "b";
+        JSONObject obj = new JSONObject();
+        obj.put(key, "v");
+        byte[] bytes = JSON.toJSONBytes(obj, WriteFeature.UnquoteFieldName);
+        // Should contain U+FFFD bytes, not CESU-8 ED B0 80.
+        assertEquals(-1, indexOfBytes(bytes, new byte[]{(byte) 0xED, (byte) 0xB0, (byte) 0x80}),
+                "must not emit CESU-8 surrogate bytes");
+        assertTrue(indexOfBytes(bytes, new byte[]{(byte) 0xEF, (byte) 0xBF, (byte) 0xBD}) >= 0,
+                "must emit U+FFFD replacement");
+    }
+
+    @Test
+    void writeBytes_fieldWriterEncodeNameBytes_usesReplacementChar() {
+        // FieldWriter.encodeNameBytes pre-encodes `@JSONField(name="...")`
+        // at FieldWriter init time. Pre-fix it routed through Java's default
+        // `String.getBytes(UTF_8)` which substitutes `?` (0x3F) for lone
+        // surrogates \u2014 inconsistent with the value path's U+FFFD behaviour.
+        // Reverse audit P2: produce identical wire bytes regardless of
+        // whether a lone surrogate appears in name vs value.
+        SurrogateNameBean b = new SurrogateNameBean();
+        b.x = 1;
+        byte[] bytes = JSON.toJSONBytes(b);
+        // Field name was encoded by FieldWriter.encodeNameBytes once at init.
+        // Pre-fix: `78 3f 79` (`x?y`); post-fix: `78 ef bf bd 79` (`x` + U+FFFD + `y`).
+        assertTrue(indexOfBytes(bytes, new byte[]{(byte) 0xEF, (byte) 0xBF, (byte) 0xBD}) >= 0,
+                "name must emit U+FFFD via FieldWriter.encodeNameBytes");
+        // Also confirm no lingering `?` substitute inside the quoted name.
+        assertEquals(-1, indexOfBytes(bytes, new byte[]{'?'}),
+                "must not contain JDK default replacement '?'");
+    }
+
+    static class SurrogateNameBean {
+        // Java strings can hold lone surrogates as char[]; the annotation's
+        // String constant pool can therefore carry an isolated 0xDC00.
+        @com.alibaba.fastjson3.annotation.JSONField(name = "x\uDC00y")
+        public int x;
+    }
+
+    private static int indexOfBytes(byte[] haystack, byte[] needle) {
+        outer:
+        for (int i = 0; i + needle.length <= haystack.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) {
+                    continue outer;
+                }
+            }
+            return i;
+        }
+        return -1;
     }
 }
