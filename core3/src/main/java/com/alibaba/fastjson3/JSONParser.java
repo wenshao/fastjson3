@@ -3381,12 +3381,19 @@ public abstract sealed class JSONParser implements Closeable
                 while (off < end && b[off] <= ' ') {
                     off++;
                 }
+                if (off >= end) {
+                    throw new JSONException("unexpected end of input");
+                }
                 // Inline long parsing
                 boolean neg = false;
                 int c = b[off] & 0xFF;
                 if (c == '-') {
                     neg = true;
-                    c = b[++off] & 0xFF;
+                    off++;
+                    if (off >= end) {
+                        throw new JSONException("unexpected end in number");
+                    }
+                    c = b[off] & 0xFF;
                 }
                 long value = c - '0';
                 off++;
