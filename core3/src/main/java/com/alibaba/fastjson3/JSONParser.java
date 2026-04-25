@@ -1945,6 +1945,12 @@ public abstract sealed class JSONParser implements Closeable
                 throw new JSONException("expected quote for field name at " + locationAt(off));
             }
             off++;
+            // Position right after the opening quote — passed to the escape
+            // slow path so it can re-read the full name (including any ASCII
+            // chars the unrolled loop already consumed before hitting the
+            // escape) instead of starting mid-name and losing those chars
+            // from the hash.
+            final int nameStart = off;
 
             // 2-byte unrolled hash loop. Bounds-checked: malformed/truncated input
             // (no closing quote within `e`) throws JSONException instead of AIOOBE.
@@ -1964,8 +1970,7 @@ public abstract sealed class JSONParser implements Closeable
                 }
                 if (c1 == '\\' || c1 >= 0x80) {
                     // Non-ASCII or escape: fall through to slow path for correct char-based hashing
-                    this.offset = off;
-                    return readFieldNameHashEscape(off, quote);
+                    return readFieldNameHashEscape(nameStart, quote);
                 }
                 if (off + 1 >= e) {
                     // c1 was non-terminating ASCII but no byte left for c2.
@@ -1981,9 +1986,7 @@ public abstract sealed class JSONParser implements Closeable
                     break;
                 }
                 if (c2 == '\\' || c2 >= 0x80) {
-                    hash += c1;
-                    this.offset = off + 1;
-                    return readFieldNameHashEscape(off + 1, quote);
+                    return readFieldNameHashEscape(nameStart, quote);
                 }
                 hash += c1 + c2;
                 off += 2;

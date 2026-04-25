@@ -327,25 +327,81 @@ public final class FieldWriter implements Comparable<FieldWriter> {
 
     // ==================== Name encoding ====================
 
+    /**
+     * Pre-encode {@code "name":} as a char[]. Bytes between the quotes are
+     * the JSON-escaped form (per RFC 8259 §7) so the output is valid JSON
+     * and the byte-prefix matcher used by {@code readFieldsLoop} compares
+     * against the same wire form a conformant parser would consume.
+     *
+     * <p>Pre-fix this method emitted {@code name} verbatim; for a field
+     * declared with {@code @JSONField(name = "a\\b")} (backslash + b)
+     * that produced {@code "a\b":} on the wire — which any JSON consumer
+     * (including fastjson when reading externally-produced correct JSON)
+     * interprets as backspace, silently losing the field.
+     */
     static char[] encodeNameChars(String name) {
         int len = name.length();
-        char[] chars = new char[len + 3];
-        chars[0] = '"';
-        name.getChars(0, len, chars, 1);
-        chars[len + 1] = '"';
-        chars[len + 2] = ':';
-        return chars;
+        if (!nameNeedsEscape(name, len)) {
+            char[] chars = new char[len + 3];
+            chars[0] = '"';
+            name.getChars(0, len, chars, 1);
+            chars[len + 1] = '"';
+            chars[len + 2] = ':';
+            return chars;
+        }
+        // Escape pass — char-for-char, never invoked at write time so cost
+        // here is one allocation per FieldWriter init not per serialisation.
+        StringBuilder sb = new StringBuilder(len + 8);
+        sb.append('"');
+        for (int i = 0; i < len; i++) {
+            char ch = name.charAt(i);
+            if (ch == '\\' || ch == '"') {
+                sb.append('\\').append(ch);
+            } else if (ch == '\b') {
+                sb.append("\\b");
+            } else if (ch == '\f') {
+                sb.append("\\f");
+            } else if (ch == '\n') {
+                sb.append("\\n");
+            } else if (ch == '\r') {
+                sb.append("\\r");
+            } else if (ch == '\t') {
+                sb.append("\\t");
+            } else if (ch < 0x20) {
+                sb.append("\\u00")
+                  .append(HEX[(ch >> 4) & 0xF])
+                  .append(HEX[ch & 0xF]);
+            } else {
+                sb.append(ch);
+            }
+        }
+        sb.append('"').append(':');
+        char[] out = new char[sb.length()];
+        sb.getChars(0, sb.length(), out, 0);
+        return out;
     }
 
     static byte[] encodeNameBytes(String name) {
-        byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
-        byte[] result = new byte[nameBytes.length + 3];
-        result[0] = '"';
-        System.arraycopy(nameBytes, 0, result, 1, nameBytes.length);
-        result[nameBytes.length + 1] = '"';
-        result[nameBytes.length + 2] = ':';
-        return result;
+        // Reuse char-side escape, then UTF-8 encode the result. Single
+        // allocation cost is negligible (FieldWriter init only).
+        char[] encoded = encodeNameChars(name);
+        return new String(encoded).getBytes(StandardCharsets.UTF_8);
     }
+
+    private static boolean nameNeedsEscape(String name, int len) {
+        for (int i = 0; i < len; i++) {
+            char ch = name.charAt(i);
+            if (ch < 0x20 || ch == '"' || ch == '\\') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final char[] HEX = {
+            '0', '1', '2', '3', '4', '5', '6', '7',
+            '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
+    };
 
     /** Check if putLong is faster than arraycopy (x86 only). Android-safe. */
     private static final boolean PUTLONG_FAST = detectPutLongFast();

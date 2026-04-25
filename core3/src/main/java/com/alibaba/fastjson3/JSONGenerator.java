@@ -1567,16 +1567,27 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 name.getChars(0, len, buf, count);
                 count += len;
             } else {
-                // Scan for chars that need JSON escaping. Field names with
-                // backslash / quote / control bytes / (when escapeNoneAscii)
-                // non-ASCII must escape, otherwise the parser sees a
-                // different key after round-trip. Pre-fix this method just
-                // dumped getChars verbatim — silent data corruption.
+                // Scan for chars that need JSON escaping. Mirrors the
+                // decision in writeString (`escapeChars[ch] != 0 && ch != '/'`,
+                // plus escapeNoneAscii / non-`"` quoteChar checks) so name
+                // escape stays in lockstep with value escape across all
+                // feature flags. Pre-fix this method dumped getChars
+                // verbatim — silent data corruption when names contained
+                // backslash/quote/control chars or, under BrowserCompatible/
+                // BrowserSecure, the `<>()&'` markers.
                 boolean needsEscape = false;
                 for (int i = 0; i < len; i++) {
                     char ch = name.charAt(i);
-                    if (ch < 0x20 || ch == '"' || ch == '\\'
-                            || (escapeNoneAscii && ch >= 128)) {
+                    if (ch < 128) {
+                        if (escapeChars[ch] != 0 && ch != '/') {
+                            needsEscape = true;
+                            break;
+                        }
+                        if (quoteChar != '"' && ch == quoteChar) {
+                            needsEscape = true;
+                            break;
+                        }
+                    } else if (escapeNoneAscii) {
                         needsEscape = true;
                         break;
                     }
@@ -2325,15 +2336,25 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     }
                 }
             } else {
-                // Scan for chars that need JSON escaping. Pre-fix this
-                // method emitted UTF-8 verbatim with no escape pass —
-                // backslash / quote / control bytes in field names round-
-                // tripped to a different key.
+                // Scan for chars that need JSON escaping. Mirrors the
+                // decision in writeString so name escape stays in lockstep
+                // with value escape across all feature flags (including
+                // BrowserCompatible/Secure's `<>()&'` and UseSingleQuotes
+                // mode). Pre-fix this method emitted UTF-8 verbatim with
+                // no escape pass — silent data corruption.
                 boolean needsEscape = false;
                 for (int i = 0; i < len; i++) {
                     char ch = name.charAt(i);
-                    if (ch < 0x20 || ch == '"' || ch == '\\'
-                            || (escapeNoneAscii && ch >= 128)) {
+                    if (ch < 128) {
+                        if (escapeChars[ch] != 0 && ch != '/') {
+                            needsEscape = true;
+                            break;
+                        }
+                        if (quoteChar != '"' && ch == quoteChar) {
+                            needsEscape = true;
+                            break;
+                        }
+                    } else if (escapeNoneAscii) {
                         needsEscape = true;
                         break;
                     }
