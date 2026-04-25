@@ -1848,8 +1848,11 @@ public final class ObjectReaderCreator {
                 }
 
                 // Inline separator check — avoid readFieldSeparator heap access
-                while (b[off] <= ' ') {
+                while (off < end && b[off] <= ' ') {
                     off++;
+                }
+                if (off >= end) {
+                    throw new JSONException("unexpected end of input in " + objectClass.getName());
                 }
                 if (b[off] == ',') {
                     off++;
@@ -3149,6 +3152,7 @@ public final class ObjectReaderCreator {
             final boolean usePLHV = m.strategy == FieldNameMatcher.STRATEGY_PLHV;
 
             final byte[] b = utf8.getBytes();
+            final int end = utf8.getEnd();
             int off = utf8.getOffset();
             int nextExpected = 0;
             final int frLen = fieldReaders.length;
@@ -3157,16 +3161,19 @@ public final class ObjectReaderCreator {
                 FieldReader reader = null;
                 int fieldStart = off; // saved for potential re-read in the unwrapped miss branch
 
-                // Ordered field speculation
+                // Ordered field speculation. Bounds-guard every b[off] read against
+                // the parser's `end` (not b.length — bytes can be a wrapped sub-range).
+                // Truncated input falls through to the slow path below, which surfaces
+                // a JSONException instead of an AIOOBE.
                 if (nextExpected < frLen) {
                     FieldReader candidate = fieldReaders[nextExpected];
                     byte[] hdr = candidate.fieldNameHeader;
-                    while (b[off] <= ' ') {
+                    while (off < end && b[off] <= ' ') {
                         off++;
                     }
                     fieldStart = off;
-                    if (b[off] == '"') {
-                        int hdrLen = hdr.length;
+                    int hdrLen = hdr.length;
+                    if (off + hdrLen <= end && b[off] == '"') {
                         boolean match = true;
                         for (int i = 1; i < hdrLen; i++) {
                             if (b[off + i] != hdr[i]) {
@@ -3176,7 +3183,7 @@ public final class ObjectReaderCreator {
                         }
                         if (match) {
                             off += hdrLen;
-                            while (b[off] <= ' ') {
+                            while (off < end && b[off] <= ' ') {
                                 off++;
                             }
                             reader = candidate;
@@ -3242,8 +3249,11 @@ public final class ObjectReaderCreator {
                     off = utf8.getOffset();
                 }
 
-                while (b[off] <= ' ') {
+                while (off < end && b[off] <= ' ') {
                     off++;
+                }
+                if (off >= end) {
+                    throw new JSONException("unexpected end of input in " + objectClass.getName());
                 }
                 if (b[off] == ',') {
                     off++;

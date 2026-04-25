@@ -10,3 +10,7 @@ dependency-reduced-pom.xml
 
 # Benchmark results (machine-specific, not committed)
 benchmark3/results/*/
+
+# Jazzer's local fuzzing corpus (auto-generated when running JAZZER_FUZZ=1)
+# Persistent seeds live under src/test/resources/.../JSONParseFuzzTestInputs/.
+.cifuzz-corpus/
