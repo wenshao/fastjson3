@@ -414,8 +414,16 @@ public final class ObjectWriterCreatorASM {
                         Object[] constants = fc.getEnumConstants();
                         if (constants != null && constants.length > 0) {
                             byte[][] blobs = new byte[constants.length][];
-                            byte[] namePrefix = ("\"" + fi.jsonName + "\":\"")
-                                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                            // Build `"escapedName":"` from the escape-aware
+                            // encoder (`...":` from encodeNameBytes) plus a
+                            // trailing `"` opening the enum value's quote.
+                            // Pre-fix this concatenated jsonName raw, so an
+                            // enum field with a special-char @JSONField name
+                            // produced malformed JSON in the precomputed blob.
+                            byte[] encodedNameColon = FieldWriter.encodeNameBytes(fi.jsonName);
+                            byte[] namePrefix = new byte[encodedNameColon.length + 1];
+                            System.arraycopy(encodedNameColon, 0, namePrefix, 0, encodedNameColon.length);
+                            namePrefix[encodedNameColon.length] = '"';
                             byte[] suffix = new byte[] {'"', ','};
                             for (int j = 0; j < constants.length; j++) {
                                 byte[] enumNameBytes = ((Enum<?>) constants[j])
@@ -505,7 +513,15 @@ public final class ObjectWriterCreatorASM {
 
         for (int i = 0; i < fields.size(); i++) {
             FieldWriterInfo fi = fields.get(i);
-            String encodedName = "\"" + fi.jsonName + "\":";
+            // Use the same escape-aware encoder the reflection path uses.
+            // Pre-fix this concatenated `"` + jsonName + `":` raw, so a
+            // field declared `@JSONField(name="a\"b", inclusion=ALWAYS)`
+            // emitted unparseable JSON. The ASM canGenerate gate doesn't
+            // reject special-char names, so without routing through
+            // FieldWriter.encodeNameChars the ASM writer was a third
+            // producer of malformed output (alongside the two writeName
+            // sites in JSONGenerator that earlier commits closed).
+            String encodedName = new String(FieldWriter.encodeNameChars(fi.jsonName));
 
             // fieldOffset: foN = <constant offset>
             mw.chain()
@@ -579,10 +595,16 @@ public final class ObjectWriterCreatorASM {
                 .astore(7);
 
         // Pre-compute total estimated capacity: sum of all name bytes + 48 per field + 2 for {}
-        // This allows Compact methods to skip per-field ensureCapacity
+        // This allows Compact methods to skip per-field ensureCapacity. Use the
+        // escape-aware encoder so the estimate matches the actual wire bytes
+        // emitted at runtime — a special-char field name produces longer bytes
+        // (control char escape is 6 bytes) and the prior raw-string estimate
+        // would have under-allocated. Live overflow was masked by BufferPool's
+        // 8KB initial size + 512-byte SAFE_MARGIN slack inside ensureCapacity,
+        // but the gap is still an audit-grade correctness fix.
         int totalEstimated = 2; // for { and }
         for (FieldWriterInfo fi : fields) {
-            int nameEncodedLen = ("\"" + fi.jsonName + "\":").getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            int nameEncodedLen = FieldWriter.encodeNameBytes(fi.jsonName).length;
             totalEstimated += nameEncodedLen + 48; // name + max value size
         }
         mw.chain()
@@ -1372,9 +1394,15 @@ public final class ObjectWriterCreatorASM {
                 .getstatic(classInternalName, "nb" + namePrefix, "[B");
     }
 
-    /** W#5 — compute the full {@code "jsonName":} UTF-8 bytes. */
+    /**
+     * W#5 — compute the full {@code "jsonName":} UTF-8 bytes, escape-aware.
+     * Routes through {@link FieldWriter#encodeNameBytes} so the ASM
+     * writeName1L / writeName2L fast path emits identical wire bytes to
+     * the reflection writer (named escapes for {@code \\ " \b \f \n \r \t}
+     * and {@code \\u00XX} for unnamed control chars).
+     */
     private static byte[] encodedNameBytes(String jsonName) {
-        return ("\"" + jsonName + "\":").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return FieldWriter.encodeNameBytes(jsonName);
     }
 
     /**
