@@ -2009,10 +2009,11 @@ public abstract sealed class JSONParser implements Closeable
         }
 
         private long readFieldNameHashEscape(int nameStart, int quote) {
-            // offset is already set before the escape
+            // nameStart is the position right after the opening quote — the
+            // unrolled PLHV loop passes that, not the escape-char position,
+            // so readStringContentWithQuote sees the full name (including
+            // any pre-escape ASCII chars) and PLHV hash matches the table.
             this.offset = nameStart;
-            // Find the start (after opening quote which is at nameStart - (nameStart - start of field))
-            // Actually we need to re-read from the opening quote. Let's just use the slow path.
             String name = readStringContentWithQuote(quote);
             final byte[] b = this.bytes;
             final int e = this.end;
