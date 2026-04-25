@@ -1567,19 +1567,23 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 name.getChars(0, len, buf, count);
                 count += len;
             } else {
-                // Scan for chars that need JSON escaping. Mirrors the
-                // decision in writeString (`escapeChars[ch] != 0 && ch != '/'`,
-                // plus escapeNoneAscii / non-`"` quoteChar checks) so name
-                // escape stays in lockstep with value escape across all
-                // feature flags. Pre-fix this method dumped getChars
-                // verbatim — silent data corruption when names contained
-                // backslash/quote/control chars or, under BrowserCompatible/
-                // BrowserSecure, the `<>()&'` markers.
+                // Scan for chars that need JSON escaping. Mirrors writeString
+                // so name escape stays in lockstep with value escape across
+                // all feature flags. Categories that trigger the slow path:
+                //   1. ch in active escapeChars table (named escape +
+                //      BrowserCompatible/Secure markers) excluding '/'
+                //      which has a table entry but is never actually escaped.
+                //   2. ch under 0x20 (JSON spec RFC 8259 section 7 requires
+                //      escape for every control char, even those without a
+                //      named escape: 0x00-0x07, 0x0B, 0x0E-0x1F).
+                //   3. ch == quoteChar when quoteChar != '"' (single-quote
+                //      mode must escape its own quote).
+                //   4. non-ASCII when escapeNoneAscii is on.
                 boolean needsEscape = false;
                 for (int i = 0; i < len; i++) {
                     char ch = name.charAt(i);
                     if (ch < 128) {
-                        if (escapeChars[ch] != 0 && ch != '/') {
+                        if (ch < 0x20 || (escapeChars[ch] != 0 && ch != '/')) {
                             needsEscape = true;
                             break;
                         }
@@ -2336,17 +2340,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     }
                 }
             } else {
-                // Scan for chars that need JSON escaping. Mirrors the
-                // decision in writeString so name escape stays in lockstep
-                // with value escape across all feature flags (including
-                // BrowserCompatible/Secure's `<>()&'` and UseSingleQuotes
-                // mode). Pre-fix this method emitted UTF-8 verbatim with
-                // no escape pass — silent data corruption.
+                // Scan for chars that need JSON escaping. Mirrors writeString
+                // so name escape stays in lockstep with value escape across
+                // all feature flags. Same categories as the Char gen sibling
+                // above (escape table, ch < 0x20, alt quote, escapeNoneAscii).
                 boolean needsEscape = false;
                 for (int i = 0; i < len; i++) {
                     char ch = name.charAt(i);
                     if (ch < 128) {
-                        if (escapeChars[ch] != 0 && ch != '/') {
+                        if (ch < 0x20 || (escapeChars[ch] != 0 && ch != '/')) {
                             needsEscape = true;
                             break;
                         }
