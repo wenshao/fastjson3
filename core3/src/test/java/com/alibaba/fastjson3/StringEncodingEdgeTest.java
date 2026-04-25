@@ -471,4 +471,21 @@ class StringEncodingEdgeTest {
         }
         return -1;
     }
+
+    @Test
+    void charGeneratorToByteArray_loneSurrogate_emitsReplacementChar() {
+        // JSONGenerator.Char buffers chars; toByteArray() converts the
+        // accumulated chars to UTF-8 bytes. Without an explicit encoder
+        // configuration, JDK's default String.getBytes(UTF_8) substitutes
+        // `?` (0x3F) for lone surrogates — diverges from the UTF8
+        // generator's U+FFFD policy on the same input.
+        try (com.alibaba.fastjson3.JSONGenerator g = com.alibaba.fastjson3.JSONGenerator.of()) {
+            g.writeString("x" + (char) 0xDC00 + "y");
+            byte[] bytes = g.toByteArray();
+            assertEquals(-1, indexOfBytes(bytes, new byte[]{'?'}),
+                    "Char gen toByteArray must not substitute '?'");
+            assertTrue(indexOfBytes(bytes, new byte[]{(byte) 0xEF, (byte) 0xBF, (byte) 0xBD}) >= 0,
+                    "Char gen toByteArray must emit U+FFFD for lone surrogate");
+        }
+    }
 }

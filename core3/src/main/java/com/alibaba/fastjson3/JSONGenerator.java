@@ -2089,7 +2089,24 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         @Override
         public byte[] toByteArray() {
             int c = outputCount();
-            return new String(buf, 0, c).getBytes(StandardCharsets.UTF_8);
+            // Use an explicit encoder configured to substitute lone
+            // surrogates with U+FFFD, matching the UTF-8 generator's
+            // value-side surrogate handling. JDK default
+            // `String.getBytes(UTF_8)` falls back to `?` (0x3F) — the
+            // same inconsistency the round-2 audit flagged on
+            // FieldWriter.encodeNameBytes (now fixed in lockstep).
+            java.nio.charset.CharsetEncoder enc = StandardCharsets.UTF_8.newEncoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPLACE)
+                    .replaceWith(new byte[]{(byte) 0xEF, (byte) 0xBF, (byte) 0xBD});
+            try {
+                java.nio.ByteBuffer bb = enc.encode(java.nio.CharBuffer.wrap(buf, 0, c));
+                byte[] out = new byte[bb.remaining()];
+                bb.get(out);
+                return out;
+            } catch (java.nio.charset.CharacterCodingException e) {
+                throw new IllegalStateException(e);
+            }
         }
 
         @Override
