@@ -180,7 +180,35 @@ public class JSONParseFuzzTest {
         }
     }
 
+    /**
+     * Typed POJO parse with primitive fields. Records dispatch values through
+     * {@code utf8.readAny()} (bounded). The reflection POJO path goes through
+     * {@code readFieldsLoop}'s tableswitch with inline {@code readIntOff /
+     * readLongOff / readDoubleOff / readBooleanOff} calls — surface that
+     * needs its own coverage so truncated-after-colon inputs (e.g. {@code
+     * {"id":}) surface here, not in production.
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzParsePojoPrimitive(FuzzedDataProvider data) {
+        String input = data.consumeRemainingAsString();
+        try {
+            JSON.parseObject(input, FuzzPojo.class);
+        } catch (JSONException | NumberFormatException | ArithmeticException ignored) {
+            // expected
+        }
+    }
+
     /** Target POJO for {@link #fuzzParseRecord}. */
     public record FuzzRecord(String name, int count, boolean flag, List<String> tags) {
+    }
+
+    /** Target POJO for {@link #fuzzParsePojoPrimitive}. */
+    public static class FuzzPojo {
+        public String name;
+        public int id;
+        public long count;
+        public double weight;
+        public boolean active;
+        public java.math.BigDecimal price;
     }
 }

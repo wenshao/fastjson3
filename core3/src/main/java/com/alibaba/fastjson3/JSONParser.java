@@ -1918,20 +1918,22 @@ public abstract sealed class JSONParser implements Closeable
          *
          * <p>WARNING: 性能敏感方法，修改前务必做 benchmark 验证。关键设计约束：
          * <ul>
-         *   <li>此方法省略了边界检查，前提是输入为合法 JSON（保证有 quote 和 ':'）</li>
+         *   <li>对截断/缺 ':' 的输入抛 JSONException（与 readFieldNameHashSlow 行为对齐），不再假定输入合法</li>
          *   <li>2-byte 展开的 for(;;) 循环是刻意设计，不可改回 while(off&lt;e) 单字节循环</li>
          *   <li>方法体必须保持小于 ~325 字节码以确保 JIT 内联</li>
          * </ul>
          */
         public long readFieldNameHashPLHV() {
             final byte[] b = this.bytes;
+            final int e = this.end;
             int off = this.offset;
             // Skip whitespace
-            while (off < end && b[off] <= ' ') {
+            while (off < e && b[off] <= ' ') {
                 off++;
             }
             // Boundary check BEFORE accessing b[off]
-            if (off >= end) {
+            if (off >= e) {
+                this.offset = off;
                 throw new JSONException("expected quote for field name at " + locationAt(off));
             }
             final byte quote = b[off];
@@ -1939,18 +1941,20 @@ public abstract sealed class JSONParser implements Closeable
             if (quote == '"' || (quote == '\'' && isEnabled(ReadFeature.AllowSingleQuotes))) {
                 // valid quote
             } else {
+                this.offset = off;
                 throw new JSONException("expected quote for field name at " + locationAt(off));
             }
             off++;
 
             // 2-byte unrolled hash loop. Bounds-checked: malformed/truncated input
-            // (no closing quote within `end`) throws JSONException instead of AIOOBE.
+            // (no closing quote within `e`) throws JSONException instead of AIOOBE.
             // Both checks are highly predictable — the top one only fires on
             // truncation, the inner one only on the final iteration of a name
             // with odd byte length adjacent to end.
             long hash = 0;
             for (;;) {
-                if (off >= end) {
+                if (off >= e) {
+                    this.offset = off;
                     throw new JSONException("unterminated field name");
                 }
                 int c1 = b[off] & 0xFF;
@@ -1963,9 +1967,9 @@ public abstract sealed class JSONParser implements Closeable
                     this.offset = off;
                     return readFieldNameHashEscape(off, quote);
                 }
-                if (off + 1 >= end) {
+                if (off + 1 >= e) {
                     // c1 was non-terminating ASCII but no byte left for c2.
-                    // Step one byte; next iteration trips off >= end and throws.
+                    // Step one byte; next iteration trips off >= e and throws.
                     hash += c1;
                     off++;
                     continue;
@@ -1986,14 +1990,15 @@ public abstract sealed class JSONParser implements Closeable
             }
 
             // Skip whitespace, ':', and whitespace after ':'
-            while (off < end && b[off] <= ' ') {
+            while (off < e && b[off] <= ' ') {
                 off++;
             }
-            if (off >= end || b[off] != ':') {
+            if (off >= e || b[off] != ':') {
+                this.offset = off;
                 throw new JSONException("expected ':' at " + locationAt(off));
             }
             off++; // skip ':'
-            while (off < end && b[off] <= ' ') {
+            while (off < e && b[off] <= ' ') {
                 off++;
             }
             this.offset = off;
@@ -2666,6 +2671,9 @@ public abstract sealed class JSONParser implements Closeable
             final byte[] b = this.bytes;
             int off = this.offset;
             final int e = this.end;
+            if (off >= e) {
+                throw new JSONException("unexpected end of input");
+            }
             boolean neg = false;
             int c = b[off] & 0xFF;
             if (c == '-') {
@@ -2765,6 +2773,9 @@ public abstract sealed class JSONParser implements Closeable
          */
         public int readLongOff(int off, Object bean, com.alibaba.fastjson3.reader.FieldReader reader) {
             final byte[] b = this.bytes;
+            if (off >= end) {
+                throw new JSONException("unexpected end of input");
+            }
             boolean neg = false;
             int c = b[off] & 0xFF;
             if (c == '-') {
@@ -2814,6 +2825,9 @@ public abstract sealed class JSONParser implements Closeable
          */
         public int readIntOff(int off, Object bean, com.alibaba.fastjson3.reader.FieldReader reader) {
             final byte[] b = this.bytes;
+            if (off >= end) {
+                throw new JSONException("unexpected end of input");
+            }
             boolean neg = false;
             int c = b[off] & 0xFF;
             if (c == '-') {
@@ -2929,6 +2943,9 @@ public abstract sealed class JSONParser implements Closeable
 
         public int readIntOffDirect(int off, Object bean, long fieldOffset) {
             final byte[] b = this.bytes;
+            if (off >= end) {
+                throw new JSONException("unexpected end of input");
+            }
             boolean neg = false;
             int c = b[off] & 0xFF;
             if (c == '-') {
@@ -2968,6 +2985,9 @@ public abstract sealed class JSONParser implements Closeable
 
         public int readLongOffDirect(int off, Object bean, long fieldOffset) {
             final byte[] b = this.bytes;
+            if (off >= end) {
+                throw new JSONException("unexpected end of input");
+            }
             boolean neg = false;
             int c = b[off] & 0xFF;
             if (c == '-') {
@@ -3371,8 +3391,12 @@ public abstract sealed class JSONParser implements Closeable
         /**
          * Return the byte at the current offset without advancing or skipping whitespace.
          * Use when whitespace has already been skipped (e.g., after readFieldNameHash).
+         * Throws when offset is at end (truncated input after a field-name+colon).
          */
         public int peekByte() {
+            if (offset >= end) {
+                throw new JSONException("unexpected end of input");
+            }
             return bytes[offset] & 0xFF;
         }
 

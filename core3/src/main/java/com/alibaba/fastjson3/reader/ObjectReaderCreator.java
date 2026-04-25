@@ -1671,12 +1671,16 @@ public final class ObjectReaderCreator {
                     }
                     int hdrLen = candidate.fieldNameHeader.length;
                     if (off + hdrLen <= end) {
-                        // Compare using pre-computed long words (8 bytes at a time)
+                        // Compare using pre-computed long words (8 bytes at a time).
+                        // Bound on `end` not `b.length`: the parser may operate on a
+                        // wrapped sub-range of bytes (UTF8(bytes, offset, length)),
+                        // so reading past `end` would compare against arbitrary
+                        // garbage and can spuriously match.
                         boolean match;
-                        if (hdrLen <= 8 && off + 8 <= b.length) {
+                        if (hdrLen <= 8 && off + 8 <= end) {
                             long w = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
                             match = (w & candidate.hdrMask0) == candidate.hdrWord0;
-                        } else if (hdrLen <= 16 && off + 16 <= b.length) {
+                        } else if (hdrLen <= 16 && off + 16 <= end) {
                             long w0 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off);
                             long w1 = com.alibaba.fastjson3.util.JDKUtils.getLongDirect(b, off + 8);
                             match = w0 == candidate.hdrWord0
@@ -1722,6 +1726,12 @@ public final class ObjectReaderCreator {
                     // vs the previous if/else chain (O(N) worst case).
                     // For 22-field POJOs with 8+ type tags, the tableswitch
                     // is faster on average and more JIT-friendly.
+                    if (off >= end) {
+                        // Truncated input: header speculation matched `"name":` and
+                        // ws-skipped to end with no value byte. The case branches
+                        // below read b[off] / b[off+3] without per-branch guards.
+                        throw new JSONException("unexpected end of input in " + objectClass.getName());
+                    }
                     try {
                     switch (reader.typeTag) {
                     case FieldReader.TAG_STRING:
