@@ -276,4 +276,90 @@ public class EnumValueFieldTest {
         Score high = JSON.parse("{\"rate\":1.9}", Score.class);
         assertEquals(Rate.HIGH, high.rate);
     }
+
+    // AutoObjectWriterProvider fix: classes that hold an enum field whose
+    // enum declares @JSONField(value=true) must be routed away from the
+    // ASM TYPE_ENUM fast path (which bakes enum.name() per ordinal) into
+    // the reflection writer (which honours findValueWriter). Uses fresh
+    // fixture classes — Grade / ReportCard — so no prior test warms up
+    // the shared-provider cache for these types.
+
+    public enum Grade {
+        A("A+"), B("B"), C("C-");
+        private final String code;
+        Grade(String c) { this.code = c; }
+        @JSONField(value = true)
+        public String getCode() { return code; }
+    }
+
+    public static class ReportCard {
+        public String student;
+        public Grade grade;
+    }
+
+    @Test
+    public void autoProviderRoutesEnumValueClassToReflection() {
+        ReportCard rc = new ReportCard();
+        rc.student = "carol";
+        rc.grade = Grade.A;
+        String json = MAPPER.writeValueAsString(rc);
+        assertTrue(json.contains("\"grade\":\"A+\""),
+                "AUTO provider must honour @JSONField(value=true) on enum field: " + json);
+        assertFalse(json.contains("\"A\","), "must not emit enum.name(): " + json);
+
+        // Round-trip: the reflect path's inverse value map accepts both the
+        // code ("A+") and the enum name ("A") — see stringValuedEnumRoundTrip.
+        ReportCard back = MAPPER.readValue(json, ReportCard.class);
+        assertEquals("carol", back.student);
+        assertEquals(Grade.A, back.grade);
+    }
+
+    // ==================== canGenerate gate coverage ====================
+
+    @Test
+    public void asmExplicitModeAlsoRoutesEnumValueClassToReflection() {
+        // Same fixture as above but via the explicit ASM provider.
+        // canGenerate's hasEnumWithValueAccessor check now rejects, so
+        // ObjectWriterCreatorASM falls back to the reflect writer.
+        // Using Grade.C whose code ("C-") is unambiguously distinct
+        // from enum.name() ("C").
+        ObjectMapper asmMapper = ObjectMapper.builder()
+                .writerCreatorType(com.alibaba.fastjson3.writer.WriterCreatorType.ASM)
+                .build();
+        ReportCard rc = new ReportCard();
+        rc.student = "dave";
+        rc.grade = Grade.C;
+        String json = asmMapper.writeValueAsString(rc);
+        assertTrue(json.contains("\"grade\":\"C-\""),
+                "ASM provider must honour @JSONField(value=true) too: " + json);
+        assertFalse(json.contains("\"grade\":\"C\""), json); // would be enum.name()
+    }
+
+    // Getter-only enum property: no declared field, only a calculated
+    // getter returning the enum type. canGenerate must detect this shape.
+    public static class GetterOnlyReport {
+        private int internal;
+
+        public GetterOnlyReport(int internal) {
+            this.internal = internal;
+        }
+
+        public String getStudent() {
+            return "eve";
+        }
+
+        public Grade getGrade() {
+            return internal >= 90 ? Grade.A : Grade.B;
+        }
+    }
+
+    @Test
+    public void asmGateDetectsGetterOnlyEnumProperty() {
+        GetterOnlyReport r = new GetterOnlyReport(95);
+        String json = MAPPER.writeValueAsString(r);
+        assertTrue(json.contains("\"grade\":\"A+\""),
+                "calculated getter returning enum must also honour value-method: " + json);
+        assertFalse(json.contains("\"A\","), json);
+    }
+
 }
