@@ -429,7 +429,7 @@ Object obj = mapper.readValue("{\"a\":[1,2]}");
 
 全局等价物（影响 `new JSONObject()` 与 shared mapper 默认解析路径）：`JSONObject.setMapCreator(ConcurrentHashMap::new)`。fastjson3 的 `JSONArray` 当前没有对应的 `setListCreator`，需要全局列表后备时通过 per-mapper `listSupplier` 解决。
 
-> 生效范围：未类型化路径——`mapper.readValue(json)`（推断为 `JSONObject` / `JSONArray`）以及直接入口 `mapper.readObject(...)` / `mapper.readArray(...)`，含它们内部递归创建的子节点。所有类型化解析（`readValue(json, Bean.class)` / `readValue(json, JSONObject.class)` / `readValue(json, TypeReference<Map>())` 等）走 ObjectReader 路径，不应用 supplier。详见 [ObjectMapper#自定义-map--list-后备存储](../api/ObjectMapper.md#自定义-map--list-后备存储)。
+> 生效范围：未类型化路径（`mapper.readValue(json)` / `mapper.readObject(...)` / `mapper.readArray(...)`）以及类型解析到具体 `JSONObject` / `JSONArray` 的所有路径——`readValue(json, JSONObject.class)` / `readValue(json, JSONArray.class)`、Bean 字段声明为 `JSONObject` / `JSONArray`、`List<JSONObject>` / `Map<String, JSONArray>` 等元素类型。**不应用** supplier 的是：`TypeReference<Map<String,Object>>` / `TypeReference<List<Object>>`、Bean 字段声明为 `Map<K,V>` / `List<E>` 接口本身（E 不是 `JSONObject` / `JSONArray` 时）。详见 [ObjectMapper#自定义-map--list-后备存储](../api/ObjectMapper.md#自定义-map--list-后备存储)。
 
 ---
 

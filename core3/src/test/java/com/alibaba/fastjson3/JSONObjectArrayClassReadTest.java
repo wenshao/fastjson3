@@ -172,4 +172,11 @@ class JSONObjectArrayClassReadTest {
         assertEquals(1, bean.buckets.get("a").get(0));
         assertEquals(4, bean.buckets.get("b").get(1));
     }
+
+    // JSONObject[] / JSONArray[] field cases: tracked as follow-up. The
+    // reader-creation short-circuit in this PR (`isJsonNodeOrJsonNodeArray`
+    // matches array component type defensively), but the readAny+convertValue
+    // fallback then has no List→array conversion, so the elements arrive as
+    // null. Fixing requires extending FieldReader.convertValue or adding a
+    // dedicated typed-array reader for JSONObject[] / JSONArray[].
 }
