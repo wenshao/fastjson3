@@ -1013,15 +1013,23 @@ public abstract sealed class JSONParser implements Closeable
             }
             return (T) new AtomicLongArray(values);
         }
+        // POJO types: resolve reader from the shared ObjectMapper's provider.
+        // Callers who need a custom mapper should use ObjectMapper.readValue() directly.
+        ObjectReader<T> reader = ObjectMapper.shared().getObjectReader(type);
+        if (reader != null) {
+            return reader.readObject(this, type, null, features);
+        }
         // Raw collection / map interfaces (and the common abstract / default
         // concrete classes that callers reach for as a "give me any Map" /
         // "any List" / "any Set"): route to the untyped generic readers,
         // matching fastjson2's ObjectReaderImplMap / ObjectReaderImplList
-        // default mapping. Users get a populated LinkedHashMap / ArrayList /
-        // LinkedHashSet instead of a "cannot deserialize interface" error.
+        // default mapping. Placed AFTER getObjectReader so that
+        // registerReader(Map.class, ...) / module-supplied custom readers
+        // still take precedence on parser-direct paths (parser.read(Map.class),
+        // JSON.parseObject(json, Map.class, ReadFeature...)).
         // Specific concrete classes that imply a particular impl
         // (TreeMap, LinkedList, ConcurrentHashMap, ...) still go through the
-        // registered ObjectReader / auto-build path below.
+        // sealed-type / no-reader branch below since they are not in the list.
         if (type == java.util.Map.class || type == java.util.AbstractMap.class) {
             return (T) readGenericMap(Object.class, Object.class);
         }
@@ -1039,19 +1047,13 @@ public abstract sealed class JSONParser implements Closeable
                 || type == java.util.LinkedHashSet.class) {
             return (T) readGenericSet(Object.class);
         }
-        // POJO types: resolve reader from the shared ObjectMapper's provider.
-        // Callers who need a custom mapper should use ObjectMapper.readValue() directly.
-        ObjectReader<T> reader = ObjectMapper.shared().getObjectReader(type);
-        if (reader == null) {
-            if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
-                throw new JSONException("cannot deserialize "
-                        + (type.isInterface() ? "interface" : "abstract class") + " " + type.getName()
-                        + ": register subtypes via @JSONType(seeAlso=..., typeKey=...),"
-                        + " make the type sealed, or use Jackson @JsonTypeInfo + @JsonSubTypes");
-            }
-            throw new JSONException("no ObjectReader registered for type: " + type.getName());
+        if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
+            throw new JSONException("cannot deserialize "
+                    + (type.isInterface() ? "interface" : "abstract class") + " " + type.getName()
+                    + ": register subtypes via @JSONType(seeAlso=..., typeKey=...),"
+                    + " make the type sealed, or use Jackson @JsonTypeInfo + @JsonSubTypes");
         }
-        return reader.readObject(this, type, null, features);
+        throw new JSONException("no ObjectReader registered for type: " + type.getName());
     }
 
     @SuppressWarnings("unchecked")

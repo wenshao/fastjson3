@@ -169,6 +169,37 @@ class RawMapListClassReadTest {
         assertEquals(LinkedHashSet.class, r.getClass());
     }
 
+    @Test
+    void parserDirect_registeredReader_takesPrecedence() {
+        // Parser-direct path (JSON.parseObject(json, Map.class, features) /
+        // JSONParser.read(Map.class)) must consult registered readers BEFORE
+        // the raw-interface fallback. Otherwise the fix would silently bypass
+        // user-registered Map.class readers — codex flagged this on PR #140.
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        com.alibaba.fastjson3.ObjectReader<Map> custom =
+                (parser, fieldType, fieldName, features) -> {
+                    calls.incrementAndGet();
+                    Map<String, Object> m = new java.util.HashMap<>();
+                    m.put("__intercepted", Boolean.TRUE);
+                    parser.readObject();
+                    return m;
+                };
+        ObjectMapper mapper = ObjectMapper.shared();
+        mapper.registerReader(Map.class, custom);
+        try {
+            // Goes through ObjectMapper.readValue → getObjectReader → custom
+            Object viaMapper = mapper.readValue("{\"a\":1}", Map.class);
+            assertEquals(Boolean.TRUE, ((Map<?, ?>) viaMapper).get("__intercepted"));
+            // Goes through JSON.parseObject → parser.read(Map.class) → must
+            // also hit the registered reader (the parser-direct path).
+            Object viaStatic = JSON.parseObject("{\"a\":1}", Map.class);
+            assertEquals(Boolean.TRUE, ((Map<?, ?>) viaStatic).get("__intercepted"));
+            assertTrue(calls.get() >= 2, "custom reader expected to run for both paths");
+        } finally {
+            mapper.unregisterReader(Map.class);
+        }
+    }
+
     // Specific concrete impls outside the abstract-class fallback set
     // (ConcurrentHashMap.class, TreeMap.class, LinkedList.class, Stack.class,
     // CopyOnWriteArrayList.class, etc.) are NOT covered — they fall through
