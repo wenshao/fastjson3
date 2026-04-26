@@ -50,10 +50,12 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     private static volatile Supplier<Map<String, Object>> mapCreator;
 
     /**
-     * Inner map — null when using LinkedHashMap fallback (mapCreator is set,
-     * or constructed via {@link #JSONObject(Map)}).
+     * Inner map — null when using LinkedHashMap fallback (constructed via
+     * {@link #JSONObject(Map)}). When non-null, can be either a
+     * {@link JSONObjectMap} (default optimized storage) or any
+     * supplier-provided {@code Map} (e.g. {@code ConcurrentHashMap}).
      */
-    private transient JSONObjectMap innerMap;
+    private transient Map<String, Object> innerMap;
 
     public static void setMapCreator(Supplier<Map<String, Object>> creator) {
         mapCreator = creator;
@@ -68,7 +70,7 @@ public class JSONObject extends LinkedHashMap<String, Object> {
         if (creator == null) {
             innerMap = new JSONObjectMap();
         } else {
-            // Custom map mode: disable innerMap, use inherited LinkedHashMap storage.
+            innerMap = creator.get();
         }
     }
 
@@ -78,13 +80,22 @@ public class JSONObject extends LinkedHashMap<String, Object> {
         if (creator == null) {
             innerMap = new JSONObjectMap(initialCapacity);
         } else {
-            // LinkedHashMap mode — super already initialized with initialCapacity
+            innerMap = creator.get();
         }
     }
 
     public JSONObject(Map<String, Object> map) {
         super(map);
         // No inner map — use LinkedHashMap with pre-populated data
+    }
+
+    /**
+     * Create a JSONObject backed by the given {@code Supplier}'s Map.
+     * Used by the parser when a per-instance map supplier is configured
+     * via {@link ObjectMapper.Builder#mapSupplier(Supplier)}.
+     */
+    public JSONObject(Supplier<? extends Map<String, Object>> supplier) {
+        innerMap = supplier.get();
     }
 
     // ==================== Map method overrides ====================
@@ -286,7 +297,14 @@ public class JSONObject extends LinkedHashMap<String, Object> {
     @Override
     public void replaceAll(java.util.function.BiFunction<? super String, ? super Object, ?> function) {
         if (innerMap != null) {
-            innerMap.replaceAllValues(function);
+            // JSONObjectMap has a specialized replaceAllValues; arbitrary
+            // supplier-provided Maps (ConcurrentHashMap, TreeMap, ...) take
+            // the standard Map.replaceAll path.
+            if (innerMap instanceof JSONObjectMap jom) {
+                jom.replaceAllValues(function);
+            } else {
+                innerMap.replaceAll(function);
+            }
         } else {
             super.replaceAll(function);
         }
@@ -301,7 +319,13 @@ public class JSONObject extends LinkedHashMap<String, Object> {
      */
     void fastPut(String key, Object value) {
         if (innerMap != null) {
-            innerMap.putParser(key, value);
+            // JSONObjectMap has a no-dup-check fast putParser; arbitrary
+            // supplier-provided Maps fall back to standard Map.put.
+            if (innerMap instanceof JSONObjectMap jom) {
+                jom.putParser(key, value);
+            } else {
+                innerMap.put(key, value);
+            }
         } else {
             super.put(key, value);
         }

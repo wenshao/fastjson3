@@ -144,7 +144,8 @@ public final class ObjectMapper {
             false,
             null,
             null,
-            com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance());
+            com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance(),
+            null, null);
 
     private final long readFeatures;
     private final long writeFeatures;
@@ -185,6 +186,11 @@ public final class ObjectMapper {
 
     // Optional Jackson annotation support (off by default)
     private final boolean useJacksonAnnotation;
+
+    // Per-instance Map / List supplier overrides (fj2-compat). null = use
+    // JSONObject.setMapCreator() global / JSONObjectMap default.
+    private final java.util.function.Supplier<? extends java.util.Map<String, Object>> mapSupplier;
+    private final java.util.function.Supplier<? extends java.util.List<Object>> listSupplier;
 
     // Holder for ObjectReader that supports invalidation via cleanup
     private static final class ReaderHolder {
@@ -309,7 +315,9 @@ public final class ObjectMapper {
             boolean useJacksonAnnotation,
             ObjectReaderProvider readerProvider,
             ObjectWriterProvider writerProvider,
-            com.alibaba.fastjson3.util.DynamicClassLoader classLoader
+            com.alibaba.fastjson3.util.DynamicClassLoader classLoader,
+            java.util.function.Supplier<? extends java.util.Map<String, Object>> mapSupplier,
+            java.util.function.Supplier<? extends java.util.List<Object>> listSupplier
     ) {
         this.readFeatures = readFeatures;
         this.writeFeatures = writeFeatures;
@@ -323,6 +331,8 @@ public final class ObjectMapper {
         this.labelFilter = labelFilter;
         this.mixInCache = new java.util.concurrent.ConcurrentHashMap<>(mixInCache);
         this.useJacksonAnnotation = useJacksonAnnotation;
+        this.mapSupplier = mapSupplier;
+        this.listSupplier = listSupplier;
         this.classLoader = classLoader != null ? classLoader
             : com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance();
 
@@ -547,6 +557,21 @@ public final class ObjectMapper {
         return b;
     }
 
+    /**
+     * Apply per-mapper Map / List suppliers (if configured) to the given
+     * parser. Called from each {@code readValue} entry point so the
+     * untyped object/array readers materialise into supplier-provided
+     * backing storage.
+     */
+    private void applySuppliers(JSONParser parser) {
+        if (mapSupplier != null) {
+            parser.setMapSupplier(mapSupplier);
+        }
+        if (listSupplier != null) {
+            parser.setListSupplier(listSupplier);
+        }
+    }
+
     // ==================== Read: String input ====================
 
     /**
@@ -557,6 +582,8 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(json, readFeatures)) {
+    applySuppliers(parser);
+            applySuppliers(parser);
             return parser.readAny();
         }
     }
@@ -627,10 +654,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                     return objectReader.readObjectUTF8((JSONParser.UTF8) parser, readFeatures);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+    applySuppliers(parser);
                     return objectReader.readObjectUTF8((JSONParser.UTF8) parser, readFeatures);
                 }
             }
@@ -638,10 +667,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -660,10 +691,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, readFeatures);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, readFeatures);
                 }
             }
@@ -671,10 +704,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -745,6 +780,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(json, readFeatures)) {
+    applySuppliers(parser);
             return parser.readObject();
         }
     }
@@ -759,10 +795,12 @@ public final class ObjectMapper {
         // ASCII fast path: use LATIN1 parser (has optimized inline tree parsing)
         if (readFeatures == 0 && isAscii(jsonBytes)) {
             try (JSONParser parser = new JSONParser.LATIN1(jsonBytes, 0, jsonBytes.length, 0)) {
+    applySuppliers(parser);
                 return parser.readObject();
             }
         }
         try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+    applySuppliers(parser);
             return parser.readObject();
         }
     }
@@ -775,6 +813,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(json, readFeatures)) {
+    applySuppliers(parser);
             return parser.readArray();
         }
     }
@@ -788,10 +827,12 @@ public final class ObjectMapper {
         }
         if (readFeatures == 0 && isAscii(jsonBytes)) {
             try (JSONParser parser = new JSONParser.LATIN1(jsonBytes, 0, jsonBytes.length, 0)) {
+    applySuppliers(parser);
                 return parser.readArray();
             }
         }
         try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+    applySuppliers(parser);
             return parser.readArray();
         }
     }
@@ -819,6 +860,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(json, features)) {
+    applySuppliers(parser);
             JSONArray array = parser.readArray();
             if (array == null) {
                 return null;
@@ -885,6 +927,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+    applySuppliers(parser);
             JSONArray array = parser.readArray();
             if (array == null) {
                 return null;
@@ -970,6 +1013,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(json, features)) {
+    applySuppliers(parser);
             JSONObject object = parser.readObject();
             if (object == null) {
                 return null;
@@ -1010,6 +1054,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+    applySuppliers(parser);
             JSONObject object = parser.readObject();
             if (object == null) {
                 return null;
@@ -1050,10 +1095,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(json, features);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(json, features)) {
+    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             }
@@ -1061,10 +1108,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(json, features);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(json, features)) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -1083,10 +1132,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(jsonBytes, features);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             }
@@ -1094,10 +1145,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(jsonBytes, features);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -1116,10 +1169,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(json, features);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(json, features)) {
+    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             }
@@ -1127,10 +1182,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(json, features);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(json, features)) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -1149,10 +1206,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(jsonBytes, features);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             }
@@ -1160,10 +1219,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(jsonBytes, features);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
+    applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -1219,6 +1280,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
+    applySuppliers(parser);
             return parser.readAny();
         }
     }
@@ -2224,8 +2286,41 @@ public final class ObjectMapper {
         final Map<Class<?>, Class<?>> mixIns = new LinkedHashMap<Class<?>, Class<?>>();
         com.alibaba.fastjson3.filter.LabelFilter labelFilter;
         boolean useJacksonAnnotation;
+        java.util.function.Supplier<? extends java.util.Map<String, Object>> mapSupplier;
+        java.util.function.Supplier<? extends java.util.List<Object>> listSupplier;
 
         Builder() {
+        }
+
+        /**
+         * Set a per-mapper {@code Map} supplier. When set, untyped reads
+         * via this mapper produce {@link JSONObject}s whose backing
+         * storage is whatever the supplier returns (e.g.
+         * {@code ConcurrentHashMap::new}). Equivalent to fastjson2's
+         * {@code JSONReader.Context.setObjectSupplier} but per-mapper
+         * instead of per-context.
+         *
+         * <pre>
+         * ObjectMapper mapper = ObjectMapper.builder()
+         *     .mapSupplier(java.util.concurrent.ConcurrentHashMap::new)
+         *     .build();
+         * </pre>
+         */
+        public Builder mapSupplier(java.util.function.Supplier<? extends java.util.Map<String, Object>> supplier) {
+            this.mapSupplier = supplier;
+            return this;
+        }
+
+        /**
+         * Set a per-mapper {@code List} supplier. Mirrors
+         * {@link #mapSupplier(java.util.function.Supplier)} for
+         * {@link JSONArray} backing. Common choices:
+         * {@code java.util.concurrent.CopyOnWriteArrayList::new},
+         * {@code java.util.LinkedList::new}.
+         */
+        public Builder listSupplier(java.util.function.Supplier<? extends java.util.List<Object>> supplier) {
+            this.listSupplier = supplier;
+            return this;
         }
 
         // ---- Features ----
@@ -2534,7 +2629,9 @@ public final class ObjectMapper {
                     useJacksonAnnotation,
                     provider,
                     writerProvider,
-                    loader
+                    loader,
+                    mapSupplier,
+                    listSupplier
             );
             // Set before/after/pre filters
             if (!beforeFilters.isEmpty()) {
