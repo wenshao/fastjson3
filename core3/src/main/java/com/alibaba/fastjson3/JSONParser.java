@@ -1013,6 +1013,32 @@ public abstract sealed class JSONParser implements Closeable
             }
             return (T) new AtomicLongArray(values);
         }
+        // Raw collection / map interfaces (and the common abstract / default
+        // concrete classes that callers reach for as a "give me any Map" /
+        // "any List" / "any Set"): route to the untyped generic readers,
+        // matching fastjson2's ObjectReaderImplMap / ObjectReaderImplList
+        // default mapping. Users get a populated LinkedHashMap / ArrayList /
+        // LinkedHashSet instead of a "cannot deserialize interface" error.
+        // Specific concrete classes that imply a particular impl
+        // (TreeMap, LinkedList, ConcurrentHashMap, ...) still go through the
+        // registered ObjectReader / auto-build path below.
+        if (type == java.util.Map.class || type == java.util.AbstractMap.class) {
+            return (T) readGenericMap(Object.class, Object.class);
+        }
+        if (type == java.util.List.class
+                || type == java.util.Collection.class
+                || type == Iterable.class
+                || type == java.util.ArrayList.class
+                || type == java.util.AbstractCollection.class
+                || type == java.util.AbstractList.class) {
+            return (T) readGenericList(Object.class);
+        }
+        if (type == java.util.Set.class
+                || type == java.util.AbstractSet.class
+                || type == java.util.HashSet.class
+                || type == java.util.LinkedHashSet.class) {
+            return (T) readGenericSet(Object.class);
+        }
         // POJO types: resolve reader from the shared ObjectMapper's provider.
         // Callers who need a custom mapper should use ObjectMapper.readValue() directly.
         ObjectReader<T> reader = ObjectMapper.shared().getObjectReader(type);
