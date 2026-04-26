@@ -2,6 +2,7 @@ package com.alibaba.fastjson3.schema;
 
 import com.alibaba.fastjson3.JSONArray;
 import com.alibaba.fastjson3.JSONObject;
+import com.alibaba.fastjson3.JSONSchemaValidException;
 
 import java.net.URI;
 import java.time.*;
@@ -31,9 +32,27 @@ public final class StringSchema extends JSONSchema {
         this.minLength = getInt(input, "minLength", -1);
         this.maxLength = getInt(input, "maxLength", -1);
         this.format = input.getString("format");
-        this.patternFormat = input.getString("pattern");
-        this.pattern = patternFormat != null
-                ? Pattern.compile(translateUnicodeProperties(patternFormat), Pattern.UNICODE_CHARACTER_CLASS) : null;
+        // JSON Schema spec: `pattern` MUST be a string (RFC draft-bhutton-
+        // json-schema-validation §6.3.3). Pre-fix `getString` toString'd
+        // any value, so a non-string `pattern` (e.g. an array) was passed
+        // verbatim to Pattern.compile which raised PatternSyntaxException —
+        // unhandled, propagated to caller as raw RuntimeException. Reject
+        // non-string explicitly, and wrap PatternSyntaxException so callers
+        // see a JSONException for any malformed regex too.
+        Object patternObj = input.get("pattern");
+        this.patternFormat = patternObj instanceof String ps ? ps : null;
+        if (patternFormat != null) {
+            try {
+                this.pattern = Pattern.compile(
+                        translateUnicodeProperties(patternFormat),
+                        Pattern.UNICODE_CHARACTER_CLASS);
+            } catch (java.util.regex.PatternSyntaxException e) {
+                throw new JSONSchemaValidException(
+                        "invalid `pattern` regex: " + patternFormat, e);
+            }
+        } else {
+            this.pattern = null;
+        }
 
         Object constObj = input.get("const");
         this.constValue = constObj instanceof String s ? s : null;

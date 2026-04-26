@@ -4,6 +4,7 @@ import com.alibaba.fastjson3.JSON;
 import com.alibaba.fastjson3.JSONArray;
 import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.JSONObject;
+import com.alibaba.fastjson3.JSONSchemaValidException;
 
 import java.util.*;
 import java.util.function.Predicate;
@@ -57,32 +58,20 @@ public final class ObjectSchema extends JSONSchema {
         // Parse definitions (draft 4)
         JSONObject definitionsObj = input.getJSONObject("definitions");
         if (definitionsObj != null) {
+            JSONSchema parent = root == null ? this : root;
             for (Map.Entry<String, Object> entry : definitionsObj.entrySet()) {
-                String key = entry.getKey();
-                Object value = entry.getValue();
-                JSONSchema schema;
-                if (value instanceof Boolean b) {
-                    schema = b ? Any.INSTANCE : Any.NOT_ANY;
-                } else {
-                    schema = JSONSchema.of((JSONObject) value, root == null ? this : root);
-                }
-                this.definitions.put(key, schema);
+                this.definitions.put(entry.getKey(),
+                        JSONSchema.coerceToSchema(entry.getValue(), parent, null, "definitions/" + entry.getKey()));
             }
         }
 
         // Parse $defs (draft 2020-12)
         JSONObject defsObj = input.getJSONObject("$defs");
         if (defsObj != null) {
+            JSONSchema parent = root == null ? this : root;
             for (Map.Entry<String, Object> entry : defsObj.entrySet()) {
-                String key = entry.getKey();
-                Object value = entry.getValue();
-                JSONSchema schema;
-                if (value instanceof Boolean b) {
-                    schema = b ? Any.INSTANCE : Any.NOT_ANY;
-                } else {
-                    schema = JSONSchema.of((JSONObject) value, root == null ? this : root);
-                }
-                this.defs.put(key, schema);
+                this.defs.put(entry.getKey(),
+                        JSONSchema.coerceToSchema(entry.getValue(), parent, null, "$defs/" + entry.getKey()));
             }
             if (resolveTasks != null) {
                 for (UnresolvedReference.ResolveTask task : resolveTasks) {
@@ -94,43 +83,42 @@ public final class ObjectSchema extends JSONSchema {
         // Parse properties
         JSONObject propertiesObj = input.getJSONObject("properties");
         if (propertiesObj != null) {
+            JSONSchema parent = root == null ? this : root;
             for (Map.Entry<String, Object> entry : propertiesObj.entrySet()) {
                 String key = entry.getKey();
-                Object value = entry.getValue();
-                JSONSchema schema;
-                if (value instanceof Boolean b) {
-                    schema = b ? Any.INSTANCE : Any.NOT_ANY;
-                } else if (value instanceof JSONSchema s) {
-                    schema = s;
-                } else {
-                    schema = JSONSchema.of((JSONObject) value, root == null ? this : root);
-                }
+                JSONSchema schema = JSONSchema.coerceToSchema(
+                        entry.getValue(), parent, null, "properties/" + key);
                 this.properties.put(key, schema);
                 if (schema instanceof UnresolvedReference ur) {
                     UnresolvedReference.PropertyResolveTask task =
                             new UnresolvedReference.PropertyResolveTask(this.properties, key, ur.refName);
-                    JSONSchema resolveRoot = root == null ? this : root;
-                    resolveRoot.addResolveTask(task);
+                    parent.addResolveTask(task);
                 }
             }
         }
 
-        // Parse patternProperties
+        // Parse patternProperties — both the regex KEY and the schema VALUE
+        // were unguarded pre-fix: a malformed regex raised raw
+        // PatternSyntaxException; an array value raised ClassCastException.
         JSONObject patternPropsObj = input.getJSONObject("patternProperties");
         if (patternPropsObj != null) {
             this.patternProperties = new PatternProperty[patternPropsObj.size()];
+            JSONSchema parent = root == null ? this : root;
             int index = 0;
             for (Map.Entry<String, Object> entry : patternPropsObj.entrySet()) {
                 String key = entry.getKey();
-                Object value = entry.getValue();
-                JSONSchema schema;
-                if (value instanceof Boolean b) {
-                    schema = b ? Any.INSTANCE : Any.NOT_ANY;
-                } else {
-                    schema = JSONSchema.of((JSONObject) value, root == null ? this : root);
+                JSONSchema schema = JSONSchema.coerceToSchema(
+                        entry.getValue(), parent, null, "patternProperties/" + key);
+                Pattern compiled;
+                try {
+                    compiled = Pattern.compile(
+                            StringSchema.translateUnicodeProperties(key),
+                            Pattern.UNICODE_CHARACTER_CLASS);
+                } catch (java.util.regex.PatternSyntaxException e) {
+                    throw new JSONSchemaValidException(
+                            "invalid `patternProperties` key regex: " + key, e);
                 }
-                this.patternProperties[index++] = new PatternProperty(
-                        Pattern.compile(StringSchema.translateUnicodeProperties(key), Pattern.UNICODE_CHARACTER_CLASS), schema);
+                this.patternProperties[index++] = new PatternProperty(compiled, schema);
             }
         } else {
             this.patternProperties = new PatternProperty[0];
@@ -197,12 +185,9 @@ public final class ObjectSchema extends JSONSchema {
         if (depSchObj != null && !depSchObj.isEmpty()) {
             this.dependentSchemas = new LinkedHashMap<>(depSchObj.size());
             for (String key : depSchObj.keySet()) {
-                Object val = depSchObj.get(key);
-                if (val instanceof Boolean b) {
-                    this.dependentSchemas.put(key, b ? Any.INSTANCE : Any.NOT_ANY);
-                } else {
-                    this.dependentSchemas.put(key, JSONSchema.of((JSONObject) val));
-                }
+                this.dependentSchemas.put(key,
+                        JSONSchema.coerceToSchema(depSchObj.get(key), null, null,
+                                "dependentSchemas/" + key));
             }
         } else {
             this.dependentSchemas = null;
