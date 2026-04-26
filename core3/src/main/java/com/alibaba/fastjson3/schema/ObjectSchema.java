@@ -142,7 +142,10 @@ public final class ObjectSchema extends JSONSchema {
             this.additionalProperties = b;
             this.hasExplicitAdditionalProperties = true;
         } else if (additionalProps instanceof JSONObject addObj) {
-            this.additionalPropertySchema = JSONSchema.of(addObj, root);
+            // root may be null when this is the top-level schema; fall back
+            // to `this` so a `$ref` inside additionalProperties resolves
+            // against the current schema's $defs / definitions.
+            this.additionalPropertySchema = JSONSchema.of(addObj, root == null ? this : root);
             this.additionalProperties = false;
             this.hasExplicitAdditionalProperties = true;
         } else {
@@ -184,9 +187,10 @@ public final class ObjectSchema extends JSONSchema {
         JSONObject depSchObj = input.getJSONObject("dependentSchemas");
         if (depSchObj != null && !depSchObj.isEmpty()) {
             this.dependentSchemas = new LinkedHashMap<>(depSchObj.size());
+            JSONSchema parent = root == null ? this : root;
             for (String key : depSchObj.keySet()) {
                 this.dependentSchemas.put(key,
-                        JSONSchema.coerceToSchema(depSchObj.get(key), null, null,
+                        JSONSchema.coerceToSchema(depSchObj.get(key), parent, null,
                                 "dependentSchemas/" + key));
             }
         } else {

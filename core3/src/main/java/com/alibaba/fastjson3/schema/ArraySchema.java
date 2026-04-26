@@ -103,7 +103,10 @@ public final class ArraySchema extends JSONSchema {
         if (containsRaw instanceof Boolean b) {
             this.contains = b ? Any.INSTANCE : Any.NOT_ANY;
         } else if (containsRaw instanceof JSONObject containsObj) {
-            this.contains = JSONSchema.of(containsObj, root);
+            // root may be null at top-level; fall back to `this` so
+            // a `$ref` inside contains resolves against the current
+            // schema's $defs / definitions.
+            this.contains = JSONSchema.of(containsObj, root == null ? this : root);
         } else {
             this.contains = null;
         }

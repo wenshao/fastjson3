@@ -1888,15 +1888,24 @@ public final class ObjectReaderCreator {
          */
         private static void writeUnwrappedValue(JSONParser parser, Object inner, UnwrappedEntry entry, long features) {
             FieldReader innerFr = entry.innerReader;
-            ObjectReader<?> custom = entry.resolveCustomReader();
-            if (custom != null) {
-                Object v = custom.readObject(parser, innerFr.fieldType, innerFr.fieldName, features);
-                innerFr.setFieldValue(inner, v);
-                return;
+            try {
+                ObjectReader<?> custom = entry.resolveCustomReader();
+                if (custom != null) {
+                    Object v = custom.readObject(parser, innerFr.fieldType, innerFr.fieldName, features);
+                    innerFr.setFieldValue(inner, v);
+                    return;
+                }
+                Object fvalue = parser.readAny();
+                Object converted = innerFr.convertValue(fvalue);
+                innerFr.setFieldValue(inner, converted);
+            } catch (RuntimeException e) {
+                // Mirror the regular-field-path wrapWithPath: the unwrapped
+                // reader was previously letting CCE / NFE propagate raw,
+                // which the fuzz target {@code fuzzParseUnwrapped} flagged
+                // as an unexpected exception type leaking from a typed
+                // parse call.
+                throw com.alibaba.fastjson3.JSONException.wrapWithPath(e, innerFr.fieldName);
             }
-            Object fvalue = parser.readAny();
-            Object converted = innerFr.convertValue(fvalue);
-            innerFr.setFieldValue(inner, converted);
         }
 
         /**
