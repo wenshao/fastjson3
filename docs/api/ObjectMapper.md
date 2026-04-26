@@ -164,10 +164,15 @@ JSONObject obj = (JSONObject) mapper.readValue("{\"a\":1,\"b\":[2,3]}");
 **生效范围**：
 - 顶层未类型化解析 `mapper.readValue(json)` 推断为 `JSONObject` / `JSONArray`。
 - 直接入口 `mapper.readObject(json)` / `mapper.readObject(byte[])` / `mapper.readArray(json)` / `mapper.readArray(byte[])`。
-- 上述节点内部递归创建的所有子节点（嵌套 `JSONObject` / `JSONArray`）。
+- 类型化解析到具体 `JSONObject` / `JSONArray` 的所有路径：
+  - `mapper.readValue(json, JSONObject.class)` / `mapper.readValue(json, JSONArray.class)`。
+  - Bean 字段或 record 组件声明为 `JSONObject` / `JSONArray`（POJO 与 record 都生效）。
+  - 集合 / Map 元素声明为 `JSONObject` / `JSONArray`，例如 `List<JSONObject>` / `Map<String, JSONArray>`。
+- 上述节点内部递归创建的所有子节点。
 
 **不生效**：
-- 类型化解析 `mapper.readValue(json, Type)`（含 `JSONObject.class` / `MyBean.class` / `TypeReference<Map<String,Object>>` / `TypeReference<List<Object>>`）走 ObjectReader 路径，内部使用各自的 `Map` / `List` 实现，不会应用 supplier。
+- 类型化解析到 `Map` / `List` 接口本身，含 `TypeReference<Map<String,Object>>` / `TypeReference<List<Object>>`、Bean 字段声明为 `Map<K,V>` / `List<E>`（其中 E 不是 `JSONObject` / `JSONArray`）：走 `readGenericMap` / `readGenericList`，硬编码 `LinkedHashMap` / `ArrayList`。
+- 类型化 POJO 解析 `mapper.readValue(json, MyBean.class)` 时 Bean 自身的实例化由其 ObjectReader 决定（POJO 反射 / ASM），supplier 仅作用于 Bean **内部的** `JSONObject` / `JSONArray` 字段、元素，不直接替换 Bean 容器。
 - 全局静态 `JSON.parse(...)` / `JSON.parseObject(...)` 走 shared mapper，不应用 per-mapper supplier；如需全局影响 `new JSONObject()` 与默认未类型化解析路径，用 `JSONObject.setMapCreator(...)`（`JSONArray` 当前无对应全局 setter）。
 
 ## 自定义扩展

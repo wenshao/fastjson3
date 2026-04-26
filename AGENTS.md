@@ -10,6 +10,7 @@ fastjson3 core3 is a high-performance JSON library for Java 21+, targeting JVM, 
 - **Creator SPI**: ObjectReader/ObjectWriter creation is pluggable via `Function<Class<?>, ObjectReader/Writer<?>>` on `ObjectMapper.Builder`. Default is reflection; ASM is opt-in.
 - **@JVMOnly**: Classes annotated with `@com.alibaba.fastjson3.annotation.JVMOnly` are excluded from the Android JAR. Only applies to whole classes, not methods. All `internal/asm/*`, ASM Creators, and `DynamicClassLoader` are `@JVMOnly`.
 - **Platform detection**: `JDKUtils.NATIVE_IMAGE` and `JDKUtils.UNSAFE_AVAILABLE` are `static final boolean` constants. JIT constant-folds them, so guarded branches have zero runtime cost.
+- **Build-time over runtime decisions**: Schema-shape decisions (typeTag dispatch, ObjectReader/ObjectWriter assembly, FieldNameMatcher strategy, element/value reader pre-resolution, ASM bytecode generation) are computed once when the reader/writer is built, not per parse/serialize call. Hot paths read pre-resolved constants and arrays. New branches that depend only on schema shape — e.g. "is this field a JSONObject", "does this enum have a value-map" — belong in the reader-creation phase (e.g. `ObjectReaderCreator.ensureFieldReaders`), not in `readObjectUTF8` / `writeFields` / etc. The runtime tax of an extra `if` per record × per field is real; one `instanceof` at build time is free.
 
 ## Code Conventions
 
