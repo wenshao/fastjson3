@@ -16,7 +16,15 @@ JSONArray arr = new JSONArray(list);
 
 // 使用元素创建
 JSONArray arr = JSON.array("a", "b", "c");
+
+// 使用自定义 List 作为后备存储（per-instance）
+JSONArray arr = new JSONArray(java.util.LinkedList::new);
 ```
+
+> 切换内部 `List` 实现的三种方式：
+> - **per-instance** — `new JSONArray(Supplier<? extends List<Object>>)`，构造时传入工厂；
+> - **per-mapper** — `ObjectMapper.builder().listSupplier(...).build()`，对该 mapper 解析未类型化 JSON 数组生效（见 [ObjectMapper](ObjectMapper.md#自定义-map--list-后备存储)）；
+> - 默认情况下 `JSONArray` 继承 `ArrayList`，未设置 `Supplier` 时无额外开销。
 
 ## 添加元素
 

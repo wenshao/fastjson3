@@ -5,15 +5,31 @@
 ## 创建实例
 
 ```java
-// 空对象
+// 空对象（内部使用优化的 JSONObjectMap 存储）
 JSONObject obj = new JSONObject();
 
 // 从 JSON 字符串创建
 JSONObject obj = JSON.parseObject(jsonString);
 
-// 从 Map 创建
+// 从 Map 创建（拷贝到 LinkedHashMap）
 JSONObject obj = new JSONObject(map);
+
+// 自定义内部存储（fastjson2 ObjectSupplier 等价物）
+JSONObject obj = new JSONObject(java.util.concurrent.ConcurrentHashMap::new);
+// 此时 obj 内部 Map 是 ConcurrentHashMap，所有 put/get/iterate 都委托给它
 ```
+
+### 自定义 Map 后备存储
+
+三种切换内部 Map 的方式：
+
+| 方式 | 作用域 | API |
+|---|---|---|
+| `JSONObject.setMapCreator(Supplier)` | 全局静态 | 影响所有 `new JSONObject()` |
+| `ObjectMapper.builder().mapSupplier(...)` | per-mapper | 仅影响该 mapper 解析出的 JSONObject |
+| `new JSONObject(Supplier)` | per-instance | 直接 ctor 注入 |
+
+详见 [ObjectMapper § 自定义 Map / List 后备存储](./ObjectMapper.md#自定义-map--list-后备存储)。
 
 ## 添加值
 

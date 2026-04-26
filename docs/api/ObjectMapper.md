@@ -128,6 +128,10 @@ public Builder disableWrite(WriteFeature... features)
 public Builder readerCreator(Function<Class<?>, ObjectReader<?>> creator)
 public Builder writerCreator(Function<Class<?>, ObjectWriter<?>> creator)
 
+// 自定义 Map / List 后备存储 (per-mapper)
+public Builder mapSupplier(Supplier<? extends Map<String, Object>> supplier)
+public Builder listSupplier(Supplier<? extends List<Object>> supplier)
+
 // Mixin
 public Builder addMixIn(Class<?> target, Class<?> mixIn)
 
@@ -135,6 +139,32 @@ public Builder addMixIn(Class<?> target, Class<?> mixIn)
 public Builder addReaderModule(ObjectReaderModule module)
 public Builder addWriterModule(ObjectWriterModule module)
 ```
+
+### 自定义 Map / List 后备存储
+
+`mapSupplier` / `listSupplier` 让 mapper 在解析未类型化 JSON 时（`{...}` / `[...]`）使用调用者指定的 `Map` / `List` 实现作为 `JSONObject` / `JSONArray` 的内部存储。等价于 fastjson2 的 `JSONReader.Context.setObjectSupplier` / `setArraySupplier`，但是 per-mapper 而非 per-context。
+
+```java
+// 用 ConcurrentHashMap 作为 JSONObject 内部存储
+ObjectMapper mapper = ObjectMapper.builder()
+        .mapSupplier(java.util.concurrent.ConcurrentHashMap::new)
+        .listSupplier(java.util.LinkedList::new)
+        .build();
+
+JSONObject obj = (JSONObject) mapper.readValue("{\"a\":1,\"b\":[2,3]}");
+// obj 仍然是 JSONObject 类型；其内部 innerMap 是 ConcurrentHashMap
+// obj.get("b") 是 JSONArray，innerList 是 LinkedList
+```
+
+**适用场景：**
+- 多线程读 JSONObject：`ConcurrentHashMap`
+- 需要键排序：`TreeMap`
+- 频繁头部插入的 List：`LinkedList`
+
+**限制：**
+- 只对未类型化的 `readValue(...)` 生效（返回 `JSONObject`/`JSONArray` 的路径）。
+- 类型化的 `readValue(json, MyBean.class)` 中的 `Map<String,Object>` 字段当前不走 supplier，由反射 setter 决定。
+- 全局静态 `JSON.parse(...)` 走 shared mapper，不应用 per-mapper supplier；如需全局生效用 `JSONObject.setMapCreator(...)`。
 
 ## 自定义扩展
 
