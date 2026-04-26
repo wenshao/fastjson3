@@ -46,22 +46,26 @@ public final class ObjectReaderCreator {
     private static final ThreadLocal<Set<Class<?>>> UNWRAP_VISITED = new ThreadLocal<>();
 
     /**
-     * Tree-shape types whose reader/element wiring must defer to the parser's
+     * Field / element types whose reader wiring must defer to the parser's
      * native {@code readObject} / {@code readArray} / {@code readAny} path
      * instead of the auto-built reflection POJO reader. Auto-build silently
-     * loses data on JSONObject (no field readers found) and rejects arrays
-     * outright on JSONArray. Covered as a field type, element type, and
-     * component type of an array field.
+     * loses data on {@code JSONObject} (no field readers found), rejects
+     * arrays outright on {@code JSONArray}, and produces a bare
+     * {@code new Object()} for {@code Object} fields (which then also
+     * rejects non-object JSON literals). Covered as a field type, element
+     * type, and component type of an array field.
      */
     private static boolean isJsonNodeOrJsonNodeArray(Class<?> target) {
         if (target == com.alibaba.fastjson3.JSONObject.class
-                || target == com.alibaba.fastjson3.JSONArray.class) {
+                || target == com.alibaba.fastjson3.JSONArray.class
+                || target == Object.class) {
             return true;
         }
         if (target.isArray()) {
             Class<?> ct = target.getComponentType();
             return ct == com.alibaba.fastjson3.JSONObject.class
-                    || ct == com.alibaba.fastjson3.JSONArray.class;
+                    || ct == com.alibaba.fastjson3.JSONArray.class
+                    || ct == Object.class;
         }
         return false;
     }
