@@ -648,31 +648,59 @@ public final class FieldReader implements Comparable<FieldReader> {
         // the unwrapped path, but the regular POJO path was equally
         // affected (it just wrapped the CCE as JSONException via
         // wrapWithPath, masking the underlying gap).
-        if (value instanceof String str && !str.isEmpty()) {
-            if (fieldClass == int.class || fieldClass == Integer.class) {
-                return Integer.parseInt(str);
-            }
-            if (fieldClass == long.class || fieldClass == Long.class) {
-                return Long.parseLong(str);
-            }
-            if (fieldClass == double.class || fieldClass == Double.class) {
-                return Double.parseDouble(str);
-            }
-            if (fieldClass == float.class || fieldClass == Float.class) {
-                return Float.parseFloat(str);
-            }
-            if (fieldClass == short.class || fieldClass == Short.class) {
-                return Short.parseShort(str);
-            }
-            if (fieldClass == byte.class || fieldClass == Byte.class) {
-                return Byte.parseByte(str);
-            }
-            if (fieldClass == boolean.class || fieldClass == Boolean.class) {
-                if ("true".equalsIgnoreCase(str)) {
-                    return Boolean.TRUE;
+        if (value instanceof String str) {
+            // Empty string → primitive: treat as 0 / false to avoid the
+            // CCE that the audit's round-1 reverse identified. fastjson2
+            // does the same under default ReadFeature.NullAsZeroForPrimitive
+            // semantics; the empty-string case is a strict subset.
+            if (str.isEmpty()) {
+                if (fieldClass == int.class || fieldClass == Integer.class) {
+                    return 0;
                 }
-                if ("false".equalsIgnoreCase(str)) {
+                if (fieldClass == long.class || fieldClass == Long.class) {
+                    return 0L;
+                }
+                if (fieldClass == double.class || fieldClass == Double.class) {
+                    return 0d;
+                }
+                if (fieldClass == float.class || fieldClass == Float.class) {
+                    return 0f;
+                }
+                if (fieldClass == short.class || fieldClass == Short.class) {
+                    return (short) 0;
+                }
+                if (fieldClass == byte.class || fieldClass == Byte.class) {
+                    return (byte) 0;
+                }
+                if (fieldClass == boolean.class || fieldClass == Boolean.class) {
                     return Boolean.FALSE;
+                }
+            } else {
+                if (fieldClass == int.class || fieldClass == Integer.class) {
+                    return Integer.parseInt(str);
+                }
+                if (fieldClass == long.class || fieldClass == Long.class) {
+                    return Long.parseLong(str);
+                }
+                if (fieldClass == double.class || fieldClass == Double.class) {
+                    return Double.parseDouble(str);
+                }
+                if (fieldClass == float.class || fieldClass == Float.class) {
+                    return Float.parseFloat(str);
+                }
+                if (fieldClass == short.class || fieldClass == Short.class) {
+                    return Short.parseShort(str);
+                }
+                if (fieldClass == byte.class || fieldClass == Byte.class) {
+                    return Byte.parseByte(str);
+                }
+                if (fieldClass == boolean.class || fieldClass == Boolean.class) {
+                    if ("true".equalsIgnoreCase(str)) {
+                        return Boolean.TRUE;
+                    }
+                    if ("false".equalsIgnoreCase(str)) {
+                        return Boolean.FALSE;
+                    }
                 }
             }
         }

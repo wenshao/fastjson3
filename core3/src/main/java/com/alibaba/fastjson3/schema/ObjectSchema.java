@@ -198,9 +198,12 @@ public final class ObjectSchema extends JSONSchema {
         }
 
         // Parse if/then/else (each can be Boolean or JSONObject)
-        this.ifSchema = parseSchemaProp(input, "if");
-        this.thenSchema = parseSchemaProp(input, "then");
-        this.elseSchema = parseSchemaProp(input, "else");
+        // root may be null at top-level; pass `this` so a $ref in if/then/else
+        // resolves against the current schema's $defs / definitions.
+        JSONSchema ifThenElseParent = root == null ? this : root;
+        this.ifSchema = parseSchemaProp(input, "if", ifThenElseParent);
+        this.thenSchema = parseSchemaProp(input, "then", ifThenElseParent);
+        this.elseSchema = parseSchemaProp(input, "else", ifThenElseParent);
 
         // Parse composition
         allOf = JSONSchema.allOf(input, null);
@@ -213,7 +216,7 @@ public final class ObjectSchema extends JSONSchema {
             this.unevaluatedPropertiesSchema = b ? Any.INSTANCE : Any.NOT_ANY;
             this.hasUnevaluatedProperties = true;
         } else if (unevalProps instanceof JSONObject obj) {
-            this.unevaluatedPropertiesSchema = JSONSchema.of(obj, root);
+            this.unevaluatedPropertiesSchema = JSONSchema.of(obj, root == null ? this : root);
             this.hasUnevaluatedProperties = true;
         } else {
             this.unevaluatedPropertiesSchema = null;
@@ -852,13 +855,13 @@ public final class ObjectSchema extends JSONSchema {
         return SUCCESS;
     }
 
-    private static JSONSchema parseSchemaProp(JSONObject input, String key) {
+    private static JSONSchema parseSchemaProp(JSONObject input, String key, JSONSchema parent) {
         Object val = input.get(key);
         if (val instanceof Boolean b) {
             return b ? Any.INSTANCE : Any.NOT_ANY;
         }
         if (val instanceof JSONObject obj) {
-            return JSONSchema.of(obj);
+            return JSONSchema.of(obj, parent);
         }
         return null;
     }

@@ -92,7 +92,7 @@ public final class ArraySchema extends JSONSchema {
             this.additionalItemSchema = null;
         } else if (additionalItemsObj instanceof JSONObject addObj) {
             this.additionalItems = false;
-            this.additionalItemSchema = JSONSchema.of(addObj, root);
+            this.additionalItemSchema = JSONSchema.of(addObj, root == null ? this : root);
         } else {
             this.additionalItems = true;
             this.additionalItemSchema = null;
@@ -124,7 +124,7 @@ public final class ArraySchema extends JSONSchema {
             this.unevaluatedItemsSchema = b ? Any.INSTANCE : Any.NOT_ANY;
             this.hasUnevaluatedItems = true;
         } else if (unevalItems instanceof JSONObject obj) {
-            this.unevaluatedItemsSchema = JSONSchema.of(obj, root);
+            this.unevaluatedItemsSchema = JSONSchema.of(obj, root == null ? this : root);
             this.hasUnevaluatedItems = true;
         } else {
             this.unevaluatedItemsSchema = null;
