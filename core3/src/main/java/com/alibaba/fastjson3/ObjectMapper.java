@@ -1580,15 +1580,18 @@ public final class ObjectMapper {
                 if (readerCreator != null) {
                     return readerCreator.apply(clazz);
                 } else {
-                    // JSONObject and JSONArray have native parser routing in
-                    // JSONParser.read(Class) (`readObject()` / `readArray()`); without
-                    // this short-circuit the auto-created reflection POJO reader
-                    // assumes `{` and either rejects arrays outright or yields an
-                    // empty JSONObject for objects. Placed here (after modules /
-                    // BuiltinCodecs / user-supplied readerCreator) so SPI overrides
-                    // for these types still take precedence; only the default
-                    // auto-build path is bypassed in favor of parser fallback.
-                    if (clazz == JSONObject.class || clazz == JSONArray.class) {
+                    // JSONObject / JSONArray and the raw collection / map
+                    // interfaces (Map, List, Set, Collection, Iterable) plus
+                    // their common abstract / default-impl classes have native
+                    // routing in JSONParser.read(Class). Without this
+                    // short-circuit the auto-built reflection POJO reader
+                    // assumes `{` and rejects arrays outright or yields an
+                    // empty container. Placed here (after modules /
+                    // BuiltinCodecs / user-supplied readerCreator) so SPI
+                    // overrides for these types still take precedence; only
+                    // the default auto-build path is bypassed in favor of
+                    // parser fallback.
+                    if (isParserShortCircuitClass(clazz)) {
                         return null;
                     }
                     Class<?> mixIn = mixInCache.get(clazz);
@@ -2041,6 +2044,31 @@ public final class ObjectMapper {
         for (int i = 0; i < level; i++) {
             sb.append("  ");
         }
+    }
+
+    /**
+     * Types that {@link JSONParser#read(Class)} can deserialize natively —
+     * either via dedicated routing ({@code JSONObject}, {@code JSONArray})
+     * or via the generic Map / List / Set fallback for raw container
+     * targets. Returning null from {@link #createReaderInternal} for these
+     * lets the parser take over instead of synthesizing a broken
+     * reflection POJO reader.
+     */
+    private static boolean isParserShortCircuitClass(Class<?> clazz) {
+        return clazz == JSONObject.class
+                || clazz == JSONArray.class
+                || clazz == java.util.Map.class
+                || clazz == java.util.AbstractMap.class
+                || clazz == java.util.List.class
+                || clazz == java.util.Collection.class
+                || clazz == Iterable.class
+                || clazz == java.util.ArrayList.class
+                || clazz == java.util.AbstractCollection.class
+                || clazz == java.util.AbstractList.class
+                || clazz == java.util.Set.class
+                || clazz == java.util.AbstractSet.class
+                || clazz == java.util.HashSet.class
+                || clazz == java.util.LinkedHashSet.class;
     }
 
     private static boolean isBasicType(Class<?> type) {
