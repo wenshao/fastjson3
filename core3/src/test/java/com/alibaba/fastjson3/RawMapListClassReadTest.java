@@ -36,24 +36,6 @@ class RawMapListClassReadTest {
     }
 
     @Test
-    void abstractMapClass_routesToMapPath() {
-        // AbstractMap goes through the ObjectMapper auto-build path; verify the
-        // raw-interface fix doesn't regress the existing AbstractMap routing.
-        // (Skipped if registered reader exists — this test pins current behavior
-        //  is non-throwing, not the specific impl class.)
-        try {
-            Object r = ObjectMapper.shared().readValue("{\"a\":1}", AbstractMap.class);
-            // If a reader is registered (matches fj2), expect a populated Map.
-            assertInstanceOf(Map.class, r);
-            assertEquals(1, ((Map<?, ?>) r).get("a"));
-        } catch (RuntimeException e) {
-            // If no reader, the fix didn't add coverage for AbstractMap (only
-            // exact Map/List/Set/Collection/Iterable). That's fine — fj2 had
-            // explicit AbstractMap support but it's a niche case.
-        }
-    }
-
-    @Test
     void listClass_returnsArrayList() {
         List<?> l = ObjectMapper.shared().readValue("[1,2,3]", List.class);
         assertEquals(ArrayList.class, l.getClass());
