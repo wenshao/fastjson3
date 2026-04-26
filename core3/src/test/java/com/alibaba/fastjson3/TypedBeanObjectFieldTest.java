@@ -136,6 +136,32 @@ class TypedBeanObjectFieldTest {
     }
 
     @Test
+    void topLevel_objectClass_jsonObject_yieldsJSONObject() {
+        Object r = ObjectMapper.shared().readValue("{\"a\":1,\"b\":2}", Object.class);
+        assertInstanceOf(JSONObject.class, r);
+        assertEquals(1, ((JSONObject) r).get("a"));
+    }
+
+    @Test
+    void topLevel_objectClass_jsonArray_yieldsJSONArray() {
+        Object r = ObjectMapper.shared().readValue("[1,2,3]", Object.class);
+        assertInstanceOf(JSONArray.class, r);
+        assertEquals(3, ((JSONArray) r).size());
+    }
+
+    @Test
+    void topLevel_objectClass_string_yieldsString() {
+        Object r = ObjectMapper.shared().readValue("\"hi\"", Object.class);
+        assertEquals("hi", r);
+    }
+
+    @Test
+    void topLevel_objectClass_null_yieldsNull() {
+        Object r = ObjectMapper.shared().readValue("null", Object.class);
+        assertNull(r);
+    }
+
+    @Test
     void objectField_honorsMapSupplier() throws Exception {
         ObjectMapper mapper = ObjectMapper.builder()
                 .mapSupplier(ConcurrentHashMap::new)
