@@ -278,6 +278,74 @@ public class JSONParseFuzzTest {
     }
 
     /**
+     * Fuzz the JSONPath path-string parser with a fixed JSON document.
+     * Pre-existing target {@link #fuzzJsonPathBigDecimalCoercion} fixed the
+     * path at {@code $.v} and fuzzed the document side; this target inverts
+     * — fixed document, mutated path string. Surfaces NPE / IAE / OOB in
+     * the path lexer / filter-expression parser, which has its own
+     * grammar (segments, slices, filter `?()`, recursive `..`, functions).
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzJsonPathExpression(FuzzedDataProvider data) {
+        String pathStr = data.consumeRemainingAsString();
+        if (pathStr.isEmpty()) {
+            return;
+        }
+        try {
+            JSONPath path = JSONPath.of(pathStr);
+            // Probe parsed path against a small fixed document so eval/contains
+            // codepaths run, not just the parser.
+            Object doc = JSON.parse("{\"v\":[1,2,{\"x\":\"y\"}],\"n\":42}");
+            path.eval(doc);
+        } catch (JSONException | NumberFormatException | ArithmeticException
+                | IndexOutOfBoundsException | ClassCastException ignored) {
+            // expected: malformed path syntax raises JSONException;
+            // numeric segment overflows raise NumberFormatException;
+            // out-of-bounds slice/index raises IndexOutOfBoundsException;
+            // type-mismatch on filter coercion raises ClassCastException.
+        }
+    }
+
+    /**
+     * Same as fuzzJsonPathExpression but exercises {@link JSONPath#extract}
+     * (parser-driven streaming evaluation rather than DOM walk). Different
+     * code path with its own state machine.
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzJsonPathExtract(FuzzedDataProvider data) {
+        String pathStr = data.consumeAsciiString(64);
+        String doc = data.consumeRemainingAsString();
+        if (pathStr.isEmpty() || doc.isEmpty()) {
+            return;
+        }
+        try {
+            JSONPath.of(pathStr).extract(doc);
+        } catch (JSONException | NumberFormatException | ArithmeticException
+                | IndexOutOfBoundsException | ClassCastException ignored) {
+            // expected
+        }
+    }
+
+    /**
+     * Fuzz the {@link com.alibaba.fastjson3.JSONPointer} (RFC 6901) parser.
+     * Smaller surface than JSONPath but has its own escape handling
+     * (`~0` → `~`, `~1` → `/`) — malformed escapes / index parsing /
+     * unicode in segments are reachable.
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzJsonPointerExpression(FuzzedDataProvider data) {
+        String pointerStr = data.consumeRemainingAsString();
+        try {
+            com.alibaba.fastjson3.JSONPointer ptr = com.alibaba.fastjson3.JSONPointer.of(pointerStr);
+            Object doc = JSON.parse("{\"a\":[1,2,{\"~b/c\":42}]}");
+            ptr.eval(doc);
+        } catch (JSONException | NumberFormatException | ArithmeticException
+                | IndexOutOfBoundsException | ClassCastException ignored) {
+            // expected
+        }
+    }
+
+    /**
      * Writer fuzz: build a synthetic {@code JSONObject} from fuzz bytes
      * (random keys + assorted value types), then serialise. Exercises
      * the writer's value-type dispatch on diverse shapes the parse-side
