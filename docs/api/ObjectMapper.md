@@ -161,10 +161,14 @@ JSONObject obj = (JSONObject) mapper.readValue("{\"a\":1,\"b\":[2,3]}");
 - 需要键排序：`TreeMap`
 - 频繁头部插入的 List：`LinkedList`
 
-**限制：**
-- 只对未类型化的 `readValue(...)` 生效（返回 `JSONObject`/`JSONArray` 的路径）。
-- 类型化的 `readValue(json, MyBean.class)` 中的 `Map<String,Object>` 字段当前不走 supplier，由反射 setter 决定。
-- 全局静态 `JSON.parse(...)` 走 shared mapper，不应用 per-mapper supplier；如需全局生效用 `JSONObject.setMapCreator(...)`。
+**生效范围**：
+- 顶层未类型化解析 `mapper.readValue(json)` 推断为 `JSONObject` / `JSONArray`。
+- 直接入口 `mapper.readObject(json)` / `mapper.readObject(byte[])` / `mapper.readArray(json)` / `mapper.readArray(byte[])`。
+- 上述节点内部递归创建的所有子节点（嵌套 `JSONObject` / `JSONArray`）。
+
+**不生效**：
+- 类型化解析 `mapper.readValue(json, Type)`（含 `JSONObject.class` / `MyBean.class` / `TypeReference<Map<String,Object>>` / `TypeReference<List<Object>>`）走 ObjectReader 路径，内部使用各自的 `Map` / `List` 实现，不会应用 supplier。
+- 全局静态 `JSON.parse(...)` / `JSON.parseObject(...)` 走 shared mapper，不应用 per-mapper supplier；如需全局影响 `new JSONObject()` 与默认未类型化解析路径，用 `JSONObject.setMapCreator(...)`（`JSONArray` 当前无对应全局 setter）。
 
 ## 自定义扩展
 

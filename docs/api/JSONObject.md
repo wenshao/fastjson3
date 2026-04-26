@@ -5,7 +5,7 @@
 ## 创建实例
 
 ```java
-// 空对象（内部使用优化的 JSONObjectMap 存储）
+// 空对象（默认使用优化的 JSONObjectMap 存储）
 JSONObject obj = new JSONObject();
 
 // 从 JSON 字符串创建
@@ -218,7 +218,7 @@ String pretty = obj.toJSONString(WriteFeature.PrettyFormat);
 // 转为 byte[]
 byte[] bytes = JSON.toJSONBytes(obj);
 
-// JSONObject extends LinkedHashMap，可直接当 Map 使用
+// JSONObject extends LinkedHashMap，可直接当 Map 使用（默认情况下操作委托给优化的内部 innerMap）
 
 // 转为 Java 对象
 User user = obj.toJavaObject(User.class);

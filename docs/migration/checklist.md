@@ -37,6 +37,7 @@
   - [ ] 日期格式
   - [ ] 序列化特性
   - [ ] 反序列化特性
+  - [ ] 自定义 Map / List 后备存储 → `mapSupplier` / `listSupplier`（见 [from-fastjson2.md](from-fastjson2.md) § ObjectSupplier）
 
 - [ ] 更新 Spring Boot 配置（如适用）
   - [ ] 添加 `@Configuration` 类

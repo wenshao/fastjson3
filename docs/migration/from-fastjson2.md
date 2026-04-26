@@ -427,7 +427,9 @@ Object obj = mapper.readValue("{\"a\":[1,2]}");
 
 也可在构造时直接传入：`new JSONObject(ConcurrentHashMap::new)` / `new JSONArray(LinkedList::new)`。
 
-> 限制：仅对 `readValue(...)` 返回 `JSONObject`/`JSONArray` 的未类型化路径生效；类型化 `readValue(json, Bean.class)` 中的 `Map<String,Object>` 字段当前由反射 setter 决定，不走 supplier。详见 [ObjectMapper#自定义-map--list-后备存储](../api/ObjectMapper.md#自定义-map--list-后备存储)。
+全局等价物（影响 `new JSONObject()` 与 shared mapper 默认解析路径）：`JSONObject.setMapCreator(ConcurrentHashMap::new)`。fastjson3 的 `JSONArray` 当前没有对应的 `setListCreator`，需要全局列表后备时通过 per-mapper `listSupplier` 解决。
+
+> 生效范围：未类型化路径——`mapper.readValue(json)`（推断为 `JSONObject` / `JSONArray`）以及直接入口 `mapper.readObject(...)` / `mapper.readArray(...)`，含它们内部递归创建的子节点。所有类型化解析（`readValue(json, Bean.class)` / `readValue(json, JSONObject.class)` / `readValue(json, TypeReference<Map>())` 等）走 ObjectReader 路径，不应用 supplier。详见 [ObjectMapper#自定义-map--list-后备存储](../api/ObjectMapper.md#自定义-map--list-后备存储)。
 
 ---
 
