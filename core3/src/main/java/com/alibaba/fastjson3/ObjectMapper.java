@@ -1571,6 +1571,16 @@ public final class ObjectMapper {
         }
         // For Class types, try built-in codecs and auto-create
         if (type instanceof Class<?> clazz) {
+            // JSONObject and JSONArray have native parser routing in
+            // JSONParser.read(Class) (`readObject()` / `readArray()`); without
+            // this short-circuit they would fall through to the auto-created
+            // reflection POJO reader, which assumes `{` and either rejects
+            // arrays outright or yields an empty JSONObject for objects.
+            // Returning null here lets readValue(...) take the parser-fallback
+            // branch and honors per-mapper map/list suppliers.
+            if (clazz == JSONObject.class || clazz == JSONArray.class) {
+                return null;
+            }
             ObjectReader<?> reader = BuiltinCodecs.getReader(clazz);
             if (reader != null) {
                 return reader;
