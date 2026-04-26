@@ -43,22 +43,22 @@ public final class ArraySchema extends JSONSchema {
         JSONObject defsObj = input.getJSONObject("definitions");
         this.definitions = new LinkedHashMap<>();
         if (defsObj != null) {
+            JSONSchema parent = root == null ? this : root;
             for (Map.Entry<String, Object> entry : defsObj.entrySet()) {
-                Object val = entry.getValue();
-                JSONSchema s = val instanceof Boolean b ? (b ? Any.INSTANCE : Any.NOT_ANY)
-                        : JSONSchema.of((JSONObject) val, root == null ? this : root);
-                this.definitions.put(entry.getKey(), s);
+                this.definitions.put(entry.getKey(),
+                        JSONSchema.coerceToSchema(entry.getValue(), parent, null,
+                                "definitions/" + entry.getKey()));
             }
         }
 
         JSONObject defs2Obj = input.getJSONObject("$defs");
         this.defs = new LinkedHashMap<>();
         if (defs2Obj != null) {
+            JSONSchema parent = root == null ? this : root;
             for (Map.Entry<String, Object> entry : defs2Obj.entrySet()) {
-                Object val = entry.getValue();
-                JSONSchema s = val instanceof Boolean b ? (b ? Any.INSTANCE : Any.NOT_ANY)
-                        : JSONSchema.of((JSONObject) val, root == null ? this : root);
-                this.defs.put(entry.getKey(), s);
+                this.defs.put(entry.getKey(),
+                        JSONSchema.coerceToSchema(entry.getValue(), parent, null,
+                                "$defs/" + entry.getKey()));
             }
         }
 
@@ -76,13 +76,10 @@ public final class ArraySchema extends JSONSchema {
         JSONArray prefixArr = input.getJSONArray("prefixItems");
         if (prefixArr != null && !prefixArr.isEmpty()) {
             this.prefixItems = new JSONSchema[prefixArr.size()];
+            JSONSchema parent = root == null ? this : root;
             for (int i = 0; i < prefixItems.length; i++) {
-                Object item = prefixArr.get(i);
-                if (item instanceof Boolean b) {
-                    prefixItems[i] = b ? Any.INSTANCE : Any.NOT_ANY;
-                } else {
-                    prefixItems[i] = JSONSchema.of((JSONObject) item, root == null ? this : root);
-                }
+                prefixItems[i] = JSONSchema.coerceToSchema(
+                        prefixArr.get(i), parent, null, "prefixItems[" + i + "]");
             }
         } else {
             this.prefixItems = null;

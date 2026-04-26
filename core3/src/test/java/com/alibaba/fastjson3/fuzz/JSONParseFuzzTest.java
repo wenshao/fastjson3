@@ -398,27 +398,30 @@ public class JSONParseFuzzTest {
      * the validator tree on the input object, exercising EvaluationContext
      * state, error-collection logic, type coercion fallbacks. Schema kept
      * generic enough to admit varied inputs without immediate type rejection.
+     * Schema parsed once into a static field so each iteration spends its
+     * time on the validator state machine, not parser warmup.
      */
+    private static final com.alibaba.fastjson3.schema.JSONSchema VALIDATE_FUZZ_SCHEMA =
+            com.alibaba.fastjson3.schema.JSONSchema.parseSchema(
+                    "{\"type\":\"object\",\"properties\":{"
+                    + "\"name\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":50},"
+                    + "\"count\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":1000},"
+                    + "\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}"
+                    + "},\"required\":[\"name\"]}");
+
     @FuzzTest(maxDuration = "10s")
     void fuzzJsonSchemaValidate(FuzzedDataProvider data) {
         String input = data.consumeRemainingAsString();
         if (input.isEmpty()) {
             return;
         }
-        com.alibaba.fastjson3.schema.JSONSchema schema =
-                com.alibaba.fastjson3.schema.JSONSchema.parseSchema(
-                        "{\"type\":\"object\",\"properties\":{"
-                        + "\"name\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":50},"
-                        + "\"count\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":1000},"
-                        + "\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}"
-                        + "},\"required\":[\"name\"]}");
         try {
             Object value = JSON.parse(input);
-            schema.validate(value);
+            VALIDATE_FUZZ_SCHEMA.validate(value);
         } catch (JSONException | NumberFormatException | ArithmeticException
                 | IndexOutOfBoundsException | ClassCastException ignored) {
-            // expected: parse failure on malformed input, validation
-            // result is returned as ValidateResult (not thrown).
+            // expected: parse failure on malformed input. Validation
+            // results are returned as ValidateResult (not thrown).
         }
     }
 

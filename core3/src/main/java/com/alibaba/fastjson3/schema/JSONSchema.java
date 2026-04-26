@@ -523,9 +523,13 @@ public abstract class JSONSchema {
         if (not instanceof Boolean) {
             return new Not(null, null, (Boolean) not);
         }
-
+        if (!(not instanceof JSONObject)) {
+            throw new JSONSchemaValidException(
+                    "schema for `not` must be an object or boolean, got "
+                            + (not == null ? "null" : not.getClass().getSimpleName()));
+        }
         JSONObject object = (JSONObject) not;
-        if (object == null || object.isEmpty()) {
+        if (object.isEmpty()) {
             return new Not(null, new Type[]{Type.Any}, null);
         }
 
@@ -950,16 +954,48 @@ public abstract class JSONSchema {
         }
         JSONSchema[] items = new JSONSchema[array.size()];
         for (int i = 0; i < items.length; i++) {
-            Object item = array.get(i);
-            if (item instanceof Boolean b) {
-                items[i] = b ? Any.INSTANCE : Any.NOT_ANY;
-            } else if (type != null) {
-                items[i] = JSONSchema.of((JSONObject) item, type);
-            } else {
-                items[i] = JSONSchema.of((JSONObject) item);
-            }
+            items[i] = coerceToSchema(array.get(i), null, type, "item[" + i + "]");
         }
         return items;
+    }
+
+    /**
+     * Convert a JSON value to a {@link JSONSchema}. Per JSON Schema spec
+     * (draft 2020-12 §4.3) every keyword whose value MUST be a schema
+     * accepts either a JSONObject or a Boolean (true = always valid,
+     * false = never valid). Pre-fix the schema package threw raw
+     * {@code ClassCastException} when a malformed schema slot held an
+     * array or scalar — fuzz-discovered in PR #135 round-1 reverse audit
+     * across 5 distinct call sites (properties, patternProperties,
+     * dependentSchemas, prefixItems, allOf/anyOf/oneOf entries).
+     *
+     * @param value       the raw JSON value
+     * @param parent      parent schema for ref resolution; null when the
+     *                    value should be parsed as a root-level schema
+     * @param type        target class for type-aware schema construction;
+     *                    null when not type-aware
+     * @param contextKey  human-readable identifier for the schema slot,
+     *                    used in the rejection message
+     */
+    static JSONSchema coerceToSchema(Object value, JSONSchema parent, Class<?> type, String contextKey) {
+        if (value instanceof Boolean b) {
+            return b ? Any.INSTANCE : Any.NOT_ANY;
+        }
+        if (value instanceof JSONSchema js) {
+            return js;
+        }
+        if (value instanceof JSONObject obj) {
+            if (parent != null) {
+                return JSONSchema.of(obj, parent);
+            }
+            if (type != null) {
+                return JSONSchema.of(obj, type);
+            }
+            return JSONSchema.of(obj);
+        }
+        throw new JSONSchemaValidException(
+                "schema for `" + contextKey + "` must be an object or boolean, got "
+                        + (value == null ? "null" : value.getClass().getSimpleName()));
     }
 
     // ==================== Constants ====================

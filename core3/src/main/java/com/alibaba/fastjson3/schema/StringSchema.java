@@ -2,6 +2,7 @@ package com.alibaba.fastjson3.schema;
 
 import com.alibaba.fastjson3.JSONArray;
 import com.alibaba.fastjson3.JSONObject;
+import com.alibaba.fastjson3.JSONSchemaValidException;
 
 import java.net.URI;
 import java.time.*;
@@ -46,7 +47,7 @@ public final class StringSchema extends JSONSchema {
                         translateUnicodeProperties(patternFormat),
                         Pattern.UNICODE_CHARACTER_CLASS);
             } catch (java.util.regex.PatternSyntaxException e) {
-                throw new com.alibaba.fastjson3.JSONException(
+                throw new JSONSchemaValidException(
                         "invalid `pattern` regex: " + patternFormat, e);
             }
         } else {

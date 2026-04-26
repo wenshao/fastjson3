@@ -26,12 +26,7 @@ public final class AllOf extends JSONSchema {
         if (array != null && !array.isEmpty()) {
             this.items = new JSONSchema[array.size()];
             for (int i = 0; i < items.length; i++) {
-                Object item = array.get(i);
-                if (item instanceof Boolean b) {
-                    items[i] = b ? Any.INSTANCE : Any.NOT_ANY;
-                } else {
-                    items[i] = JSONSchema.of((JSONObject) item, parent);
-                }
+                items[i] = JSONSchema.coerceToSchema(array.get(i), parent, null, "allOf[" + i + "]");
             }
         } else {
             this.items = new JSONSchema[0];
