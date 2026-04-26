@@ -128,6 +128,10 @@ public Builder disableWrite(WriteFeature... features)
 public Builder readerCreator(Function<Class<?>, ObjectReader<?>> creator)
 public Builder writerCreator(Function<Class<?>, ObjectWriter<?>> creator)
 
+// 自定义 Map / List 后备存储 (per-mapper)
+public Builder mapSupplier(Supplier<? extends Map<String, Object>> supplier)
+public Builder listSupplier(Supplier<? extends List<Object>> supplier)
+
 // Mixin
 public Builder addMixIn(Class<?> target, Class<?> mixIn)
 
@@ -135,6 +139,36 @@ public Builder addMixIn(Class<?> target, Class<?> mixIn)
 public Builder addReaderModule(ObjectReaderModule module)
 public Builder addWriterModule(ObjectWriterModule module)
 ```
+
+### 自定义 Map / List 后备存储
+
+`mapSupplier` / `listSupplier` 让 mapper 在解析未类型化 JSON 时（`{...}` / `[...]`）使用调用者指定的 `Map` / `List` 实现作为 `JSONObject` / `JSONArray` 的内部存储。等价于 fastjson2 的 `JSONReader.Context.setObjectSupplier` / `setArraySupplier`，但是 per-mapper 而非 per-context。
+
+```java
+// 用 ConcurrentHashMap 作为 JSONObject 内部存储
+ObjectMapper mapper = ObjectMapper.builder()
+        .mapSupplier(java.util.concurrent.ConcurrentHashMap::new)
+        .listSupplier(java.util.LinkedList::new)
+        .build();
+
+JSONObject obj = (JSONObject) mapper.readValue("{\"a\":1,\"b\":[2,3]}");
+// obj 仍然是 JSONObject 类型；其内部 innerMap 是 ConcurrentHashMap
+// obj.get("b") 是 JSONArray，innerList 是 LinkedList
+```
+
+**适用场景：**
+- 多线程读 JSONObject：`ConcurrentHashMap`
+- 需要键排序：`TreeMap`
+- 频繁头部插入的 List：`LinkedList`
+
+**生效范围**：
+- 顶层未类型化解析 `mapper.readValue(json)` 推断为 `JSONObject` / `JSONArray`。
+- 直接入口 `mapper.readObject(json)` / `mapper.readObject(byte[])` / `mapper.readArray(json)` / `mapper.readArray(byte[])`。
+- 上述节点内部递归创建的所有子节点（嵌套 `JSONObject` / `JSONArray`）。
+
+**不生效**：
+- 类型化解析 `mapper.readValue(json, Type)`（含 `JSONObject.class` / `MyBean.class` / `TypeReference<Map<String,Object>>` / `TypeReference<List<Object>>`）走 ObjectReader 路径，内部使用各自的 `Map` / `List` 实现，不会应用 supplier。
+- 全局静态 `JSON.parse(...)` / `JSON.parseObject(...)` 走 shared mapper，不应用 per-mapper supplier；如需全局影响 `new JSONObject()` 与默认未类型化解析路径，用 `JSONObject.setMapCreator(...)`（`JSONArray` 当前无对应全局 setter）。
 
 ## 自定义扩展
 

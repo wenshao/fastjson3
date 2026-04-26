@@ -110,6 +110,8 @@
 | `addNameFilter(filter)` | 名称过滤器 |
 | `addMixIn(target, mixin)` | Mixin 注解 |
 | `useJacksonAnnotation(bool)` | Jackson 注解支持 |
+| `mapSupplier(Supplier)` | 自定义 JSONObject 内部 Map（per-mapper，fastjson2 ObjectSupplier 等价） |
+| `listSupplier(Supplier)` | 自定义 JSONArray 内部 List（per-mapper，fastjson2 ArraySupplier 等价） |
 
 ## 该用哪个 API？
 

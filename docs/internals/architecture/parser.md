@@ -44,7 +44,7 @@ MediaContent mc = JSON.parseObject(bytes, MediaContent.class);
 - **无 Entry 节点分配**：String[] keys + Object[] values 平行数组
 - **线性扫描**：小 map（≤16 条目）直接扫描，大 map 按需构建 hash index
 - **保持插入顺序**：数组天然有序
-- **可配置**：`JSONObject.setMapCreator(Supplier)` 切回 LinkedHashMap 模式
+- **可配置**：`JSONObject.setMapCreator(Supplier)` 全局切换到自定义 `Map` 实现（如 `ConcurrentHashMap::new`）；`ObjectMapper.builder().mapSupplier(...)` 是 per-mapper 等价物（见 [ObjectMapper](../../api/ObjectMapper.md#自定义-map--list-后备存储)）
 
 ### 为什么使用 sealed？
 

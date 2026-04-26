@@ -405,6 +405,32 @@ String json = mapper.writeValueAsString(user);
 byte[] bytes = mapper.writeValueAsBytes(user);
 ```
 
+### ObjectSupplier / ArraySupplier（per-mapper 等价物）
+
+fastjson2 通过 `JSONReader.Context.setObjectSupplier` / `setArraySupplier` 在 per-context（即 per-call）层面切换 `JSONObject` / `JSONArray` 的内部 `Map` / `List` 实现。fastjson3 提供 per-mapper 等价物，配置后该 mapper 的所有未类型化解析都生效：
+
+```java
+// ===== fastjson2 =====
+JSONReader.Context ctx = JSONFactory.createReadContext();
+ctx.setObjectSupplier(ConcurrentHashMap::new);
+ctx.setArraySupplier(LinkedList::new);
+Object obj = JSONReader.of(json, ctx).readAny();
+
+// ===== fastjson3 =====
+ObjectMapper mapper = ObjectMapper.builder()
+    .mapSupplier(ConcurrentHashMap::new)
+    .listSupplier(LinkedList::new)
+    .build();
+Object obj = mapper.readValue("{\"a\":[1,2]}");
+// 内部 innerMap 是 ConcurrentHashMap，innerList 是 LinkedList
+```
+
+也可在构造时直接传入：`new JSONObject(ConcurrentHashMap::new)` / `new JSONArray(LinkedList::new)`。
+
+全局等价物（影响 `new JSONObject()` 与 shared mapper 默认解析路径）：`JSONObject.setMapCreator(ConcurrentHashMap::new)`。fastjson3 的 `JSONArray` 当前没有对应的 `setListCreator`，需要全局列表后备时通过 per-mapper `listSupplier` 解决。
+
+> 生效范围：未类型化路径——`mapper.readValue(json)`（推断为 `JSONObject` / `JSONArray`）以及直接入口 `mapper.readObject(...)` / `mapper.readArray(...)`，含它们内部递归创建的子节点。所有类型化解析（`readValue(json, Bean.class)` / `readValue(json, JSONObject.class)` / `readValue(json, TypeReference<Map>())` 等）走 ObjectReader 路径，不应用 supplier。详见 [ObjectMapper#自定义-map--list-后备存储](../api/ObjectMapper.md#自定义-map--list-后备存储)。
+
 ---
 
 ## 迁移代码示例
