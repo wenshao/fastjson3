@@ -288,9 +288,6 @@ public class JSONParseFuzzTest {
     @FuzzTest(maxDuration = "10s")
     void fuzzJsonPathExpression(FuzzedDataProvider data) {
         String pathStr = data.consumeRemainingAsString();
-        if (pathStr.isEmpty()) {
-            return;
-        }
         try {
             JSONPath path = JSONPath.of(pathStr);
             // Probe parsed path against a small fixed document so eval/contains
@@ -303,25 +300,70 @@ public class JSONParseFuzzTest {
             // numeric segment overflows raise NumberFormatException;
             // out-of-bounds slice/index raises IndexOutOfBoundsException;
             // type-mismatch on filter coercion raises ClassCastException.
+            // Empty path string also throws JSONException — exercised
+            // here, no early-return guard.
         }
     }
 
     /**
      * Same as fuzzJsonPathExpression but exercises {@link JSONPath#extract}
      * (parser-driven streaming evaluation rather than DOM walk). Different
-     * code path with its own state machine.
+     * code path with its own state machine. Path budget 128 chars (real
+     * filter expressions like
+     * {@code $.store.book[?(@.price<10 && @.category=='fiction')].title}
+     * routinely exceed 64) and uses consumeString to allow unicode segments.
      */
     @FuzzTest(maxDuration = "10s")
     void fuzzJsonPathExtract(FuzzedDataProvider data) {
-        String pathStr = data.consumeAsciiString(64);
+        String pathStr = data.consumeString(128);
         String doc = data.consumeRemainingAsString();
-        if (pathStr.isEmpty() || doc.isEmpty()) {
+        if (pathStr == null || doc.isEmpty()) {
             return;
         }
         try {
             JSONPath.of(pathStr).extract(doc);
         } catch (JSONException | NumberFormatException | ArithmeticException
                 | IndexOutOfBoundsException | ClassCastException ignored) {
+            // see fuzzJsonPathExpression for rationale
+        }
+    }
+
+    /**
+     * Fuzz {@link JSONPath#set} — mutation path with parent-link tracking,
+     * intermediate-container creation, and indefinite-path expansion.
+     * Read-only targets ({@link #fuzzJsonPathExpression},
+     * {@link #fuzzJsonPathExtract}) miss this state machine entirely.
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzJsonPathSet(FuzzedDataProvider data) {
+        String pathStr = data.consumeRemainingAsString();
+        try {
+            JSONPath path = JSONPath.of(pathStr);
+            // Mutable doc — fresh parse per iteration so writes don't leak.
+            Object doc = JSON.parse("{\"v\":[1,2,{\"x\":\"y\"}],\"n\":42}");
+            path.set(doc, 99);
+        } catch (JSONException | NumberFormatException | ArithmeticException
+                | IndexOutOfBoundsException | ClassCastException
+                | UnsupportedOperationException ignored) {
+            // UnsupportedOperationException: set on indefinite path may
+            // be rejected by some path strategies.
+        }
+    }
+
+    /**
+     * Fuzz {@link JSONPath#remove} — list-shift / map-key-removal logic
+     * distinct from set. Same rationale as fuzzJsonPathSet.
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzJsonPathRemove(FuzzedDataProvider data) {
+        String pathStr = data.consumeRemainingAsString();
+        try {
+            JSONPath path = JSONPath.of(pathStr);
+            Object doc = JSON.parse("{\"v\":[1,2,{\"x\":\"y\"}],\"n\":42}");
+            path.remove(doc);
+        } catch (JSONException | NumberFormatException | ArithmeticException
+                | IndexOutOfBoundsException | ClassCastException
+                | UnsupportedOperationException ignored) {
             // expected
         }
     }
