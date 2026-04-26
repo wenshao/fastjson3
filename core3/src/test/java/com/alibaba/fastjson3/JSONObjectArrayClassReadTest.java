@@ -129,6 +129,26 @@ class JSONObjectArrayClassReadTest {
         assertEquals("x", r.tags().get(0));
     }
 
+    public record RecordWithJsonNodeCollections(java.util.List<JSONObject> entries,
+                                                java.util.Map<String, JSONArray> buckets) {
+    }
+
+    @Test
+    void readValue_typedRecord_jsonNodeElementFields_populated() {
+        ObjectMapper mapper = ObjectMapper.shared();
+        RecordWithJsonNodeCollections r = mapper.readValue(
+                "{\"entries\":[{\"a\":1},{\"b\":2}],\"buckets\":{\"x\":[1,2],\"y\":[3,4]}}",
+                RecordWithJsonNodeCollections.class);
+        assertNotNull(r.entries());
+        assertEquals(2, r.entries().size());
+        assertEquals(1, r.entries().get(0).get("a"));
+        assertEquals(2, r.entries().get(1).get("b"));
+        assertNotNull(r.buckets());
+        assertEquals(2, r.buckets().size());
+        assertEquals(1, r.buckets().get("x").get(0));
+        assertEquals(4, r.buckets().get("y").get(1));
+    }
+
     public static class BeanWithListOfJsonObject {
         public java.util.List<JSONObject> entries;
     }
