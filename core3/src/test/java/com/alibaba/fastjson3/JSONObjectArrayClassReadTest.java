@@ -179,4 +179,26 @@ class JSONObjectArrayClassReadTest {
     // fallback then has no List→array conversion, so the elements arrive as
     // null. Fixing requires extending FieldReader.convertValue or adding a
     // dedicated typed-array reader for JSONObject[] / JSONArray[].
+
+    @Test
+    void readerCreator_overrideForJSONObject_isHonored() {
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        com.alibaba.fastjson3.ObjectReader<JSONObject> custom =
+                (parser, fieldType, fieldName, features) -> {
+                    calls.incrementAndGet();
+                    JSONObject obj = parser.readObject();
+                    obj.put("__intercepted", Boolean.TRUE);
+                    return obj;
+                };
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        java.util.function.Function<Class<?>, com.alibaba.fastjson3.ObjectReader<?>> creator =
+                cls -> cls == JSONObject.class ? (com.alibaba.fastjson3.ObjectReader) custom : null;
+
+        ObjectMapper mapper = ObjectMapper.builder().readerCreator(creator).build();
+        JSONObject obj = mapper.readValue("{\"a\":1}", JSONObject.class);
+        // SPI override should win over the parser-fallback short-circuit.
+        assertEquals(Boolean.TRUE, obj.get("__intercepted"));
+        assertEquals(1, obj.get("a"));
+        assertTrue(calls.get() >= 1, "custom reader expected to run at least once");
+    }
 }

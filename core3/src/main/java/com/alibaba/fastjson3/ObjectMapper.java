@@ -1571,16 +1571,6 @@ public final class ObjectMapper {
         }
         // For Class types, try built-in codecs and auto-create
         if (type instanceof Class<?> clazz) {
-            // JSONObject and JSONArray have native parser routing in
-            // JSONParser.read(Class) (`readObject()` / `readArray()`); without
-            // this short-circuit they would fall through to the auto-created
-            // reflection POJO reader, which assumes `{` and either rejects
-            // arrays outright or yields an empty JSONObject for objects.
-            // Returning null here lets readValue(...) take the parser-fallback
-            // branch and honors per-mapper map/list suppliers.
-            if (clazz == JSONObject.class || clazz == JSONArray.class) {
-                return null;
-            }
             ObjectReader<?> reader = BuiltinCodecs.getReader(clazz);
             if (reader != null) {
                 return reader;
@@ -1590,6 +1580,17 @@ public final class ObjectMapper {
                 if (readerCreator != null) {
                     return readerCreator.apply(clazz);
                 } else {
+                    // JSONObject and JSONArray have native parser routing in
+                    // JSONParser.read(Class) (`readObject()` / `readArray()`); without
+                    // this short-circuit the auto-created reflection POJO reader
+                    // assumes `{` and either rejects arrays outright or yields an
+                    // empty JSONObject for objects. Placed here (after modules /
+                    // BuiltinCodecs / user-supplied readerCreator) so SPI overrides
+                    // for these types still take precedence; only the default
+                    // auto-build path is bypassed in favor of parser fallback.
+                    if (clazz == JSONObject.class || clazz == JSONArray.class) {
+                        return null;
+                    }
                     Class<?> mixIn = mixInCache.get(clazz);
                     // MIXIN_CONTEXT is set by the top-level getObjectReader entry so
                     // inner-type helpers (unwrapped expansion, nested POJO collection)
