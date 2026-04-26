@@ -162,6 +162,35 @@ class TypedBeanObjectFieldTest {
     }
 
     @Test
+    void asmProvider_topLevel_objectClass_yieldsJSONNodes() {
+        ObjectMapper m = ObjectMapper.builder()
+                .readerProvider(new com.alibaba.fastjson3.reader.ASMObjectReaderProvider())
+                .build();
+        assertInstanceOf(JSONObject.class, m.readValue("{\"a\":1}", Object.class));
+        assertInstanceOf(JSONArray.class, m.readValue("[1,2]", Object.class));
+    }
+
+    @Test
+    void reflectProvider_topLevel_objectClass_yieldsJSONNodes() {
+        ObjectMapper m = ObjectMapper.builder()
+                .readerProvider(new com.alibaba.fastjson3.reader.ReflectObjectReaderProvider())
+                .build();
+        assertInstanceOf(JSONObject.class, m.readValue("{\"a\":1}", Object.class));
+        assertInstanceOf(JSONArray.class, m.readValue("[1,2]", Object.class));
+    }
+
+    @Test
+    void asmProvider_objectField_yieldsJSONNodes() {
+        ObjectMapper m = ObjectMapper.builder()
+                .readerProvider(new com.alibaba.fastjson3.reader.ASMObjectReaderProvider())
+                .build();
+        Bean b = m.readValue("{\"payload\":{\"x\":1}}", Bean.class);
+        assertInstanceOf(JSONObject.class, b.payload);
+        Bean b2 = m.readValue("{\"payload\":[1,2]}", Bean.class);
+        assertInstanceOf(JSONArray.class, b2.payload);
+    }
+
+    @Test
     void objectField_honorsMapSupplier() throws Exception {
         ObjectMapper mapper = ObjectMapper.builder()
                 .mapSupplier(ConcurrentHashMap::new)

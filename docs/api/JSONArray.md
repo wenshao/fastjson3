@@ -23,7 +23,7 @@ JSONArray arr = new JSONArray(java.util.LinkedList::new);
 
 > 切换内部 `List` 实现的方式（与 `JSONObject` 不同，`JSONArray` 没有全局静态 `setListCreator`）：
 > - **per-instance** — `new JSONArray(Supplier<? extends List<Object>>)`，构造时传入工厂；
-> - **per-mapper** — `ObjectMapper.builder().listSupplier(...).build()`，对该 mapper 解析出的 `JSONArray` 节点生效（含 `readValue(json, JSONArray.class)`、Bean / record 字段、`List<JSONArray>` 等元素类型；详见 [ObjectMapper](ObjectMapper.md#自定义-map--list-后备存储)）；
+> - **per-mapper** — `ObjectMapper.builder().listSupplier(...).build()`，对该 mapper 解析出的 `JSONArray` 节点生效（含 `readValue(json, JSONArray.class)`、Bean / record 字段、`List<JSONArray>` 等元素类型，以及 `Object` 字段 / `readValue(json, Object.class)` 中根据 JSON 形状构造的 `JSONArray` 子节点；详见 [ObjectMapper](ObjectMapper.md#自定义-map--list-后备存储)）；
 > - 默认情况下 `JSONArray` 继承 `ArrayList`，未设置 `Supplier` 时仅多一次 `null` 检查的开销，可忽略。
 
 ## 添加元素

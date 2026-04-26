@@ -55,6 +55,43 @@ public final class ObjectReaderCreator {
      * rejects non-object JSON literals). Covered as a field type, element
      * type, and component type of an array field.
      */
+    /**
+     * Types whose deserialization is handled natively by the parser
+     * ({@link com.alibaba.fastjson3.JSONParser#read(Class)}'s
+     * {@code readObject} / {@code readArray} / {@code readAny} branches and
+     * the raw-container fallback) and must NOT have an auto-built reflection
+     * POJO reader synthesized for them. Without this gate, providers such as
+     * {@link AbstractObjectReaderProvider} subclasses (ASM / Reflect / Auto)
+     * would produce a broken reader that silently empties or throws on
+     * non-object literals — defeating the parser fallback in
+     * {@link com.alibaba.fastjson3.ObjectMapper#readValue(byte[], Class)}.
+     *
+     * <p>Keep in sync with {@code ObjectMapper.isParserShortCircuitClass}
+     * — these two cover the same set from different layers: the
+     * {@link com.alibaba.fastjson3.ObjectMapper} version short-circuits its
+     * own auto-create branch (after modules / BuiltinCodecs / readerCreator),
+     * while this one short-circuits provider-level reader creation so that
+     * even {@code .readerProvider(ASM)} / {@code .readerCreatorType(...)}
+     * mappers respect the parser fallback for these tree-shape types.
+     */
+    static boolean isParserHandled(Class<?> target) {
+        return target == com.alibaba.fastjson3.JSONObject.class
+                || target == com.alibaba.fastjson3.JSONArray.class
+                || target == Object.class
+                || target == java.util.Map.class
+                || target == java.util.AbstractMap.class
+                || target == java.util.List.class
+                || target == java.util.Collection.class
+                || target == Iterable.class
+                || target == java.util.ArrayList.class
+                || target == java.util.AbstractCollection.class
+                || target == java.util.AbstractList.class
+                || target == java.util.Set.class
+                || target == java.util.AbstractSet.class
+                || target == java.util.HashSet.class
+                || target == java.util.LinkedHashSet.class;
+    }
+
     private static boolean isJsonNodeOrJsonNodeArray(Class<?> target) {
         if (target == com.alibaba.fastjson3.JSONObject.class
                 || target == com.alibaba.fastjson3.JSONArray.class
@@ -79,6 +116,15 @@ public final class ObjectReaderCreator {
     }
 
     public static <T> ObjectReader<T> createObjectReader(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        // Tree-shape / raw-container types are handled by the parser's native
+        // routing; auto-building a reflection POJO reader for them produces
+        // broken results (silent empty / "expected '{'" on non-objects). See
+        // isParserHandled — this guard makes provider-level entry points
+        // (ASM / Reflect / Auto via AbstractObjectReaderProvider#createReader)
+        // safe to call without each provider repeating the check.
+        if (isParserHandled(type)) {
+            return null;
+        }
         return createObjectReader(type, type, mixIn, useJacksonAnnotation);
     }
 
