@@ -369,6 +369,60 @@ public class JSONParseFuzzTest {
     }
 
     /**
+     * Fuzz {@link com.alibaba.fastjson3.schema.JSONSchema#parseSchema(String)}.
+     * Schema text first goes through the JSON parser then through the schema
+     * compiler — a 20+ validator hierarchy with combinators (allOf, oneOf,
+     * anyOf, not), conditionals (if/then/else), refs, type-specific
+     * constraints. The compiler dispatches by `type` keyword and recurses
+     * into nested schemas; bugs surface as NPE / IAE / SOE on malformed
+     * combinator shapes.
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzJsonSchemaParse(FuzzedDataProvider data) {
+        String schema = data.consumeRemainingAsString();
+        try {
+            com.alibaba.fastjson3.schema.JSONSchema.parseSchema(schema);
+        } catch (JSONException | ArithmeticException
+                | IndexOutOfBoundsException | ClassCastException
+                | IllegalArgumentException ignored) {
+            // expected: invalid schema JSON / unsupported keywords /
+            // unresolved $ref. (IllegalArgumentException covers
+            // NumberFormatException too.) Anything else (NPE/SOE/OOM)
+            // is a finding.
+        }
+    }
+
+    /**
+     * Fuzz schema validation with a fixed (non-trivial) schema and fuzzed
+     * input value. Different code path from parseSchema — validate() walks
+     * the validator tree on the input object, exercising EvaluationContext
+     * state, error-collection logic, type coercion fallbacks. Schema kept
+     * generic enough to admit varied inputs without immediate type rejection.
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzJsonSchemaValidate(FuzzedDataProvider data) {
+        String input = data.consumeRemainingAsString();
+        if (input.isEmpty()) {
+            return;
+        }
+        com.alibaba.fastjson3.schema.JSONSchema schema =
+                com.alibaba.fastjson3.schema.JSONSchema.parseSchema(
+                        "{\"type\":\"object\",\"properties\":{"
+                        + "\"name\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":50},"
+                        + "\"count\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":1000},"
+                        + "\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}"
+                        + "},\"required\":[\"name\"]}");
+        try {
+            Object value = JSON.parse(input);
+            schema.validate(value);
+        } catch (JSONException | NumberFormatException | ArithmeticException
+                | IndexOutOfBoundsException | ClassCastException ignored) {
+            // expected: parse failure on malformed input, validation
+            // result is returned as ValidateResult (not thrown).
+        }
+    }
+
+    /**
      * Fuzz the {@link com.alibaba.fastjson3.JSONPointer} (RFC 6901) parser.
      * Smaller surface than JSONPath but has its own escape handling
      * (`~0` → `~`, `~1` → `/`) — malformed escapes / index parsing /
