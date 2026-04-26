@@ -94,4 +94,82 @@ class JSONObjectArrayClassReadTest {
         assertInstanceOf(JSONArray.class, obj.get("items"));
         assertEquals(3, ((JSONArray) obj.get("items")).size());
     }
+
+    public static class BeanWithJsonNodes {
+        public JSONObject payload;
+        public JSONArray items;
+    }
+
+    @Test
+    void readValue_typedBean_jsonObjectField_populated() {
+        ObjectMapper mapper = ObjectMapper.shared();
+        BeanWithJsonNodes bean = mapper.readValue(
+                "{\"payload\":{\"a\":1,\"b\":2},\"items\":[10,20]}", BeanWithJsonNodes.class);
+        assertNotNull(bean.payload);
+        assertEquals(1, bean.payload.get("a"));
+        assertEquals(2, bean.payload.get("b"));
+        assertNotNull(bean.items);
+        assertEquals(2, bean.items.size());
+        assertEquals(10, bean.items.get(0));
+        assertEquals(20, bean.items.get(1));
+    }
+
+    public record RecordWithJsonNodes(JSONObject meta, JSONArray tags) {
+    }
+
+    @Test
+    void readValue_typedRecord_jsonNodeFields_populated() {
+        ObjectMapper mapper = ObjectMapper.shared();
+        RecordWithJsonNodes r = mapper.readValue(
+                "{\"meta\":{\"k\":\"v\"},\"tags\":[\"x\",\"y\"]}", RecordWithJsonNodes.class);
+        assertNotNull(r.meta());
+        assertEquals("v", r.meta().get("k"));
+        assertNotNull(r.tags());
+        assertEquals(2, r.tags().size());
+        assertEquals("x", r.tags().get(0));
+    }
+
+    public static class BeanWithListOfJsonObject {
+        public java.util.List<JSONObject> entries;
+    }
+
+    @Test
+    void readValue_listOfJSONObjectField_populated_reflectionPath() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .readerProvider(new com.alibaba.fastjson3.reader.ReflectObjectReaderProvider())
+                .build();
+        BeanWithListOfJsonObject bean = mapper.readValue(
+                "{\"entries\":[{\"a\":1},{\"b\":2}]}", BeanWithListOfJsonObject.class);
+        assertNotNull(bean.entries);
+        assertEquals(2, bean.entries.size());
+        assertEquals(1, bean.entries.get(0).get("a"));
+        assertEquals(2, bean.entries.get(1).get("b"));
+    }
+
+    @Test
+    void readValue_listOfJSONObjectField_populated() {
+        ObjectMapper mapper = ObjectMapper.shared();
+        BeanWithListOfJsonObject bean = mapper.readValue(
+                "{\"entries\":[{\"a\":1},{\"b\":2}]}", BeanWithListOfJsonObject.class);
+        assertNotNull(bean.entries);
+        assertEquals(2, bean.entries.size());
+        assertEquals(1, bean.entries.get(0).get("a"));
+        assertEquals(2, bean.entries.get(1).get("b"));
+    }
+
+    public static class BeanWithMapOfJsonArray {
+        public java.util.Map<String, JSONArray> buckets;
+    }
+
+    @Test
+    void readValue_mapOfJSONArrayField_populated() {
+        ObjectMapper mapper = ObjectMapper.shared();
+        BeanWithMapOfJsonArray bean = mapper.readValue(
+                "{\"buckets\":{\"a\":[1,2],\"b\":[3,4]}}", BeanWithMapOfJsonArray.class);
+        assertNotNull(bean.buckets);
+        assertEquals(2, bean.buckets.size());
+        assertEquals(2, bean.buckets.get("a").size());
+        assertEquals(1, bean.buckets.get("a").get(0));
+        assertEquals(4, bean.buckets.get("b").get(1));
+    }
 }

@@ -1552,6 +1552,15 @@ public final class ObjectReaderCreator {
                         // fieldClass=Object but fieldType=Bean after resolution.
                         Class<?> target = (fr.fieldType instanceof Class<?> resolved)
                                 ? resolved : fc;
+                        // Skip JSONObject / JSONArray fields: leave objReaders[i] null so
+                        // the default-branch fallback uses parser.readAny() + convertValue,
+                        // which yields a populated JSONObject / JSONArray. The auto-built
+                        // reflection POJO reader assumes `{` and either rejects array input
+                        // outright or silently returns an empty container.
+                        if (target == com.alibaba.fastjson3.JSONObject.class
+                                || target == com.alibaba.fastjson3.JSONArray.class) {
+                            continue;
+                        }
                         ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(target);
                         if (r == null) {
                             // Skip interfaces, abstract classes, and enums - they don't have constructors
@@ -1573,7 +1582,9 @@ public final class ObjectReaderCreator {
                     // auto-creating a reader for Object produces a useless empty
                     // reader that fails on non-object elements.
                     if (fr.elementType instanceof Class<?> elemC
-                            && elemC != String.class && elemC != Object.class) {
+                            && elemC != String.class && elemC != Object.class
+                            && elemC != com.alibaba.fastjson3.JSONObject.class
+                            && elemC != com.alibaba.fastjson3.JSONArray.class) {
                         ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(elemC);
                         if (r == null) {
                             if (!elemC.isInterface() && !java.lang.reflect.Modifier.isAbstract(elemC.getModifiers())) {
@@ -3112,6 +3123,12 @@ public final class ObjectReaderCreator {
                         // Prefer resolved fieldType (see non-record branch above).
                         Class<?> target = (fr.fieldType instanceof Class<?> resolved)
                                 ? resolved : fr.fieldClass;
+                        // See non-record branch: JSONObject / JSONArray fields fall through
+                        // to readAny() + convertValue rather than the broken POJO reader.
+                        if (target == com.alibaba.fastjson3.JSONObject.class
+                                || target == com.alibaba.fastjson3.JSONArray.class) {
+                            continue;
+                        }
                         ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(target);
                         if (r == null) {
                             // Skip interfaces and abstract classes - they don't have constructors
@@ -3125,7 +3142,9 @@ public final class ObjectReaderCreator {
                         }
                     }
                     if (fr.elementType instanceof Class<?> elemC
-                            && elemC != String.class && elemC != Object.class) {
+                            && elemC != String.class && elemC != Object.class
+                            && elemC != com.alibaba.fastjson3.JSONObject.class
+                            && elemC != com.alibaba.fastjson3.JSONArray.class) {
                         ObjectReader<?> r = com.alibaba.fastjson3.BuiltinCodecs.getReader(elemC);
                         if (r == null) {
                             if (!elemC.isInterface() && !java.lang.reflect.Modifier.isAbstract(elemC.getModifiers())) {

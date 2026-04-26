@@ -2020,6 +2020,15 @@ public final class ObjectReaderCreatorASM {
         if (Modifier.isAbstract(elem.getModifiers())) {
             return false;
         }
+        // Mirror isInlinableNestedPojo's Map/Collection exclusion: the auto-built
+        // POJO reader assumes a `{` field-by-field layout. JSONObject/JSONArray
+        // (and any other Map/Collection) lose data through that reader. Let the
+        // reflection fallback's TAG_LIST → readListGenericUTF8 / readAny() path
+        // handle them.
+        if (java.util.Map.class.isAssignableFrom(elem)
+                || java.util.Collection.class.isAssignableFrom(elem)) {
+            return false;
+        }
         return Modifier.isPublic(elem.getModifiers());
     }
 
