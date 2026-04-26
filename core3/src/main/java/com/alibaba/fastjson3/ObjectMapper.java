@@ -582,7 +582,6 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(json, readFeatures)) {
-    applySuppliers(parser);
             applySuppliers(parser);
             return parser.readAny();
         }
@@ -654,12 +653,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                         applySuppliers(parser);
                     return objectReader.readObjectUTF8((JSONParser.UTF8) parser, readFeatures);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
-    applySuppliers(parser);
+                    applySuppliers(parser);
                     return objectReader.readObjectUTF8((JSONParser.UTF8) parser, readFeatures);
                 }
             }
@@ -667,12 +666,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                     applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
-    applySuppliers(parser);
+                applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -691,12 +690,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                         applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, readFeatures);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
-    applySuppliers(parser);
+                    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, readFeatures);
                 }
             }
@@ -704,12 +703,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                     applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
-    applySuppliers(parser);
+                applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -780,7 +779,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(json, readFeatures)) {
-    applySuppliers(parser);
+            applySuppliers(parser);
             return parser.readObject();
         }
     }
@@ -795,12 +794,12 @@ public final class ObjectMapper {
         // ASCII fast path: use LATIN1 parser (has optimized inline tree parsing)
         if (readFeatures == 0 && isAscii(jsonBytes)) {
             try (JSONParser parser = new JSONParser.LATIN1(jsonBytes, 0, jsonBytes.length, 0)) {
-    applySuppliers(parser);
+                applySuppliers(parser);
                 return parser.readObject();
             }
         }
         try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
-    applySuppliers(parser);
+            applySuppliers(parser);
             return parser.readObject();
         }
     }
@@ -813,7 +812,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(json, readFeatures)) {
-    applySuppliers(parser);
+            applySuppliers(parser);
             return parser.readArray();
         }
     }
@@ -827,12 +826,12 @@ public final class ObjectMapper {
         }
         if (readFeatures == 0 && isAscii(jsonBytes)) {
             try (JSONParser parser = new JSONParser.LATIN1(jsonBytes, 0, jsonBytes.length, 0)) {
-    applySuppliers(parser);
+                applySuppliers(parser);
                 return parser.readArray();
             }
         }
         try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
-    applySuppliers(parser);
+            applySuppliers(parser);
             return parser.readArray();
         }
     }
@@ -860,7 +859,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(json, features)) {
-    applySuppliers(parser);
+            applySuppliers(parser);
             JSONArray array = parser.readArray();
             if (array == null) {
                 return null;
@@ -927,7 +926,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
-    applySuppliers(parser);
+            applySuppliers(parser);
             JSONArray array = parser.readArray();
             if (array == null) {
                 return null;
@@ -1013,7 +1012,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(json, features)) {
-    applySuppliers(parser);
+            applySuppliers(parser);
             JSONObject object = parser.readObject();
             if (object == null) {
                 return null;
@@ -1054,7 +1053,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
-    applySuppliers(parser);
+            applySuppliers(parser);
             JSONObject object = parser.readObject();
             if (object == null) {
                 return null;
@@ -1095,12 +1094,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(json, features);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                         applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(json, features)) {
-    applySuppliers(parser);
+                    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             }
@@ -1108,12 +1107,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(json, features);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                     applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(json, features)) {
-    applySuppliers(parser);
+                applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -1132,12 +1131,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(jsonBytes, features);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                         applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
-    applySuppliers(parser);
+                    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             }
@@ -1145,12 +1144,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(jsonBytes, features);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                     applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
-    applySuppliers(parser);
+                applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -1169,12 +1168,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(json, features);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                         applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(json, features)) {
-    applySuppliers(parser);
+                    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             }
@@ -1182,12 +1181,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(json, features);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                     applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(json, features)) {
-    applySuppliers(parser);
+                applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -1206,12 +1205,12 @@ public final class ObjectMapper {
             if (needsReaderContext) {
                 try (JSONParser parser = JSONParser.of(jsonBytes, features);
                      ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                         applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             } else {
                 try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
-    applySuppliers(parser);
+                    applySuppliers(parser);
                     return objectReader.readObject(parser, type, null, features);
                 }
             }
@@ -1219,12 +1218,12 @@ public final class ObjectMapper {
         if (needsReaderContext) {
             try (JSONParser parser = JSONParser.of(jsonBytes, features);
                  ObjectReaderProvider.SafeContext ctx = readerProvider.openContext()) {
-    applySuppliers(parser);
+                     applySuppliers(parser);
                 return parser.read(type);
             }
         } else {
             try (JSONParser parser = JSONParser.of(jsonBytes, features)) {
-    applySuppliers(parser);
+                applySuppliers(parser);
                 return parser.read(type);
             }
         }
@@ -1280,7 +1279,7 @@ public final class ObjectMapper {
             return null;
         }
         try (JSONParser parser = JSONParser.of(jsonBytes, readFeatures)) {
-    applySuppliers(parser);
+            applySuppliers(parser);
             return parser.readAny();
         }
     }
@@ -2148,10 +2147,12 @@ public final class ObjectMapper {
             ObjectReader<T> reader = (ObjectReader<T>) mapper.getObjectReader(type);
             if (reader != null) {
                 try (JSONParser jr = JSONParser.of(json, features)) {
+                    mapper.applySuppliers(jr);
                     return reader.readObject(jr, type, null, features);
                 }
             }
             try (JSONParser jr = JSONParser.of(json, features)) {
+                mapper.applySuppliers(jr);
                 return jr.read(type);
             }
         }
@@ -2167,10 +2168,12 @@ public final class ObjectMapper {
             ObjectReader<T> reader = (ObjectReader<T>) mapper.getObjectReader(type);
             if (reader != null) {
                 try (JSONParser jr = JSONParser.of(jsonBytes, features)) {
+                    mapper.applySuppliers(jr);
                     return reader.readObject(jr, type, null, features);
                 }
             }
             try (JSONParser jr = JSONParser.of(jsonBytes, features)) {
+                mapper.applySuppliers(jr);
                 return jr.read(type);
             }
         }

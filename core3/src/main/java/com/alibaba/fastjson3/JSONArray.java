@@ -157,6 +157,97 @@ public class JSONArray extends ArrayList<Object> {
         return innerList != null ? innerList.subList(fromIndex, toIndex) : super.subList(fromIndex, toIndex);
     }
 
+    // The following overrides are required when innerList is non-null:
+    // ArrayList implements them by walking its private elementData array
+    // directly (not via iterator()/get()), so without these overrides a
+    // supplier-backed JSONArray would silently see the EMPTY inherited
+    // storage and return wrong results. Round-1 audit P0.
+
+    @Override
+    public boolean equals(Object o) {
+        return innerList != null ? innerList.equals(o) : super.equals(o);
+    }
+
+    @Override
+    public int hashCode() {
+        return innerList != null ? innerList.hashCode() : super.hashCode();
+    }
+
+    @Override
+    public boolean containsAll(Collection<?> c) {
+        return innerList != null ? innerList.containsAll(c) : super.containsAll(c);
+    }
+
+    @Override
+    public boolean removeAll(Collection<?> c) {
+        return innerList != null ? innerList.removeAll(c) : super.removeAll(c);
+    }
+
+    @Override
+    public boolean retainAll(Collection<?> c) {
+        return innerList != null ? innerList.retainAll(c) : super.retainAll(c);
+    }
+
+    @Override
+    public boolean removeIf(java.util.function.Predicate<? super Object> filter) {
+        return innerList != null ? innerList.removeIf(filter) : super.removeIf(filter);
+    }
+
+    @Override
+    public void replaceAll(java.util.function.UnaryOperator<Object> operator) {
+        if (innerList != null) {
+            innerList.replaceAll(operator);
+        } else {
+            super.replaceAll(operator);
+        }
+    }
+
+    @Override
+    public void sort(java.util.Comparator<? super Object> c) {
+        if (innerList != null) {
+            innerList.sort(c);
+        } else {
+            super.sort(c);
+        }
+    }
+
+    @Override
+    public void forEach(java.util.function.Consumer<? super Object> action) {
+        if (innerList != null) {
+            innerList.forEach(action);
+        } else {
+            super.forEach(action);
+        }
+    }
+
+    @Override
+    public java.util.Spliterator<Object> spliterator() {
+        return innerList != null ? innerList.spliterator() : super.spliterator();
+    }
+
+    @Override
+    public java.util.stream.Stream<Object> stream() {
+        return innerList != null ? innerList.stream() : super.stream();
+    }
+
+    @Override
+    public java.util.stream.Stream<Object> parallelStream() {
+        return innerList != null ? innerList.parallelStream() : super.parallelStream();
+    }
+
+    @Override
+    public Object clone() {
+        if (innerList != null) {
+            // Copy contents into a new JSONArray whose backing storage is
+            // a default ArrayList — preserves iteration order without
+            // requiring the supplier to be cloneable. Callers that need a
+            // same-backing clone can construct one explicitly via the
+            // supplier ctor.
+            return new JSONArray(this);
+        }
+        return super.clone();
+    }
+
     /**
      * Fluent add — returns this for chaining.
      */

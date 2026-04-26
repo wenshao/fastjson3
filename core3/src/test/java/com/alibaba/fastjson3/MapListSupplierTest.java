@@ -113,4 +113,47 @@ class MapListSupplierTest {
     // the typed-bean field path goes through reflection-based field setters
     // that use their own Map factory. v1 of this feature ships untyped-only;
     // a follow-up can extend.
+
+    // Round-1 audit P0: ArrayList methods that walk elementData directly
+    // (equals/hashCode/forEach/stream/sort/etc.) silently saw the empty
+    // inherited storage when innerList was set. Pin each as a regression.
+
+    @Test
+    void supplierBackedJSONArray_equalsAndHashCode() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .listSupplier(LinkedList::new)
+                .build();
+        JSONArray arr = (JSONArray) mapper.readValue("[1,2,3]");
+        assertEquals(java.util.Arrays.asList(1, 2, 3), arr);
+        assertEquals(java.util.Arrays.asList(1, 2, 3).hashCode(), arr.hashCode());
+        assertTrue(arr.contains(2));
+        assertTrue(arr.containsAll(java.util.Arrays.asList(1, 3)));
+    }
+
+    @Test
+    void supplierBackedJSONArray_forEachAndStream() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .listSupplier(LinkedList::new)
+                .build();
+        JSONArray arr = (JSONArray) mapper.readValue("[10,20,30]");
+        long sum = 0;
+        for (Object o : arr) {
+            sum += ((Number) o).longValue();
+        }
+        assertEquals(60, sum);
+        assertEquals(60L, arr.stream().mapToLong(o -> ((Number) o).longValue()).sum());
+    }
+
+    @Test
+    void supplierBackedJSONArray_clone() {
+        ObjectMapper mapper = ObjectMapper.builder()
+                .listSupplier(LinkedList::new)
+                .build();
+        JSONArray arr = (JSONArray) mapper.readValue("[1,2,3]");
+        JSONArray clone = (JSONArray) arr.clone();
+        assertEquals(arr, clone);
+        // Clone uses default ArrayList backing (not the supplier's LinkedList);
+        // it preserves equality but not the same backing identity.
+        assertEquals(3, clone.size());
+    }
 }
