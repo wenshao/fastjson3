@@ -158,8 +158,31 @@ public abstract sealed class JSONParser implements Closeable
     protected int offset;
     protected int depth;
 
+    /**
+     * Per-instance map supplier override (fj2-compat). When set, the
+     * untyped {@link #readObject()} uses {@code new JSONObject(mapSupplier)}
+     * — backing storage is whatever the supplier returns
+     * (e.g. {@code ConcurrentHashMap}). Typically wired by
+     * {@link ObjectMapper.Builder#mapSupplier(java.util.function.Supplier)}.
+     */
+    protected java.util.function.Supplier<? extends java.util.Map<String, Object>> mapSupplier;
+
+    /**
+     * Per-instance list supplier override (fj2-compat). Mirrors
+     * {@link #mapSupplier} for {@link #readArray()}.
+     */
+    protected java.util.function.Supplier<? extends java.util.List<Object>> listSupplier;
+
     protected JSONParser(long features) {
         this.features = features;
+    }
+
+    public void setMapSupplier(java.util.function.Supplier<? extends java.util.Map<String, Object>> supplier) {
+        this.mapSupplier = supplier;
+    }
+
+    public void setListSupplier(java.util.function.Supplier<? extends java.util.List<Object>> supplier) {
+        this.listSupplier = supplier;
     }
 
     // ==================== Factory methods ====================
@@ -393,7 +416,7 @@ public abstract sealed class JSONParser implements Closeable
         }
         offset++;
 
-        JSONObject obj = new JSONObject();
+        JSONObject obj = mapSupplier != null ? new JSONObject(mapSupplier) : new JSONObject();
         skipWhitespace();
 
         if (offset < end() && ch(offset) == '}') {
@@ -435,7 +458,7 @@ public abstract sealed class JSONParser implements Closeable
         }
         offset++;
 
-        JSONArray arr = new JSONArray();
+        JSONArray arr = listSupplier != null ? new JSONArray(listSupplier) : new JSONArray();
         skipWhitespace();
 
         if (offset < end() && ch(offset) == ']') {
@@ -5444,7 +5467,7 @@ public abstract sealed class JSONParser implements Closeable
             if (++depth > MAX_NESTING_DEPTH) throw new JSONException("nesting depth exceeds " + MAX_NESTING_DEPTH);
             off++;
 
-            JSONObject obj = new JSONObject();
+            JSONObject obj = mapSupplier != null ? new JSONObject(mapSupplier) : new JSONObject();
             while (off < e && b[off] <= ' ') off++;
             if (off < e && b[off] == '}') { this.offset = off + 1; depth--; return obj; }
 
@@ -5489,7 +5512,7 @@ public abstract sealed class JSONParser implements Closeable
             if (++depth > MAX_NESTING_DEPTH) throw new JSONException("nesting depth exceeds " + MAX_NESTING_DEPTH);
             off++;
 
-            JSONArray arr = new JSONArray();
+            JSONArray arr = listSupplier != null ? new JSONArray(listSupplier) : new JSONArray();
             while (off < e && b[off] <= ' ') off++;
             if (off < e && b[off] == ']') { this.offset = off + 1; depth--; return arr; }
 
