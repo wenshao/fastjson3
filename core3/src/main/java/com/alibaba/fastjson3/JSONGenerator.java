@@ -1033,7 +1033,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     if (s == null) return pos;
                     Object sv = com.alibaba.fastjson3.util.JDKUtils.getStringValue(s);
                     if (sv instanceof byte[] strBytes && strBytes.length == s.length()) {
-                        int needed = fw.nameBytesLen + strBytes.length + 3;
+                        // Worst-case escape inflation is 6x (each control
+                        // byte emits a 6-char unicode escape). Pre-fix
+                        // this allocated only 1x, so a long string of
+                        // control chars walked off the end of the buffer
+                        // inside writeLatinStringStatic — fuzz target
+                        // fuzzAnySetterWithType found AIOOBE on a 1.4KB
+                        // control-char label with the default 8KB pool.
+                        int needed = fw.nameBytesLen + strBytes.length * 6 + 3;
                         if (pos + needed + UTF8.SAFE_MARGIN > buf.length) {
                             gen.count = pos; gen.ensureCapacity(needed); buf = gen.buf; pos = gen.count;
                         }

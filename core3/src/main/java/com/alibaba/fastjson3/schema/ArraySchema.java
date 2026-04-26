@@ -92,7 +92,7 @@ public final class ArraySchema extends JSONSchema {
             this.additionalItemSchema = null;
         } else if (additionalItemsObj instanceof JSONObject addObj) {
             this.additionalItems = false;
-            this.additionalItemSchema = JSONSchema.of(addObj, root);
+            this.additionalItemSchema = JSONSchema.of(addObj, root == null ? this : root);
         } else {
             this.additionalItems = true;
             this.additionalItemSchema = null;
@@ -103,7 +103,10 @@ public final class ArraySchema extends JSONSchema {
         if (containsRaw instanceof Boolean b) {
             this.contains = b ? Any.INSTANCE : Any.NOT_ANY;
         } else if (containsRaw instanceof JSONObject containsObj) {
-            this.contains = JSONSchema.of(containsObj, root);
+            // root may be null at top-level; fall back to `this` so
+            // a `$ref` inside contains resolves against the current
+            // schema's $defs / definitions.
+            this.contains = JSONSchema.of(containsObj, root == null ? this : root);
         } else {
             this.contains = null;
         }
@@ -121,7 +124,7 @@ public final class ArraySchema extends JSONSchema {
             this.unevaluatedItemsSchema = b ? Any.INSTANCE : Any.NOT_ANY;
             this.hasUnevaluatedItems = true;
         } else if (unevalItems instanceof JSONObject obj) {
-            this.unevaluatedItemsSchema = JSONSchema.of(obj, root);
+            this.unevaluatedItemsSchema = JSONSchema.of(obj, root == null ? this : root);
             this.hasUnevaluatedItems = true;
         } else {
             this.unevaluatedItemsSchema = null;

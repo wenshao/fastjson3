@@ -477,6 +477,112 @@ public class JSONParseFuzzTest {
         }
     }
 
+    /**
+     * Writer fuzz with non-ASCII / control / surrogate / escape-special
+     * keys. Pre-existing {@link #fuzzWriteJsonObject} uses
+     * {@code consumeAsciiString(16)} keys, so the four field-name escape
+     * bug classes that landed in PRs #132/#133 (backslash/quote/control
+     * escape, U+FFFD lone surrogate, ASM name encoder bypass, capacity
+     * estimate) all evaded that target. This one uses
+     * {@code consumeString(32)} which produces arbitrary UTF-16 incl.
+     * lone surrogates — the actual bug class. Asserts the written JSON
+     * is at least re-parseable (a stricter "key identity" assertion would
+     * fail by design under U+FFFD substitution; that's the correct trade).
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzWriteFieldNameEscape(FuzzedDataProvider data) {
+        com.alibaba.fastjson3.JSONObject obj = new com.alibaba.fastjson3.JSONObject();
+        int n = data.consumeInt(0, 16);
+        for (int i = 0; i < n && data.remainingBytes() >= 4; i++) {
+            String key = data.consumeString(32);
+            if (key == null || key.isEmpty()) {
+                continue;
+            }
+            obj.put(key, "v" + i);
+        }
+        String written;
+        try {
+            written = JSON.toJSONString(obj);
+        } catch (JSONException | StackOverflowError ignored) {
+            return;
+        }
+        try {
+            JSON.parse(written);
+        } catch (JSONException e) {
+            throw new AssertionError(
+                    "writer produced unparseable output: " + truncate(written), e);
+        }
+    }
+
+    /**
+     * Round-trip fuzz on {@code @JSONField(unwrapped=true)}. Reader-side
+     * support shipped recently (#120) and the writer fix for the ASM
+     * inner edge (#125) followed up — two fixes on a niche feature is
+     * the strongest fuzz signal.
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzParseUnwrapped(FuzzedDataProvider data) {
+        String input = data.consumeRemainingAsString();
+        if (input.isEmpty()) {
+            return;
+        }
+        try {
+            FuzzUnwrappedOuter o = JSON.parseObject(input, FuzzUnwrappedOuter.class);
+            if (o != null) {
+                JSON.toJSONString(o);
+            }
+        } catch (JSONException | NumberFormatException | ArithmeticException ignored) {
+            // expected
+        }
+    }
+
+    /**
+     * Polymorphic dispatch via {@code @JSONType(seeAlso)} + {@code @type}
+     * discriminator. PR #117 enabled non-sealed seeAlso routing; the
+     * router walks ancestor chains and dispatches to the matching subtype.
+     * Malformed discriminator values, unknown subtypes, missing type,
+     * cycles in seeAlso ancestry — all reachable from fuzzed input.
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzPolymorphic(FuzzedDataProvider data) {
+        String input = data.consumeRemainingAsString();
+        if (input.isEmpty()) {
+            return;
+        }
+        try {
+            FuzzAnimal a = JSON.parseObject(input, FuzzAnimal.class);
+            if (a != null) {
+                JSON.toJSONString(a);
+            }
+        } catch (JSONException | NumberFormatException | ArithmeticException
+                | ClassCastException ignored) {
+            // expected
+        }
+    }
+
+    /**
+     * The {@code @type ∩ anySetter} interaction PR #127 fixed: when a
+     * POJO has both a type discriminator and an anySetter map, the reader
+     * must consume {@code @type} for routing without leaking it into the
+     * extras map. Two collaborating features → cross-cutting state →
+     * fuzz-friendly.
+     */
+    @FuzzTest(maxDuration = "10s")
+    void fuzzAnySetterWithType(FuzzedDataProvider data) {
+        String input = data.consumeRemainingAsString();
+        if (input.isEmpty()) {
+            return;
+        }
+        try {
+            FuzzAnyTyped a = JSON.parseObject(input, FuzzAnyTyped.class);
+            if (a != null) {
+                JSON.toJSONString(a);
+            }
+        } catch (JSONException | NumberFormatException | ArithmeticException ignored) {
+            // expected
+        }
+    }
+
     private static String truncate(String s) {
         return s.length() <= 80 ? s : s.substring(0, 80) + "...";
     }
@@ -493,5 +599,51 @@ public class JSONParseFuzzTest {
         public double weight;
         public boolean active;
         public java.math.BigDecimal price;
+    }
+
+    // ==================== Targets for unwrapped / polymorphic / anySetter ====================
+
+    public static class FuzzUnwrappedOuter {
+        public String label;
+        @com.alibaba.fastjson3.annotation.JSONField(unwrapped = true)
+        public FuzzUnwrappedInner inner;
+    }
+
+    public static class FuzzUnwrappedInner {
+        public String name;
+        public int count;
+    }
+
+    @com.alibaba.fastjson3.annotation.JSONType(
+            seeAlso = {FuzzCat.class, FuzzDog.class})
+    public abstract static class FuzzAnimal {
+        public String name;
+    }
+
+    public static class FuzzCat extends FuzzAnimal {
+        public boolean indoor;
+    }
+
+    public static class FuzzDog extends FuzzAnimal {
+        public int barkLevel;
+    }
+
+    @com.alibaba.fastjson3.annotation.JSONType(typeName = "fanyt")
+    public static class FuzzAnyTyped {
+        public String label;
+        public int count;
+        private Map<String, Object> extras;
+
+        @com.alibaba.fastjson3.annotation.JSONField(anySetter = true)
+        public void putExtra(String key, Object value) {
+            if (extras == null) {
+                extras = new java.util.LinkedHashMap<>();
+            }
+            extras.put(key, value);
+        }
+
+        public Map<String, Object> getExtras() {
+            return extras;
+        }
     }
 }

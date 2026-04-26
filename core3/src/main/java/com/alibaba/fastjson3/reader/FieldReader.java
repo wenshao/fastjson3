@@ -620,9 +620,89 @@ public final class FieldReader implements Comparable<FieldReader> {
             return new AtomicBoolean(b);
         }
 
+        // Number/Boolean → String conversion (symmetric with the String →
+        // primitive-number block below). Pre-fix a JSON literal like
+        // `{"name":0}` for a String field stored the boxed Integer via
+        // Unsafe.putObject, which then ClassCastException'd on the next
+        // serialization through the String fast path. Found by
+        // {@code fuzzParseUnwrapped}.
+        if (fieldClass == String.class) {
+            if (value instanceof Number n) {
+                return n.toString();
+            }
+            if (value instanceof Boolean b) {
+                return b.toString();
+            }
+        }
+
         // Any value → AtomicReference conversion
         if (fieldClass == AtomicReference.class) {
             return new AtomicReference<>(value);
+        }
+
+        // String → primitive number conversion. Pre-fix a stringified
+        // numeric like {"count":"42"} for an int field walked off the
+        // end of convertValue (returned the String as-is) and
+        // setFieldValue then ClassCastException'd inside the int writer.
+        // The fuzz target {@code fuzzParseUnwrapped} surfaced this on
+        // the unwrapped path, but the regular POJO path was equally
+        // affected (it just wrapped the CCE as JSONException via
+        // wrapWithPath, masking the underlying gap).
+        if (value instanceof String str) {
+            // Empty string → primitive: treat as 0 / false to avoid the
+            // CCE that the audit's round-1 reverse identified. fastjson2
+            // does the same under default ReadFeature.NullAsZeroForPrimitive
+            // semantics; the empty-string case is a strict subset.
+            if (str.isEmpty()) {
+                if (fieldClass == int.class || fieldClass == Integer.class) {
+                    return 0;
+                }
+                if (fieldClass == long.class || fieldClass == Long.class) {
+                    return 0L;
+                }
+                if (fieldClass == double.class || fieldClass == Double.class) {
+                    return 0d;
+                }
+                if (fieldClass == float.class || fieldClass == Float.class) {
+                    return 0f;
+                }
+                if (fieldClass == short.class || fieldClass == Short.class) {
+                    return (short) 0;
+                }
+                if (fieldClass == byte.class || fieldClass == Byte.class) {
+                    return (byte) 0;
+                }
+                if (fieldClass == boolean.class || fieldClass == Boolean.class) {
+                    return Boolean.FALSE;
+                }
+            } else {
+                if (fieldClass == int.class || fieldClass == Integer.class) {
+                    return Integer.parseInt(str);
+                }
+                if (fieldClass == long.class || fieldClass == Long.class) {
+                    return Long.parseLong(str);
+                }
+                if (fieldClass == double.class || fieldClass == Double.class) {
+                    return Double.parseDouble(str);
+                }
+                if (fieldClass == float.class || fieldClass == Float.class) {
+                    return Float.parseFloat(str);
+                }
+                if (fieldClass == short.class || fieldClass == Short.class) {
+                    return Short.parseShort(str);
+                }
+                if (fieldClass == byte.class || fieldClass == Byte.class) {
+                    return Byte.parseByte(str);
+                }
+                if (fieldClass == boolean.class || fieldClass == Boolean.class) {
+                    if ("true".equalsIgnoreCase(str)) {
+                        return Boolean.TRUE;
+                    }
+                    if ("false".equalsIgnoreCase(str)) {
+                        return Boolean.FALSE;
+                    }
+                }
+            }
         }
 
         // String → temporal type conversion

@@ -1257,31 +1257,40 @@ public final class ObjectReaderCreator {
      * {@code convertValue}, producing divergent values depending on entry point.
      */
     static Object applyUnwrappedValueFromMap(UnwrappedEntry entry, Object rawValue, long features) {
-        ObjectReader<?> custom = entry.resolveCustomReader();
-        if (custom == null) {
-            return entry.innerReader.convertValue(rawValue);
-        }
-        // Do NOT short-circuit on rawValue==null. The parser path
-        // (writeUnwrappedValue) always hands the custom reader the JSON token
-        // stream even when the literal is null, so a deserializeUsing that
-        // maps null to a sentinel (Optional.empty, a NOT_SET singleton, etc.)
-        // must get the same chance here. Serialise null → "null" so the
-        // custom reader sees a well-formed JSON token either way.
-        String json = com.alibaba.fastjson3.JSON.toJSONString(rawValue);
-        try (JSONParser p = JSONParser.of(json)) {
-            return custom.readObject(p, entry.innerReader.fieldType, entry.innerReader.fieldName, features);
+        try {
+            ObjectReader<?> custom = entry.resolveCustomReader();
+            if (custom == null) {
+                return entry.innerReader.convertValue(rawValue);
+            }
+            // Do NOT short-circuit on rawValue==null. The parser path
+            // (writeUnwrappedValue) always hands the custom reader the JSON token
+            // stream even when the literal is null, so a deserializeUsing that
+            // maps null to a sentinel (Optional.empty, a NOT_SET singleton, etc.)
+            // must get the same chance here. Serialise null → "null" so the
+            // custom reader sees a well-formed JSON token either way.
+            String json = com.alibaba.fastjson3.JSON.toJSONString(rawValue);
+            try (JSONParser p = JSONParser.of(json)) {
+                return custom.readObject(p, entry.innerReader.fieldType, entry.innerReader.fieldName, features);
+            }
+        } catch (RuntimeException e) {
+            // Wrap to match the live-parser writeUnwrappedValue wrap pattern.
+            throw com.alibaba.fastjson3.JSONException.wrapWithPath(e, entry.innerReader.fieldName);
         }
     }
 
     /** Record-side variant of {@link #applyUnwrappedValueFromMap}. */
     static Object applyRecordUnwrappedValueFromMap(RecordUnwrappedEntry entry, Object rawValue, long features) {
-        ObjectReader<?> custom = entry.resolveCustomReader();
-        if (custom == null) {
-            return entry.innerReader.convertValue(rawValue);
-        }
-        String json = com.alibaba.fastjson3.JSON.toJSONString(rawValue);
-        try (JSONParser p = JSONParser.of(json)) {
-            return custom.readObject(p, entry.innerReader.fieldType, entry.innerReader.fieldName, features);
+        try {
+            ObjectReader<?> custom = entry.resolveCustomReader();
+            if (custom == null) {
+                return entry.innerReader.convertValue(rawValue);
+            }
+            String json = com.alibaba.fastjson3.JSON.toJSONString(rawValue);
+            try (JSONParser p = JSONParser.of(json)) {
+                return custom.readObject(p, entry.innerReader.fieldType, entry.innerReader.fieldName, features);
+            }
+        } catch (RuntimeException e) {
+            throw com.alibaba.fastjson3.JSONException.wrapWithPath(e, entry.innerReader.fieldName);
         }
     }
 
@@ -1888,15 +1897,24 @@ public final class ObjectReaderCreator {
          */
         private static void writeUnwrappedValue(JSONParser parser, Object inner, UnwrappedEntry entry, long features) {
             FieldReader innerFr = entry.innerReader;
-            ObjectReader<?> custom = entry.resolveCustomReader();
-            if (custom != null) {
-                Object v = custom.readObject(parser, innerFr.fieldType, innerFr.fieldName, features);
-                innerFr.setFieldValue(inner, v);
-                return;
+            try {
+                ObjectReader<?> custom = entry.resolveCustomReader();
+                if (custom != null) {
+                    Object v = custom.readObject(parser, innerFr.fieldType, innerFr.fieldName, features);
+                    innerFr.setFieldValue(inner, v);
+                    return;
+                }
+                Object fvalue = parser.readAny();
+                Object converted = innerFr.convertValue(fvalue);
+                innerFr.setFieldValue(inner, converted);
+            } catch (RuntimeException e) {
+                // Mirror the regular-field-path wrapWithPath: the unwrapped
+                // reader was previously letting CCE / NFE propagate raw,
+                // which the fuzz target {@code fuzzParseUnwrapped} flagged
+                // as an unexpected exception type leaking from a typed
+                // parse call.
+                throw com.alibaba.fastjson3.JSONException.wrapWithPath(e, innerFr.fieldName);
             }
-            Object fvalue = parser.readAny();
-            Object converted = innerFr.convertValue(fvalue);
-            innerFr.setFieldValue(inner, converted);
         }
 
         /**
@@ -3053,14 +3071,21 @@ public final class ObjectReaderCreator {
             }
             Object scratch = ensureRecordScratch(values, entry);
             FieldReader innerFr = entry.innerReader;
-            ObjectReader<?> custom = entry.resolveCustomReader();
-            if (custom != null) {
-                Object v = custom.readObject(parser, innerFr.fieldType, innerFr.fieldName, features);
-                innerFr.setFieldValue(scratch, v);
-            } else {
-                Object fvalue = parser.readAny();
-                Object converted = innerFr.convertValue(fvalue);
-                innerFr.setFieldValue(scratch, converted);
+            try {
+                ObjectReader<?> custom = entry.resolveCustomReader();
+                if (custom != null) {
+                    Object v = custom.readObject(parser, innerFr.fieldType, innerFr.fieldName, features);
+                    innerFr.setFieldValue(scratch, v);
+                } else {
+                    Object fvalue = parser.readAny();
+                    Object converted = innerFr.convertValue(fvalue);
+                    innerFr.setFieldValue(scratch, converted);
+                }
+            } catch (RuntimeException e) {
+                // Mirror the POJO-side writeUnwrappedValue wrap (line 1907) so
+                // record-side type mismatches surface as JSONException with
+                // field path rather than raw NFE/CCE.
+                throw com.alibaba.fastjson3.JSONException.wrapWithPath(e, innerFr.fieldName);
             }
             return true;
         }
