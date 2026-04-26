@@ -384,8 +384,26 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     static byte[] encodeNameBytes(String name) {
         // Reuse char-side escape, then UTF-8 encode the result. Single
         // allocation cost is negligible (FieldWriter init only).
+        // Use an explicit encoder configured to substitute lone surrogates
+        // with U+FFFD (EF BF BD), matching JSONGenerator's value-side
+        // surrogate handling. Java's default String.getBytes(UTF_8) uses
+        // `?` (0x3F) as the substitution byte, which would diverge from
+        // the value path's behaviour on the same input.
         char[] encoded = encodeNameChars(name);
-        return new String(encoded).getBytes(StandardCharsets.UTF_8);
+        java.nio.charset.CharsetEncoder enc = StandardCharsets.UTF_8.newEncoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPLACE)
+                .replaceWith(new byte[]{(byte) 0xEF, (byte) 0xBF, (byte) 0xBD});
+        try {
+            java.nio.ByteBuffer bb = enc.encode(java.nio.CharBuffer.wrap(encoded));
+            byte[] out = new byte[bb.remaining()];
+            bb.get(out);
+            return out;
+        } catch (java.nio.charset.CharacterCodingException e) {
+            // REPLACE actions cannot raise CharacterCodingException —
+            // re-throw as unchecked just so the signature stays clean.
+            throw new IllegalStateException(e);
+        }
     }
 
     private static boolean nameNeedsEscape(String name, int len) {

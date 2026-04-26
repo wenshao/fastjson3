@@ -3,6 +3,8 @@ package com.alibaba.fastjson3;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -359,5 +361,131 @@ class StringEncodingEdgeTest {
         byte[] jsonBytes = JSON.toJSONBytes(text);
         String json = new String(jsonBytes, StandardCharsets.UTF_8);
         assertEquals(text, JSON.parseObject(json, String.class), "Round-trip for tail Latin-1 bytes");
+    }
+
+    // ==================== Lone surrogate handling (UTF-8 byte path) ====================
+    // RFC 3629 \u00a73 forbids isolated surrogate code points in UTF-8. The byte
+    // generator must replace lone surrogates with U+FFFD when serialising.
+
+    @Test
+    void writeBytes_loneHighSurrogate_emitsReplacementChar() {
+        String input = "x" + (char) 0xD800 + "y";
+        byte[] bytes = JSON.toJSONBytes(input);
+        // Expected: "x" + \xEF\xBF\xBD (U+FFFD) + "y" wrapped in quotes
+        assertArrayEquals(
+                new byte[]{'"', 'x', (byte) 0xEF, (byte) 0xBF, (byte) 0xBD, 'y', '"'},
+                bytes,
+                "Lone high surrogate in value must emit U+FFFD");
+    }
+
+    @Test
+    void writeBytes_loneLowSurrogate_emitsReplacementChar() {
+        String input = "x" + (char) 0xDC00 + "y";
+        byte[] bytes = JSON.toJSONBytes(input);
+        // Pre-fix this emitted CESU-8 bytes 0xED 0xB0 0x80 (invalid UTF-8).
+        assertArrayEquals(
+                new byte[]{'"', 'x', (byte) 0xEF, (byte) 0xBF, (byte) 0xBD, 'y', '"'},
+                bytes,
+                "Lone low surrogate in value must emit U+FFFD");
+    }
+
+    @Test
+    void writeBytes_pairedSurrogates_emitsFourByteUtf8() {
+        // U+1F600 (\ud83d\ude00) round-trips correctly via 4-byte UTF-8.
+        String input = "x" + new String(Character.toChars(0x1F600)) + "y";
+        byte[] bytes = JSON.toJSONBytes(input);
+        assertArrayEquals(
+                new byte[]{'"', 'x', (byte) 0xF0, (byte) 0x9F, (byte) 0x98, (byte) 0x80, 'y', '"'},
+                bytes);
+        assertEquals(input, JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), String.class));
+    }
+
+    @Test
+    void writeBytes_loneLowSurrogateInFieldName_emitsReplacementChar() {
+        // Default writeName path (quoted) \u2014 first of the two writeName
+        // branches the fix touches. See the UnquoteFieldName variant below
+        // for the second branch.
+        String key = "a" + (char) 0xDC00 + "b";
+        JSONObject obj = new JSONObject();
+        obj.put(key, "v");
+        byte[] bytes = JSON.toJSONBytes(obj);
+        // Validate output decodes cleanly as UTF-8 (no CESU-8 bytes).
+        String decoded = new String(bytes, StandardCharsets.UTF_8);
+        JSONObject reparsed = JSON.parseObject(decoded);
+        assertTrue(reparsed.containsKey("a\ufffdb"));
+        assertEquals("v", reparsed.get("a\ufffdb"));
+    }
+
+    @Test
+    void writeBytes_loneLowSurrogateInFieldName_unquoteFieldName() {
+        // Second writeName branch \u2014 gated by WriteFeature.UnquoteFieldName.
+        // The fix touched both branches identically; this exercises the
+        // one the default-feature test above doesn't reach.
+        String key = "a" + (char) 0xDC00 + "b";
+        JSONObject obj = new JSONObject();
+        obj.put(key, "v");
+        byte[] bytes = JSON.toJSONBytes(obj, WriteFeature.UnquoteFieldName);
+        // Should contain U+FFFD bytes, not CESU-8 ED B0 80.
+        assertEquals(-1, indexOfBytes(bytes, new byte[]{(byte) 0xED, (byte) 0xB0, (byte) 0x80}),
+                "must not emit CESU-8 surrogate bytes");
+        assertTrue(indexOfBytes(bytes, new byte[]{(byte) 0xEF, (byte) 0xBF, (byte) 0xBD}) >= 0,
+                "must emit U+FFFD replacement");
+    }
+
+    @Test
+    void writeBytes_fieldWriterEncodeNameBytes_usesReplacementChar() {
+        // FieldWriter.encodeNameBytes pre-encodes `@JSONField(name="...")`
+        // at FieldWriter init time. Pre-fix it routed through Java's default
+        // `String.getBytes(UTF_8)` which substitutes `?` (0x3F) for lone
+        // surrogates \u2014 inconsistent with the value path's U+FFFD behaviour.
+        // Reverse audit P2: produce identical wire bytes regardless of
+        // whether a lone surrogate appears in name vs value.
+        SurrogateNameBean b = new SurrogateNameBean();
+        b.x = 1;
+        byte[] bytes = JSON.toJSONBytes(b);
+        // Field name was encoded by FieldWriter.encodeNameBytes once at init.
+        // Pre-fix: `78 3f 79` (`x?y`); post-fix: `78 ef bf bd 79` (`x` + U+FFFD + `y`).
+        assertTrue(indexOfBytes(bytes, new byte[]{(byte) 0xEF, (byte) 0xBF, (byte) 0xBD}) >= 0,
+                "name must emit U+FFFD via FieldWriter.encodeNameBytes");
+        // Also confirm no lingering `?` substitute inside the quoted name.
+        assertEquals(-1, indexOfBytes(bytes, new byte[]{'?'}),
+                "must not contain JDK default replacement '?'");
+    }
+
+    static class SurrogateNameBean {
+        // Java strings can hold lone surrogates as char[]; the annotation's
+        // String constant pool can therefore carry an isolated 0xDC00.
+        @com.alibaba.fastjson3.annotation.JSONField(name = "x\uDC00y")
+        public int x;
+    }
+
+    private static int indexOfBytes(byte[] haystack, byte[] needle) {
+        outer:
+        for (int i = 0; i + needle.length <= haystack.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) {
+                    continue outer;
+                }
+            }
+            return i;
+        }
+        return -1;
+    }
+
+    @Test
+    void charGeneratorToByteArray_loneSurrogate_emitsReplacementChar() {
+        // JSONGenerator.Char buffers chars; toByteArray() converts the
+        // accumulated chars to UTF-8 bytes. Without an explicit encoder
+        // configuration, JDK's default String.getBytes(UTF_8) substitutes
+        // `?` (0x3F) for lone surrogates — diverges from the UTF8
+        // generator's U+FFFD policy on the same input.
+        try (com.alibaba.fastjson3.JSONGenerator g = com.alibaba.fastjson3.JSONGenerator.of()) {
+            g.writeString("x" + (char) 0xDC00 + "y");
+            byte[] bytes = g.toByteArray();
+            assertEquals(-1, indexOfBytes(bytes, new byte[]{'?'}),
+                    "Char gen toByteArray must not substitute '?'");
+            assertTrue(indexOfBytes(bytes, new byte[]{(byte) 0xEF, (byte) 0xBF, (byte) 0xBD}) >= 0,
+                    "Char gen toByteArray must emit U+FFFD for lone surrogate");
+        }
     }
 }

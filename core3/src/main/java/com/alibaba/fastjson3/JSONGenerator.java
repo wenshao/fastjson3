@@ -2089,7 +2089,24 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         @Override
         public byte[] toByteArray() {
             int c = outputCount();
-            return new String(buf, 0, c).getBytes(StandardCharsets.UTF_8);
+            // Use an explicit encoder configured to substitute lone
+            // surrogates with U+FFFD, matching the UTF-8 generator's
+            // value-side surrogate handling. JDK default
+            // `String.getBytes(UTF_8)` falls back to `?` (0x3F) — the
+            // same inconsistency the round-2 audit flagged on
+            // FieldWriter.encodeNameBytes (now fixed in lockstep).
+            java.nio.charset.CharsetEncoder enc = StandardCharsets.UTF_8.newEncoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPLACE)
+                    .replaceWith(new byte[]{(byte) 0xEF, (byte) 0xBF, (byte) 0xBD});
+            try {
+                java.nio.ByteBuffer bb = enc.encode(java.nio.CharBuffer.wrap(buf, 0, c));
+                byte[] out = new byte[bb.remaining()];
+                bb.get(out);
+                return out;
+            } catch (java.nio.charset.CharacterCodingException e) {
+                throw new IllegalStateException(e);
+            }
         }
 
         @Override
@@ -2333,6 +2350,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                             buf[count++] = (byte) 0xBF;
                             buf[count++] = (byte) 0xBD;
                         }
+                    } else if (Character.isLowSurrogate(ch)) {
+                        // Lone low surrogate — emit U+FFFD (matches the
+                        // lone-high branch above; the general 3-byte else
+                        // would produce CESU-8 bytes that are invalid UTF-8
+                        // per RFC 3629 §3).
+                        buf[count++] = (byte) 0xEF;
+                        buf[count++] = (byte) 0xBF;
+                        buf[count++] = (byte) 0xBD;
                     } else {
                         buf[count++] = (byte) (0xE0 | (ch >> 12));
                         buf[count++] = (byte) (0x80 | ((ch >> 6) & 0x3F));
@@ -2393,6 +2418,14 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                             buf[count++] = (byte) 0xBF;
                             buf[count++] = (byte) 0xBD;
                         }
+                    } else if (Character.isLowSurrogate(ch)) {
+                        // Lone low surrogate — emit U+FFFD (matches the
+                        // lone-high branch above; the general 3-byte else
+                        // would produce CESU-8 bytes that are invalid UTF-8
+                        // per RFC 3629 §3).
+                        buf[count++] = (byte) 0xEF;
+                        buf[count++] = (byte) 0xBF;
+                        buf[count++] = (byte) 0xBD;
                     } else {
                         buf[count++] = (byte) (0xE0 | (ch >> 12));
                         buf[count++] = (byte) (0x80 | ((ch >> 6) & 0x3F));
@@ -2896,6 +2929,15 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                         buf[pos++] = (byte) 0xBF;
                         buf[pos++] = (byte) 0xBD;
                     }
+                } else if (Character.isLowSurrogate(ch)) {
+                    // Lone low surrogate (any preceding high would have
+                    // consumed it via i++). Pre-fix the general 3-byte
+                    // else branch emitted CESU-8 bytes (ed bX XX) which
+                    // are invalid UTF-8 per RFC 3629 §3. Match the lone-
+                    // high branch's U+FFFD replacement.
+                    buf[pos++] = (byte) 0xEF;
+                    buf[pos++] = (byte) 0xBF;
+                    buf[pos++] = (byte) 0xBD;
                 } else {
                     buf[pos++] = (byte) (0xE0 | (ch >> 12));
                     buf[pos++] = (byte) (0x80 | ((ch >> 6) & 0x3F));
