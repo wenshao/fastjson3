@@ -531,6 +531,113 @@ public final class FieldReader implements Comparable<FieldReader> {
     /**
      * Convert a raw JSON-parsed value to the type expected by this field.
      */
+    /**
+     * Materialise a {@link java.util.List} (typically a {@link com.alibaba.fastjson3.JSONArray}
+     * produced by {@code parser.readAny()}) into an array of the declared
+     * {@code componentType}. Element coercion handles every non-POJO case
+     * the dedicated TAG_*_ARRAY fast paths cover, so once the runtime
+     * fallback reaches {@link #convertValue} the user sees the same shape
+     * regardless of which path served them:
+     *
+     * <ul>
+     *   <li>Direct {@code componentType.isInstance} copy
+     *       (JSONObject[] / JSONArray[] / Object[] / interface arrays).</li>
+     *   <li>Number coercion to int / long / double / float / short / byte
+     *       (and corresponding boxed types).</li>
+     *   <li>Boolean → {@code boolean} / {@code Boolean}.</li>
+     *   <li>Single-character {@link CharSequence} → {@code char} / {@link Character}.</li>
+     *   <li>String → enum constant via {@link Enum#valueOf(Class, String)}.</li>
+     *   <li>Recursive nested arrays (e.g. {@code int[][]} or {@code JSONObject[][]}).</li>
+     * </ul>
+     *
+     * Non-coercible elements are left at the slot's default-init value:
+     * {@code null} for reference component types, the primitive zero for
+     * primitive component types. This trades a clean exception for silent
+     * null, which is consistent with how the rest of {@link #convertValue}
+     * behaves on unconvertible values.
+     */
+    private static Object coerceListToArray(java.util.List<?> list, Class<?> componentType) {
+        int n = list.size();
+        Object array = java.lang.reflect.Array.newInstance(componentType, n);
+        for (int i = 0; i < n; i++) {
+            Object element = list.get(i);
+            if (element == null) {
+                if (!componentType.isPrimitive()) {
+                    java.lang.reflect.Array.set(array, i, null);
+                }
+                continue;
+            }
+            if (componentType.isInstance(element)) {
+                java.lang.reflect.Array.set(array, i, element);
+                continue;
+            }
+            if (element instanceof Number number) {
+                if (componentType == int.class || componentType == Integer.class) {
+                    java.lang.reflect.Array.set(array, i, number.intValue());
+                } else if (componentType == long.class || componentType == Long.class) {
+                    java.lang.reflect.Array.set(array, i, number.longValue());
+                } else if (componentType == double.class || componentType == Double.class) {
+                    java.lang.reflect.Array.set(array, i, number.doubleValue());
+                } else if (componentType == float.class || componentType == Float.class) {
+                    java.lang.reflect.Array.set(array, i, number.floatValue());
+                } else if (componentType == short.class || componentType == Short.class) {
+                    java.lang.reflect.Array.set(array, i, number.shortValue());
+                } else if (componentType == byte.class || componentType == Byte.class) {
+                    java.lang.reflect.Array.set(array, i, number.byteValue());
+                }
+                continue;
+            }
+            if (element instanceof Boolean b
+                    && (componentType == boolean.class || componentType == Boolean.class)) {
+                java.lang.reflect.Array.set(array, i, b);
+                continue;
+            }
+            if (element instanceof CharSequence cs && cs.length() == 1
+                    && (componentType == char.class || componentType == Character.class)) {
+                java.lang.reflect.Array.set(array, i, cs.charAt(0));
+                continue;
+            }
+            if (componentType.isEnum() && element instanceof String name) {
+                try {
+                    @SuppressWarnings({"rawtypes", "unchecked"})
+                    Object constant = Enum.valueOf((Class<Enum>) componentType.asSubclass(Enum.class), name);
+                    java.lang.reflect.Array.set(array, i, constant);
+                } catch (IllegalArgumentException ignored) {
+                    // unknown enum constant — leave the slot null
+                }
+                continue;
+            }
+            if (componentType.isArray() && element instanceof java.util.List<?> nested) {
+                java.lang.reflect.Array.set(array, i,
+                        coerceListToArray(nested, componentType.getComponentType()));
+                continue;
+            }
+            // POJO array: element is a Map (typically JSONObject from readAny())
+            // and componentType is a concrete user POJO. Mirror the scalar
+            // Map → POJO branch later in convertValue (line ~990): JSON
+            // round-trip through the shared ObjectMapper. Per-element
+            // round-trip is the same anti-pattern the scalar branch uses,
+            // so this PR doesn't introduce a worse perf shape — just extends
+            // the existing one across array elements. A future PR can swap
+            // both call sites for a direct ObjectReader lookup.
+            if (element instanceof java.util.Map
+                    && !componentType.isInterface()
+                    && !componentType.isPrimitive()
+                    && !componentType.isArray()
+                    && !java.util.Map.class.isAssignableFrom(componentType)
+                    && !java.util.Collection.class.isAssignableFrom(componentType)
+                    && componentType != Object.class) {
+                String json = com.alibaba.fastjson3.JSON.toJSONString(element);
+                java.lang.reflect.Array.set(array, i,
+                        com.alibaba.fastjson3.JSON.parseObject(json, componentType));
+            }
+            // Anything else: leave null. Reaches here for unsupported shapes
+            // like a Boolean element with a Number-only component type, or
+            // String with non-enum / non-char component.
+        }
+        return array;
+    }
+
     public Object convertValue(Object value) {
         if (value == null) {
             return null;
@@ -548,6 +655,25 @@ public final class FieldReader implements Comparable<FieldReader> {
         // Fast path: already the right type
         if (targetClass.isInstance(value)) {
             return value;
+        }
+
+        // Array-typed field guard. For an array-typed field, the only
+        // safe payloads are (a) already-an-array of an assignable type
+        // (covered by the isInstance fast path above) and (b) a List from
+        // parser.readAny(). Any other shape — a scalar Number, String,
+        // Map, etc. — must NOT reach the trailing `return value`, because
+        // FieldReader.setFieldValue's Unsafe.putObject does no type
+        // validation and would tear the field's static type, leading to
+        // heap pollution and JVM SIGSEGVs once the JIT warms up. Materialise
+        // a real array for the List case; return null for anything else,
+        // which is consistent with how convertValue degrades on other
+        // unconvertible shapes (callers see "field not set" rather than
+        // a broken array reference).
+        if (targetClass.isArray()) {
+            if (value instanceof java.util.List<?> list) {
+                return coerceListToArray(list, targetClass.getComponentType());
+            }
+            return null;
         }
 
         // Numeric narrowing / widening / temporal conversion
