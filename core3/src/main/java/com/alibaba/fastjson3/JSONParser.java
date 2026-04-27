@@ -1100,6 +1100,16 @@ public abstract sealed class JSONParser implements Closeable
         if (type instanceof Class) {
             return read((Class<T>) type);
         }
+        // SPI override path: a user-registered ObjectReader keyed by the
+        // ParameterizedType wins over the built-in dispatch table. Mirrors
+        // the same ordering in read(Class) at line 1018 so direct
+        // parser.read(parameterizedType) callers see consistent behavior
+        // with the Class entry-point.
+        ObjectReader<T> registered =
+                (ObjectReader<T>) ObjectMapper.shared().getObjectReader(type);
+        if (registered != null) {
+            return registered.readObject(this, type, null, features);
+        }
         // ParameterizedType dispatch for common generic collections. Lets
         // `new TypeReference<List<User>>() {}` (and Map / Set variants)
         // work end-to-end without the user having to special-case them to
@@ -1131,7 +1141,28 @@ public abstract sealed class JSONParser implements Closeable
                 }
                 return (T) readGenericMap(args[0], args[1]);
             }
-            if (args.length == 1 && java.util.List.class.isAssignableFrom(raw)) {
+            if (args.length == 1 && java.util.Set.class.isAssignableFrom(raw)) {
+                // Set must be checked before the broader List / Collection
+                // gate below — both Set and List extend Collection, so a
+                // Collection-shaped gate would steal Set parameterizations.
+                if (raw == java.util.TreeSet.class
+                        || raw == java.util.SortedSet.class
+                        || raw == java.util.NavigableSet.class) {
+                    return (T) readTypedSet(args[0], java.util.TreeSet::new);
+                }
+                if (raw == java.util.concurrent.CopyOnWriteArraySet.class) {
+                    return (T) readTypedSet(args[0], java.util.concurrent.CopyOnWriteArraySet::new);
+                }
+                return (T) readGenericSet(args[0]);
+            }
+            if (args.length == 1
+                    && (java.util.Collection.class.isAssignableFrom(raw) || raw == Iterable.class)) {
+                // Collection (rather than List) gate so Queue / Deque
+                // ParameterizedType targets — which extend Collection but
+                // NOT List — are routed here. Class-typed Queue.class /
+                // Deque.class already use `==` checks in read(Class) so the
+                // discrepancy was visible only on the TypeReference path
+                // until this widening.
                 if (raw == java.util.LinkedList.class
                         || raw == java.util.Queue.class
                         || raw == java.util.Deque.class
@@ -1149,23 +1180,9 @@ public abstract sealed class JSONParser implements Closeable
                 }
                 return (T) readGenericList(args[0]);
             }
-            if (args.length == 1 && java.util.Set.class.isAssignableFrom(raw)) {
-                if (raw == java.util.TreeSet.class
-                        || raw == java.util.SortedSet.class
-                        || raw == java.util.NavigableSet.class) {
-                    return (T) readTypedSet(args[0], java.util.TreeSet::new);
-                }
-                if (raw == java.util.concurrent.CopyOnWriteArraySet.class) {
-                    return (T) readTypedSet(args[0], java.util.concurrent.CopyOnWriteArraySet::new);
-                }
-                return (T) readGenericSet(args[0]);
-            }
         }
-        ObjectReader<T> reader = (ObjectReader<T>) ObjectMapper.shared().getObjectReader(type);
-        if (reader == null) {
-            throw new JSONException("no ObjectReader registered for type: " + type);
-        }
-        return reader.readObject(this, type, null, features);
+        // No SPI override (checked at top), no built-in dispatch matched.
+        throw new JSONException("no ObjectReader registered for type: " + type);
     }
 
     /**

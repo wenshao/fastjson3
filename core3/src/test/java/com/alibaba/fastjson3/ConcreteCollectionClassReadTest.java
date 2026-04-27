@@ -305,6 +305,23 @@ class ConcreteCollectionClassReadTest {
     }
 
     @Test
+    void typeRef_queue_yieldsLinkedList() {
+        Queue<Integer> q = ObjectMapper.shared().readValue(
+                "[1,2,3]", new TypeReference<Queue<Integer>>() {});
+        assertEquals(LinkedList.class, q.getClass());
+        assertEquals(3, q.size());
+    }
+
+    @Test
+    void typeRef_deque_yieldsLinkedList() {
+        Deque<Integer> d = ObjectMapper.shared().readValue(
+                "[1,2,3]", new TypeReference<Deque<Integer>>() {});
+        assertEquals(LinkedList.class, d.getClass());
+        assertEquals(Integer.valueOf(1), d.peekFirst());
+        assertEquals(Integer.valueOf(3), d.peekLast());
+    }
+
+    @Test
     void typeRef_rawList_unchanged_arrayList() {
         // Generic List / Set / Map TypeReferences still go to the generic
         // default — pin the negative case so future drift is caught.
@@ -314,6 +331,37 @@ class ConcreteCollectionClassReadTest {
     }
 
     // ---- SPI override still wins ----
+
+    @Test
+    void registerReader_typeRefTreeMap_takesPrecedenceOverDispatch() {
+        // Round-3 P1: read(Type)'s ParameterizedType branch must consult the
+        // shared mapper's getObjectReader BEFORE running the concrete-impl
+        // dispatch table, mirroring read(Class) ordering. Otherwise users
+        // calling parser.read(parameterizedType) directly would see a
+        // built-in TreeMap instead of their registered reader.
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        java.lang.reflect.Type typeRef = new TypeReference<TreeMap<String, Object>>() {}.getType();
+        ObjectReader<TreeMap<String, Object>> custom =
+                (parser, fieldType, fieldName, features) -> {
+                    calls.incrementAndGet();
+                    TreeMap<String, Object> tm = new TreeMap<>();
+                    tm.put("__intercepted_by_typeref", Boolean.TRUE);
+                    parser.readObject();
+                    return tm;
+                };
+        ObjectMapper mapper = ObjectMapper.shared();
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        ObjectReader rawCustom = (ObjectReader) custom;
+        mapper.registerReader(typeRef, rawCustom);
+        try {
+            TreeMap<String, Object> tm = mapper.readValue(
+                    "{\"x\":1}", new TypeReference<TreeMap<String, Object>>() {});
+            assertEquals(Boolean.TRUE, tm.get("__intercepted_by_typeref"));
+            assertTrue(calls.get() >= 1);
+        } finally {
+            mapper.unregisterReader(typeRef);
+        }
+    }
 
     @Test
     void registerReader_treeMap_takesPrecedence() {
