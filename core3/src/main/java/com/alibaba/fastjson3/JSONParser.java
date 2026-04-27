@@ -1108,14 +1108,57 @@ public abstract sealed class JSONParser implements Closeable
         if (type instanceof java.lang.reflect.ParameterizedType pt
                 && pt.getRawType() instanceof Class<?> raw) {
             java.lang.reflect.Type[] args = pt.getActualTypeArguments();
+            if (args.length == 2 && java.util.Map.class.isAssignableFrom(raw)) {
+                // Mirror the Class-typed dispatch table: a TypeReference whose
+                // raw type asks for a specific impl (TreeMap, ConcurrentHashMap,
+                // ...) must materialise that impl, not the generic
+                // LinkedHashMap default. Order matches read(Class) above.
+                if (raw == java.util.HashMap.class) {
+                    return (T) readTypedMap(args[0], args[1], java.util.HashMap::new);
+                }
+                if (raw == java.util.TreeMap.class
+                        || raw == java.util.SortedMap.class
+                        || raw == java.util.NavigableMap.class) {
+                    return (T) readTypedMap(args[0], args[1], java.util.TreeMap::new);
+                }
+                if (raw == java.util.concurrent.ConcurrentMap.class
+                        || raw == java.util.concurrent.ConcurrentHashMap.class) {
+                    return (T) readTypedMap(args[0], args[1], java.util.concurrent.ConcurrentHashMap::new);
+                }
+                if (raw == java.util.concurrent.ConcurrentNavigableMap.class
+                        || raw == java.util.concurrent.ConcurrentSkipListMap.class) {
+                    return (T) readTypedMap(args[0], args[1], java.util.concurrent.ConcurrentSkipListMap::new);
+                }
+                return (T) readGenericMap(args[0], args[1]);
+            }
             if (args.length == 1 && java.util.List.class.isAssignableFrom(raw)) {
+                if (raw == java.util.LinkedList.class
+                        || raw == java.util.Queue.class
+                        || raw == java.util.Deque.class
+                        || raw == java.util.AbstractSequentialList.class) {
+                    return (T) readTypedList(args[0], java.util.LinkedList::new);
+                }
+                if (raw == java.util.Vector.class) {
+                    return (T) readTypedList(args[0], java.util.Vector::new);
+                }
+                if (raw == java.util.Stack.class) {
+                    return (T) readTypedList(args[0], java.util.Stack::new);
+                }
+                if (raw == java.util.concurrent.CopyOnWriteArrayList.class) {
+                    return (T) readTypedList(args[0], java.util.concurrent.CopyOnWriteArrayList::new);
+                }
                 return (T) readGenericList(args[0]);
             }
             if (args.length == 1 && java.util.Set.class.isAssignableFrom(raw)) {
+                if (raw == java.util.TreeSet.class
+                        || raw == java.util.SortedSet.class
+                        || raw == java.util.NavigableSet.class) {
+                    return (T) readTypedSet(args[0], java.util.TreeSet::new);
+                }
+                if (raw == java.util.concurrent.CopyOnWriteArraySet.class) {
+                    return (T) readTypedSet(args[0], java.util.concurrent.CopyOnWriteArraySet::new);
+                }
                 return (T) readGenericSet(args[0]);
-            }
-            if (args.length == 2 && java.util.Map.class.isAssignableFrom(raw)) {
-                return (T) readGenericMap(args[0], args[1]);
             }
         }
         ObjectReader<T> reader = (ObjectReader<T>) ObjectMapper.shared().getObjectReader(type);

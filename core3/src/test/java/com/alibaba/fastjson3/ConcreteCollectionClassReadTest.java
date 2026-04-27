@@ -249,6 +249,70 @@ class ConcreteCollectionClassReadTest {
     // real concrete-impl instance from the readAny() result. Tracked as a
     // separate follow-up; this PR's scope is the entry-point readValue path.
 
+    // ---- TypeReference<concrete> parity ----
+
+    // Round-2 audit P0: TypeReference<TreeMap<String, Object>> previously
+    // returned a LinkedHashMap because read(Type)'s ParameterizedType branch
+    // delegated all Map raws to readGenericMap. The same dispatch table now
+    // applies, so TypeReference parity matches the Class-typed entry-point.
+
+    @Test
+    void typeRef_treeMap_yieldsTreeMap() {
+        TreeMap<String, Object> tm = ObjectMapper.shared().readValue(
+                "{\"c\":3,\"a\":1,\"b\":2}",
+                new TypeReference<TreeMap<String, Object>>() {});
+        assertEquals(TreeMap.class, tm.getClass());
+        assertEquals("a", tm.firstKey());
+        assertEquals("c", tm.lastKey());
+    }
+
+    @Test
+    void typeRef_concurrentHashMap_yieldsConcurrentHashMap() {
+        ConcurrentHashMap<String, Object> chm = ObjectMapper.shared().readValue(
+                "{\"x\":1}",
+                new TypeReference<ConcurrentHashMap<String, Object>>() {});
+        assertEquals(ConcurrentHashMap.class, chm.getClass());
+        assertEquals(1, chm.get("x"));
+    }
+
+    @Test
+    void typeRef_linkedList_yieldsLinkedList() {
+        LinkedList<Integer> ll = ObjectMapper.shared().readValue(
+                "[1,2,3]",
+                new TypeReference<LinkedList<Integer>>() {});
+        assertEquals(LinkedList.class, ll.getClass());
+        assertEquals(3, ll.size());
+        assertEquals(Integer.valueOf(1), ll.getFirst());
+    }
+
+    @Test
+    void typeRef_stack_yieldsStack() {
+        Stack<Integer> s = ObjectMapper.shared().readValue(
+                "[1,2,3]",
+                new TypeReference<Stack<Integer>>() {});
+        assertEquals(Stack.class, s.getClass());
+        assertEquals(3, s.peek());
+    }
+
+    @Test
+    void typeRef_treeSet_sorted() {
+        TreeSet<Integer> ts = ObjectMapper.shared().readValue(
+                "[3,1,2,1]",
+                new TypeReference<TreeSet<Integer>>() {});
+        assertEquals(TreeSet.class, ts.getClass());
+        assertEquals(3, ts.size());
+        assertEquals(Integer.valueOf(1), ts.first());
+    }
+
+    @Test
+    void typeRef_rawList_unchanged_arrayList() {
+        // Generic List / Set / Map TypeReferences still go to the generic
+        // default — pin the negative case so future drift is caught.
+        java.util.List<Integer> l = ObjectMapper.shared().readValue(
+                "[1,2]", new TypeReference<java.util.List<Integer>>() {});
+        assertEquals(java.util.ArrayList.class, l.getClass());
+    }
+
     // ---- SPI override still wins ----
 
     @Test
