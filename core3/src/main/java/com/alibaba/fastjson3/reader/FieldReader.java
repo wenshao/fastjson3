@@ -612,12 +612,28 @@ public final class FieldReader implements Comparable<FieldReader> {
                         coerceListToArray(nested, componentType.getComponentType()));
                 continue;
             }
-            // POJO arrays (componentType is a user POJO and element is a
-            // JSONObject) are not handled here; they would require a
-            // per-element ObjectReader lookup. Tracked as follow-up; current
-            // behavior is "leave null", consistent with other unconvertible
-            // shapes and an improvement over the pre-fix Unsafe.putObject
-            // type-tear.
+            // POJO array: element is a Map (typically JSONObject from readAny())
+            // and componentType is a concrete user POJO. Mirror the scalar
+            // Map → POJO branch later in convertValue (line ~990): JSON
+            // round-trip through the shared ObjectMapper. Per-element
+            // round-trip is the same anti-pattern the scalar branch uses,
+            // so this PR doesn't introduce a worse perf shape — just extends
+            // the existing one across array elements. A future PR can swap
+            // both call sites for a direct ObjectReader lookup.
+            if (element instanceof java.util.Map
+                    && !componentType.isInterface()
+                    && !componentType.isPrimitive()
+                    && !componentType.isArray()
+                    && !java.util.Map.class.isAssignableFrom(componentType)
+                    && !java.util.Collection.class.isAssignableFrom(componentType)
+                    && componentType != Object.class) {
+                String json = com.alibaba.fastjson3.JSON.toJSONString(element);
+                java.lang.reflect.Array.set(array, i,
+                        com.alibaba.fastjson3.JSON.parseObject(json, componentType));
+            }
+            // Anything else: leave null. Reaches here for unsupported shapes
+            // like a Boolean element with a Number-only component type, or
+            // String with non-enum / non-char component.
         }
         return array;
     }
@@ -641,16 +657,23 @@ public final class FieldReader implements Comparable<FieldReader> {
             return value;
         }
 
-        // List → array conversion. readAny() yields a JSONArray (List subtype)
-        // for `[...]` payloads; for an array-typed field we must materialise an
-        // actual array so Unsafe.putObject doesn't tear the field's static
-        // type. Element coercion is best-effort: if the JSON element is
-        // already assignable to the component type (typical case for
-        // JSONObject[] / JSONArray[] / Object[]), copy it through; otherwise
-        // recurse via a transient FieldReader-like coerce by leaving the slot
-        // null. Empty arrays are honoured exactly.
-        if (targetClass.isArray() && value instanceof java.util.List<?> list) {
-            return coerceListToArray(list, targetClass.getComponentType());
+        // Array-typed field guard. For an array-typed field, the only
+        // safe payloads are (a) already-an-array of an assignable type
+        // (covered by the isInstance fast path above) and (b) a List from
+        // parser.readAny(). Any other shape — a scalar Number, String,
+        // Map, etc. — must NOT reach the trailing `return value`, because
+        // FieldReader.setFieldValue's Unsafe.putObject does no type
+        // validation and would tear the field's static type, leading to
+        // heap pollution and JVM SIGSEGVs once the JIT warms up. Materialise
+        // a real array for the List case; return null for anything else,
+        // which is consistent with how convertValue degrades on other
+        // unconvertible shapes (callers see "field not set" rather than
+        // a broken array reference).
+        if (targetClass.isArray()) {
+            if (value instanceof java.util.List<?> list) {
+                return coerceListToArray(list, targetClass.getComponentType());
+            }
+            return null;
         }
 
         // Numeric narrowing / widening / temporal conversion

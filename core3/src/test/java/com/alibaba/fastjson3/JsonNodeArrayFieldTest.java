@@ -216,4 +216,66 @@ class JsonNodeArrayFieldTest {
         assertArrayEquals(new int[]{1, 2}, b.matrix[0]);
         assertArrayEquals(new int[]{3, 4, 5}, b.matrix[1]);
     }
+
+    // Round-2 audit found that pre-guard, scalar / Map values stamped into an
+    // array-typed field via Unsafe.putObject tore the field's static type and
+    // crashed the JVM (exit 134 / SIGSEGV in JIT-compiled code that read the
+    // Integer's int slot as the array length header). Pin the guard.
+
+    @Test
+    void scalarNumber_intoObjectArrayField_yieldsNull() {
+        // {"arr":42} into Object[] arr — must NOT stamp Integer into Object[]
+        // slot. coerceListToArray's outer guard returns null for non-list,
+        // non-isInstance values now.
+        WithObjectArray b = ObjectMapper.shared().readValue("{\"arr\":42}", WithObjectArray.class);
+        assertNull(b.arr);
+    }
+
+    @Test
+    void scalarString_intoJsonObjectArrayField_yieldsNull() {
+        // {"arr":"oops"} into JSONObject[] arr — same guard.
+        // Note: readAny on a string yields a String, which then fails the
+        // List instanceof check. Field stays null; test reads field
+        // without dereferencing through a torn type.
+        WithJSONObjectArray b = ObjectMapper.shared().readValue("{\"arr\":\"oops\"}", WithJSONObjectArray.class);
+        assertNull(b.arr);
+    }
+
+    @Test
+    void mapInput_intoJsonObjectArrayField_yieldsNull() {
+        // {"arr":{"k":1}} into JSONObject[] arr — Map is not List, guard
+        // returns null. Pre-fix this leaked the JSONObject reference.
+        WithJSONObjectArray b = ObjectMapper.shared().readValue("{\"arr\":{\"k\":1}}", WithJSONObjectArray.class);
+        assertNull(b.arr);
+    }
+
+    public static class SimplePojo {
+        public int x;
+        public String s;
+    }
+
+    public static class WithPojoArray { public SimplePojo[] arr; }
+
+    @Test
+    void pojoArray_jsonObjects_materialised() {
+        WithPojoArray b = ObjectMapper.shared().readValue(
+                "{\"arr\":[{\"x\":1,\"s\":\"a\"},{\"x\":2,\"s\":\"b\"}]}", WithPojoArray.class);
+        assertNotNull(b.arr);
+        assertEquals(2, b.arr.length);
+        assertNotNull(b.arr[0]);
+        assertEquals(1, b.arr[0].x);
+        assertEquals("a", b.arr[0].s);
+        assertEquals(2, b.arr[1].x);
+        assertEquals("b", b.arr[1].s);
+    }
+
+    @Test
+    void pojoArray_emptyAndNullElements() {
+        WithPojoArray b = ObjectMapper.shared().readValue(
+                "{\"arr\":[{\"x\":1},null,{\"x\":3}]}", WithPojoArray.class);
+        assertEquals(3, b.arr.length);
+        assertEquals(1, b.arr[0].x);
+        assertNull(b.arr[1]);
+        assertEquals(3, b.arr[2].x);
+    }
 }
