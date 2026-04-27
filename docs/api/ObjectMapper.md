@@ -171,6 +171,8 @@ JSONObject obj = (JSONObject) mapper.readValue("{\"a\":1,\"b\":[2,3]}");
 - 类型化解析到 `Object` 的字段或元素：`mapper.readValue(json, Object.class)`、Bean 字段或 record 组件声明为 `Object`、`List<Object>` / `Map<String, Object>` 元素类型。运行时根据 JSON 形状创建 `JSONObject` / `JSONArray` 子节点，supplier 同样生效（`{...}` → 经 `mapSupplier`，`[...]` → 经 `listSupplier`）。
 - 上述节点内部递归创建的所有子节点。
 
+> 类型化解析到具体 `Map` / `List` / `Set` 实现类（如 `TreeMap.class` / `ConcurrentHashMap.class` / `LinkedList.class` / `TreeSet.class` 等）走专用 factory，不应用 `mapSupplier` / `listSupplier`——supplier 的语义是「JSONObject / JSONArray 节点的 backing 存储」，与「调用方明确请求的具体容器实现」是不同的诉求。
+
 **不生效**：
 - 类型化解析到 `Map` / `List` 接口本身，含 `TypeReference<Map<String,Object>>` / `TypeReference<List<Object>>`、Bean 字段声明为 `Map<K,V>` / `List<E>`（其中 E 不是 `JSONObject` / `JSONArray`）：走 `readGenericMap` / `readGenericList`，硬编码 `LinkedHashMap` / `ArrayList`。
 - 类型化 POJO 解析 `mapper.readValue(json, MyBean.class)` 时 Bean 自身的实例化由其 ObjectReader 决定（POJO 反射 / ASM），supplier 仅作用于 Bean **内部的** `JSONObject` / `JSONArray` 字段、元素，不直接替换 Bean 容器。

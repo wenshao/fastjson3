@@ -429,7 +429,27 @@ Object obj = mapper.readValue("{\"a\":[1,2]}");
 
 全局等价物（影响 `new JSONObject()` 与 shared mapper 默认解析路径）：`JSONObject.setMapCreator(ConcurrentHashMap::new)`。fastjson3 的 `JSONArray` 当前没有对应的 `setListCreator`，需要全局列表后备时通过 per-mapper `listSupplier` 解决。
 
-> 生效范围：未类型化路径（`mapper.readValue(json)` / `mapper.readObject(...)` / `mapper.readArray(...)`）以及类型解析到具体 `JSONObject` / `JSONArray` 的所有路径——`readValue(json, JSONObject.class)` / `readValue(json, JSONArray.class)`、Bean 字段声明为 `JSONObject` / `JSONArray` / `Object`、`List<JSONObject>` / `List<Object>` / `Map<String, Object>` 等元素类型（fj3 与 fj2 一致：`Object` 字段走 `readAny`，按 JSON 形状构造 `JSONObject` / `JSONArray` 子节点）。**不应用** supplier 的是：`TypeReference<Map<String,Object>>` / `TypeReference<List<Object>>`、Bean 字段声明为 `Map<K,V>` / `List<E>` 接口本身（E 不是 `JSONObject` / `JSONArray` / `Object` 时）。详见 [ObjectMapper#自定义-map--list-后备存储](../api/ObjectMapper.md#自定义-map--list-后备存储)。
+> 生效范围：未类型化路径（`mapper.readValue(json)` / `mapper.readObject(...)` / `mapper.readArray(...)`）以及类型解析到具体 `JSONObject` / `JSONArray` 的所有路径——`readValue(json, JSONObject.class)` / `readValue(json, JSONArray.class)`、Bean 字段声明为 `JSONObject` / `JSONArray` / `Object`、`List<JSONObject>` / `List<Object>` / `Map<String, Object>` 等元素类型（fj3 与 fj2 一致：`Object` 字段走 `readAny`，按 JSON 形状构造 `JSONObject` / `JSONArray` 子节点）。**不应用** supplier 的是：`TypeReference<Map<String,Object>>` / `TypeReference<List<Object>>`、Bean 字段声明为 `Map<K,V>` / `List<E>` 接口本身（E 不是 `JSONObject` / `JSONArray` / `Object` 时），以及具体 `Map` / `List` / `Set` 实现类（`TreeMap.class` / `ConcurrentHashMap.class` / `LinkedList.class` / `TreeSet.class` 等，走专用 factory）。详见 [ObjectMapper#自定义-map--list-后备存储](../api/ObjectMapper.md#自定义-map--list-后备存储)。
+
+### 具体 `Map` / `List` / `Set` 实现类的默认映射
+
+fastjson3 与 fastjson2 一致地把这些常用接口 / 抽象 / 具体类映射到 default impl：
+
+| 用户声明类型 | fj3 实例化 |
+|---|---|
+| `Map.class` / `AbstractMap.class` | `LinkedHashMap` |
+| `HashMap.class` | `HashMap` |
+| `TreeMap.class` / `SortedMap.class` / `NavigableMap.class` | `TreeMap` |
+| `ConcurrentMap.class` / `ConcurrentHashMap.class` | `ConcurrentHashMap` |
+| `ConcurrentNavigableMap.class` / `ConcurrentSkipListMap.class` | `ConcurrentSkipListMap` |
+| `List.class` / `Collection.class` / `Iterable.class` / `ArrayList.class` / `AbstractCollection.class` / `AbstractList.class` | `ArrayList` |
+| `LinkedList.class` / `Queue.class` / `Deque.class` / `AbstractSequentialList.class` | `LinkedList` |
+| `Vector.class` | `Vector` |
+| `Stack.class` | `Stack` |
+| `CopyOnWriteArrayList.class` | `CopyOnWriteArrayList` |
+| `Set.class` / `AbstractSet.class` / `HashSet.class` / `LinkedHashSet.class` | `LinkedHashSet`（保持插入顺序的 `HashSet` 子类） |
+| `TreeSet.class` / `SortedSet.class` / `NavigableSet.class` | `TreeSet` |
+| `CopyOnWriteArraySet.class` | `CopyOnWriteArraySet` |
 
 ---
 

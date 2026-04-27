@@ -30,6 +30,12 @@ public final class ReflectObjectReaderProvider extends AbstractObjectReaderProvi
 
     @Override
     protected ObjectReader<?> createReader(Class<?> type) {
+        // Parser-dispatched types defer to JSONParser.read(Class) — see
+        // ASMObjectReaderProvider.createReader for context.
+        if (ObjectReaderCreator.isParserDispatched(type)) {
+            return null;
+        }
+
         // Check built-in codecs first (UUID, Duration, Period, etc.)
         com.alibaba.fastjson3.ObjectReader<?> builtin = com.alibaba.fastjson3.BuiltinCodecs.getReader(type);
         if (builtin != null) {
