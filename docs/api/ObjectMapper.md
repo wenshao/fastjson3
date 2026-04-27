@@ -168,6 +168,7 @@ JSONObject obj = (JSONObject) mapper.readValue("{\"a\":1,\"b\":[2,3]}");
   - `mapper.readValue(json, JSONObject.class)` / `mapper.readValue(json, JSONArray.class)`。
   - Bean 字段或 record 组件声明为 `JSONObject` / `JSONArray`（POJO 与 record 都生效）。
   - 集合 / Map 元素声明为 `JSONObject` / `JSONArray`，例如 `List<JSONObject>` / `Map<String, JSONArray>`。
+- 类型化解析到 `Object` 的字段或元素：`mapper.readValue(json, Object.class)`、Bean 字段或 record 组件声明为 `Object`、`List<Object>` / `Map<String, Object>` 元素类型。运行时根据 JSON 形状创建 `JSONObject` / `JSONArray` 子节点，supplier 同样生效（`{...}` → 经 `mapSupplier`，`[...]` → 经 `listSupplier`）。
 - 上述节点内部递归创建的所有子节点。
 
 **不生效**：

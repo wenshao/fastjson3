@@ -46,22 +46,63 @@ public final class ObjectReaderCreator {
     private static final ThreadLocal<Set<Class<?>>> UNWRAP_VISITED = new ThreadLocal<>();
 
     /**
-     * Tree-shape types whose reader/element wiring must defer to the parser's
+     * Field / element types whose reader wiring must defer to the parser's
      * native {@code readObject} / {@code readArray} / {@code readAny} path
      * instead of the auto-built reflection POJO reader. Auto-build silently
-     * loses data on JSONObject (no field readers found) and rejects arrays
-     * outright on JSONArray. Covered as a field type, element type, and
-     * component type of an array field.
+     * loses data on {@code JSONObject} (no field readers found), rejects
+     * arrays outright on {@code JSONArray}, and produces a bare
+     * {@code new Object()} for {@code Object} fields (which then also
+     * rejects non-object JSON literals). Covered as a field type, element
+     * type, and component type of an array field.
      */
+    /**
+     * Types whose deserialization is handled natively by the parser
+     * ({@link com.alibaba.fastjson3.JSONParser#read(Class)}'s
+     * {@code readObject} / {@code readArray} / {@code readAny} branches and
+     * the raw-container fallback) and must NOT have an auto-built reflection
+     * POJO reader synthesized for them. Without this gate, providers such as
+     * {@link AbstractObjectReaderProvider} subclasses (ASM / Reflect / Auto)
+     * would produce a broken reader that silently empties or throws on
+     * non-object literals — defeating the parser fallback in
+     * {@link com.alibaba.fastjson3.ObjectMapper#readValue(byte[], Class)}.
+     *
+     * <p>Keep in sync with {@code ObjectMapper.isParserShortCircuitClass}
+     * — these two cover the same set from different layers: the
+     * {@link com.alibaba.fastjson3.ObjectMapper} version short-circuits its
+     * own auto-create branch (after modules / BuiltinCodecs / readerCreator),
+     * while this one short-circuits provider-level reader creation so that
+     * even {@code .readerProvider(ASM)} / {@code .readerCreatorType(...)}
+     * mappers respect the parser fallback for these tree-shape types.
+     */
+    static boolean isParserHandled(Class<?> target) {
+        return target == com.alibaba.fastjson3.JSONObject.class
+                || target == com.alibaba.fastjson3.JSONArray.class
+                || target == Object.class
+                || target == java.util.Map.class
+                || target == java.util.AbstractMap.class
+                || target == java.util.List.class
+                || target == java.util.Collection.class
+                || target == Iterable.class
+                || target == java.util.ArrayList.class
+                || target == java.util.AbstractCollection.class
+                || target == java.util.AbstractList.class
+                || target == java.util.Set.class
+                || target == java.util.AbstractSet.class
+                || target == java.util.HashSet.class
+                || target == java.util.LinkedHashSet.class;
+    }
+
     private static boolean isJsonNodeOrJsonNodeArray(Class<?> target) {
         if (target == com.alibaba.fastjson3.JSONObject.class
-                || target == com.alibaba.fastjson3.JSONArray.class) {
+                || target == com.alibaba.fastjson3.JSONArray.class
+                || target == Object.class) {
             return true;
         }
         if (target.isArray()) {
             Class<?> ct = target.getComponentType();
             return ct == com.alibaba.fastjson3.JSONObject.class
-                    || ct == com.alibaba.fastjson3.JSONArray.class;
+                    || ct == com.alibaba.fastjson3.JSONArray.class
+                    || ct == Object.class;
         }
         return false;
     }
@@ -75,6 +116,15 @@ public final class ObjectReaderCreator {
     }
 
     public static <T> ObjectReader<T> createObjectReader(Class<T> type, Class<?> mixIn, boolean useJacksonAnnotation) {
+        // Tree-shape / raw-container types are handled by the parser's native
+        // routing; auto-building a reflection POJO reader for them produces
+        // broken results (silent empty / "expected '{'" on non-objects). See
+        // isParserHandled — this guard makes provider-level entry points
+        // (ASM / Reflect / Auto via AbstractObjectReaderProvider#createReader)
+        // safe to call without each provider repeating the check.
+        if (isParserHandled(type)) {
+            return null;
+        }
         return createObjectReader(type, type, mixIn, useJacksonAnnotation);
     }
 
@@ -89,6 +139,15 @@ public final class ObjectReaderCreator {
     @SuppressWarnings("unchecked")
     public static <T> ObjectReader<T> createObjectReader(ParameterizedType pt, Class<?> mixIn, boolean useJacksonAnnotation) {
         if (!(pt.getRawType() instanceof Class<?> raw)) {
+            return null;
+        }
+        // Mirror the Class-typed overload's parser-handled guard. The
+        // ObjectMapper-side caller filters out interface / Map / Collection
+        // raws before reaching here, but this method is public static, so a
+        // direct caller (or any future internal caller that lifts that
+        // filter) must still get a null instead of a broken reader for
+        // parameterized JSONObject / JSONArray / ArrayList / HashSet / etc.
+        if (isParserHandled(raw)) {
             return null;
         }
         return (ObjectReader<T>) createObjectReader((Class<Object>) raw, (java.lang.reflect.Type) pt,
@@ -1433,7 +1492,15 @@ public final class ObjectReaderCreator {
         String typeName = (subJsonType != null && !subJsonType.typeName().isEmpty())
                 ? subJsonType.typeName() : sub.getSimpleName();
         if (!readerMap.containsKey(typeName)) {
-            readerMap.put(typeName, createObjectReader(sub, mixIn));
+            // createObjectReader returns null for parser-handled types
+            // (Object / JSONObject / JSONArray / raw containers). Skip those
+            // entries instead of mapping a null reader — the dispatcher would
+            // NPE later, and parser-handled types make no sense as
+            // @JSONType(seeAlso) subtypes anyway.
+            ObjectReader<?> reader = createObjectReader(sub, mixIn);
+            if (reader != null) {
+                readerMap.put(typeName, reader);
+            }
         }
     }
 

@@ -2057,6 +2057,7 @@ public final class ObjectMapper {
     private static boolean isParserShortCircuitClass(Class<?> clazz) {
         return clazz == JSONObject.class
                 || clazz == JSONArray.class
+                || clazz == Object.class
                 || clazz == java.util.Map.class
                 || clazz == java.util.AbstractMap.class
                 || clazz == java.util.List.class
