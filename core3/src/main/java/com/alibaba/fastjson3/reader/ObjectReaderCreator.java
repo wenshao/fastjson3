@@ -141,6 +141,15 @@ public final class ObjectReaderCreator {
         if (!(pt.getRawType() instanceof Class<?> raw)) {
             return null;
         }
+        // Mirror the Class-typed overload's parser-handled guard. The
+        // ObjectMapper-side caller filters out interface / Map / Collection
+        // raws before reaching here, but this method is public static, so a
+        // direct caller (or any future internal caller that lifts that
+        // filter) must still get a null instead of a broken reader for
+        // parameterized JSONObject / JSONArray / ArrayList / HashSet / etc.
+        if (isParserHandled(raw)) {
+            return null;
+        }
         return (ObjectReader<T>) createObjectReader((Class<Object>) raw, (java.lang.reflect.Type) pt,
                 mixIn, useJacksonAnnotation);
     }
@@ -1483,7 +1492,15 @@ public final class ObjectReaderCreator {
         String typeName = (subJsonType != null && !subJsonType.typeName().isEmpty())
                 ? subJsonType.typeName() : sub.getSimpleName();
         if (!readerMap.containsKey(typeName)) {
-            readerMap.put(typeName, createObjectReader(sub, mixIn));
+            // createObjectReader returns null for parser-handled types
+            // (Object / JSONObject / JSONArray / raw containers). Skip those
+            // entries instead of mapping a null reader — the dispatcher would
+            // NPE later, and parser-handled types make no sense as
+            // @JSONType(seeAlso) subtypes anyway.
+            ObjectReader<?> reader = createObjectReader(sub, mixIn);
+            if (reader != null) {
+                readerMap.put(typeName, reader);
+            }
         }
     }
 
