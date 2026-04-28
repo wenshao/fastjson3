@@ -384,4 +384,78 @@ class ConcreteCollectionClassReadTest {
             mapper.unregisterReader(TreeMap.class);
         }
     }
+
+    // ---- Round-3 audit P2-3: narrow Map/Set/Collection isAssignableFrom gates ----
+    //
+    // Previously a TypeReference whose raw type was an unsupported sub-interface
+    // / subclass (BlockingQueue, AbstractQueue, user `class MyMap extends
+    // HashMap`, etc.) fell through the broad `Map/Set/Collection.class
+    // .isAssignableFrom(raw)` gate, was served a generic LinkedHashMap /
+    // LinkedHashSet / ArrayList, and surfaced as a downstream
+    // ClassCastException. Narrow the gates to the Class-typed dispatch table
+    // and let unsupported raws fall through to the deterministic
+    // "no ObjectReader registered" error.
+
+    @Test
+    void typeRef_blockingQueue_unsupportedRaw_throwsCleanly() {
+        // BlockingQueue extends Queue extends Collection. Pre-fix this
+        // produced an ArrayList that ClassCastException'd at the call site.
+        // Now: clean "no ObjectReader registered" error.
+        com.alibaba.fastjson3.JSONException ex = assertThrows(
+                com.alibaba.fastjson3.JSONException.class,
+                () -> ObjectMapper.shared().readValue("[1,2,3]",
+                        new TypeReference<java.util.concurrent.BlockingQueue<Integer>>() {}));
+        assertTrue(ex.getMessage().contains("no ObjectReader"),
+                "expected 'no ObjectReader' for unsupported BlockingQueue raw, got: " + ex.getMessage());
+    }
+
+    @Test
+    void typeRef_abstractQueue_unsupportedRaw_throwsCleanly() {
+        com.alibaba.fastjson3.JSONException ex = assertThrows(
+                com.alibaba.fastjson3.JSONException.class,
+                () -> ObjectMapper.shared().readValue("[1,2,3]",
+                        new TypeReference<java.util.AbstractQueue<Integer>>() {}));
+        assertTrue(ex.getMessage().contains("no ObjectReader"),
+                "expected 'no ObjectReader' for unsupported AbstractQueue raw, got: " + ex.getMessage());
+    }
+
+    public static class MyHashMap<K, V> extends java.util.HashMap<K, V> {}
+
+    @Test
+    void typeRef_userHashMapSubtype_throwsCleanly() {
+        // Pre-fix the broad Map gate routed this to LinkedHashMap → cast fails.
+        com.alibaba.fastjson3.JSONException ex = assertThrows(
+                com.alibaba.fastjson3.JSONException.class,
+                () -> ObjectMapper.shared().readValue("{\"a\":1}",
+                        new TypeReference<MyHashMap<String, Integer>>() {}));
+        assertTrue(ex.getMessage().contains("no ObjectReader"),
+                "expected 'no ObjectReader' for user MyHashMap, got: " + ex.getMessage());
+    }
+
+    public static class MyHashSet<E> extends java.util.HashSet<E> {}
+
+    @Test
+    void typeRef_userHashSetSubtype_throwsCleanly() {
+        com.alibaba.fastjson3.JSONException ex = assertThrows(
+                com.alibaba.fastjson3.JSONException.class,
+                () -> ObjectMapper.shared().readValue("[1,2]",
+                        new TypeReference<MyHashSet<Integer>>() {}));
+        assertTrue(ex.getMessage().contains("no ObjectReader"),
+                "expected 'no ObjectReader' for user MyHashSet, got: " + ex.getMessage());
+    }
+
+    // ---- Round-3 audit P2-1: readTypedMap put failures wrap with key path ----
+
+    @Test
+    void typedMap_concurrentHashMap_nullValue_throwsWithKeyPath() {
+        // ConcurrentHashMap rejects null values with NullPointerException.
+        // Pre-fix the NPE escaped raw; now wrapped with the offending key
+        // path so the user can locate the bad input.
+        com.alibaba.fastjson3.JSONException ex = assertThrows(
+                com.alibaba.fastjson3.JSONException.class,
+                () -> ObjectMapper.shared().readValue("{\"k\":null}",
+                        java.util.concurrent.ConcurrentHashMap.class));
+        assertTrue(ex.getMessage().contains("k") || (ex.getCause() != null && ex.getCause() instanceof NullPointerException),
+                "expected key-path or NPE cause, got: " + ex.getMessage());
+    }
 }
