@@ -5872,7 +5872,7 @@ public abstract sealed class JSONParser implements Closeable
                     // `contentEquals` loop needed.
                     if (nameLen <= 8 && nameStart + 8 <= b.length) {
                         long shortKey = NameCache.shortKey(b, nameStart, nameLen);
-                        String cached = NameCache.getShort(shortKey);
+                        String cached = NameCache.getShort(shortKey, nameLen);
                         if (cached != null) return cached;
 
                         String name;

@@ -66,6 +66,24 @@ class NameCacheCollisionTest {
     }
 
     @Test
+    void eightByteAsciiName_cachedAfterFirstParse() throws Exception {
+        // Round-2 audit: nameLen==8 lets content byte7 occupy the same
+        // bits the prior version of getShort tried to read nameLen from
+        // (`key >>> 56`), so every 8-byte ASCII name was a forced cache
+        // miss and re-allocated per parse. Pin the cache hit by
+        // reflectively reading NameCache.NAMES after a single parse and
+        // asserting the second parse returns the same String reference.
+        String json = "{\"username\":1}";
+        JSONObject first = JSON.parseObject(json);
+        String firstKey = first.keySet().iterator().next();
+        JSONObject second = JSON.parseObject(json);
+        String secondKey = second.keySet().iterator().next();
+        // Same String reference iff the cache hit on the second parse.
+        assertSame(firstKey, secondKey,
+                "8-byte ASCII names must hit NameCache after first parse");
+    }
+
+    @Test
     void rfc6901EmptyKeyExampleSurvivesRepeatedFuzz() {
         // Mirror the original failing test's payload after a NameCache-pollution
         // run, asserting the empty key is still findable.

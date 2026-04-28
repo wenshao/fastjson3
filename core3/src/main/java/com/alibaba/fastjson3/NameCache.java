@@ -38,21 +38,29 @@ final class NameCache {
     /**
      * Look up by short-content-key. Returns the cached String if the slot's
      * stored key matches exactly AND the cached String's length matches the
-     * {@code nameLen} encoded in the upper 8 bits of the key. The length
-     * check is required because {@link #put} is also used by the long-name
-     * path ({@code put(hash, name)}), which can compute a hash that happens
-     * to equal a short-key value (most importantly: a long fuzz-generated
+     * caller's {@code nameLen}. The length check is required because
+     * {@link #put} is also used by the long-name path
+     * ({@code put(hash, name)}), which can compute a hash that happens to
+     * equal a short-key value (most importantly: a long fuzz-generated
      * name whose accumulated {@code hash * 31 + c} polynomial evaluates to
      * {@code 0L} collides with the empty-name short-key, also {@code 0L}).
      * Without the length check, the long name would be returned for
      * subsequent empty-name lookups, and the JSONObject would receive a
      * wrong-key entry.
+     *
+     * <p>The caller passes {@code nameLen} explicitly rather than letting
+     * us extract it from the key's upper 8 bits — that encoding only works
+     * for {@code nameLen ∈ [0, 7]}; for {@code nameLen == 8} the content
+     * byte at offset 7 occupies the same bits and any 8-byte ASCII name
+     * yields a wrong nameLen reading. The parser always knows {@code
+     * nameLen} at the call site, so passing it through is both correct and
+     * cheaper than the bit extract.
      */
-    static String getShort(long key) {
+    static String getShort(long key, int nameLen) {
         int idx = (int) (key & MASK);
         if (HASHES[idx] == key) {
             String cached = NAMES[idx];
-            if (cached != null && cached.length() == (int) (key >>> 56)) {
+            if (cached != null && cached.length() == nameLen) {
                 return cached;
             }
         }
