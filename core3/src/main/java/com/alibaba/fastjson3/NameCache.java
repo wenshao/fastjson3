@@ -37,19 +37,24 @@ final class NameCache {
 
     /**
      * Look up by short-content-key. Returns the cached String if the slot's
-     * stored key matches exactly. No {@code contentEquals} call — the key IS
-     * the content for names ≤ 8 bytes.
-     *
-     * <p>Collision behavior: with 1024 slots and dozens of cached names, the
-     * false-positive rate is 0 for Eishay-class workloads. A hash collision
-     * would give the wrong name back; we trust {@link #shortKey}'s length
-     * encoding to make collisions strictly within same-length names, which
-     * is extremely rare for real field names.
+     * stored key matches exactly AND the cached String's length matches the
+     * {@code nameLen} encoded in the upper 8 bits of the key. The length
+     * check is required because {@link #put} is also used by the long-name
+     * path ({@code put(hash, name)}), which can compute a hash that happens
+     * to equal a short-key value (most importantly: a long fuzz-generated
+     * name whose accumulated {@code hash * 31 + c} polynomial evaluates to
+     * {@code 0L} collides with the empty-name short-key, also {@code 0L}).
+     * Without the length check, the long name would be returned for
+     * subsequent empty-name lookups, and the JSONObject would receive a
+     * wrong-key entry.
      */
     static String getShort(long key) {
         int idx = (int) (key & MASK);
         if (HASHES[idx] == key) {
-            return NAMES[idx];
+            String cached = NAMES[idx];
+            if (cached != null && cached.length() == (int) (key >>> 56)) {
+                return cached;
+            }
         }
         return null;
     }
