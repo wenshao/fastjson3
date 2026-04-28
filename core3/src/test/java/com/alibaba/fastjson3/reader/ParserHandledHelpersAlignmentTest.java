@@ -5,7 +5,6 @@ import com.alibaba.fastjson3.JSONObject;
 import com.alibaba.fastjson3.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.AbstractCollection;
 import java.util.AbstractList;
@@ -40,7 +39,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ParserHandledHelpersAlignmentTest {
 
-    private static final Class<?>[] HANDLED = {
+    /**
+     * Tree-shape parser-handled set (the smaller list): types whose typed
+     * reads always go through the parser's {@code readObject} /
+     * {@code readArray} / {@code readAny} / generic-container path. Field
+     * declarations of these types should fall through to {@code readAny()}
+     * + {@code convertValue} rather than synthesizing an auto-built POJO
+     * reader.
+     */
+    private static final Class<?>[] PARSER_HANDLED = {
             JSONObject.class, JSONArray.class, Object.class,
             Map.class, AbstractMap.class,
             List.class, Collection.class, Iterable.class,
@@ -48,58 +55,104 @@ class ParserHandledHelpersAlignmentTest {
             Set.class, AbstractSet.class, HashSet.class, LinkedHashSet.class,
     };
 
-    private static final Class<?>[] NOT_HANDLED = {
+    /**
+     * Concrete impls / non-raw interfaces that are dispatched at the
+     * parser-entry layer (provider-level + ObjectMapper-level), but NOT at
+     * the field-level. Field declarations like {@code Bean { TreeMap map; }}
+     * still synthesize a typed POJO reader so the field gets a real
+     * {@link TreeMap}, not a {@code JSONObject}.
+     */
+    private static final Class<?>[] DISPATCH_ONLY = {
+            HashMap.class, TreeMap.class,
+            java.util.SortedMap.class, java.util.NavigableMap.class,
+            java.util.concurrent.ConcurrentMap.class, ConcurrentHashMap.class,
+            java.util.concurrent.ConcurrentNavigableMap.class,
+            java.util.concurrent.ConcurrentSkipListMap.class,
+            LinkedList.class, java.util.Queue.class, java.util.Deque.class,
+            java.util.AbstractSequentialList.class,
+            java.util.Vector.class, java.util.Stack.class,
+            java.util.concurrent.CopyOnWriteArrayList.class,
+            TreeSet.class, java.util.SortedSet.class, java.util.NavigableSet.class,
+            java.util.concurrent.CopyOnWriteArraySet.class,
+    };
+
+    private static final Class<?>[] NOT_DISPATCHED = {
             String.class, Integer.class, Long.class, Boolean.class,
-            // concrete map/list/set impls that are NOT in either list — they
-            // belong to a separate follow-up.
-            ConcurrentHashMap.class, TreeMap.class, HashMap.class,
-            LinkedList.class, TreeSet.class,
+            // concrete impls that are NOT in any list — niche subclasses
+            // we deliberately leave out (no fj2 default mapping).
+            java.util.WeakHashMap.class, java.util.IdentityHashMap.class,
+            java.util.PriorityQueue.class, java.util.ArrayDeque.class,
+            java.util.EnumSet.class,
             // arbitrary user POJO
             ParserHandledHelpersAlignmentTest.class,
-            // primitive arrays / parameterized roots — not in either list
+            // primitive arrays / parameterized roots — not in any list
             int[].class, String[].class,
     };
 
     @Test
-    void bothHelpersAgreeOnHandledClasses() throws Exception {
-        Method creator = ObjectReaderCreator.class.getDeclaredMethod("isParserHandled", Class.class);
-        creator.setAccessible(true);
+    void parserHandledSet_pinned() throws Exception {
+        // PARSER_HANDLED entries are recognised by isParserHandled (the
+        // small list used at field-level + provider-level for tree-shape
+        // types). isParserDispatched is a strict superset, so it MUST also
+        // recognise them.
+        Method handled = ObjectReaderCreator.class.getDeclaredMethod("isParserHandled", Class.class);
+        handled.setAccessible(true);
+        Method dispatched = ObjectReaderCreator.class.getDeclaredMethod("isParserDispatched", Class.class);
+        dispatched.setAccessible(true);
         Method mapper = ObjectMapper.class.getDeclaredMethod("isParserShortCircuitClass", Class.class);
         mapper.setAccessible(true);
 
-        for (Class<?> c : HANDLED) {
-            boolean creatorSays = (boolean) creator.invoke(null, c);
-            boolean mapperSays = (boolean) mapper.invoke(null, c);
-            assertTrue(creatorSays,
-                    "ObjectReaderCreator.isParserHandled missed: " + c.getName());
-            assertTrue(mapperSays,
-                    "ObjectMapper.isParserShortCircuitClass missed: " + c.getName());
-            assertEquals(creatorSays, mapperSays,
-                    "alignment broken for: " + c.getName());
+        for (Class<?> c : PARSER_HANDLED) {
+            assertTrue((boolean) handled.invoke(null, c),
+                    "isParserHandled missed: " + c.getName());
+            assertTrue((boolean) dispatched.invoke(null, c),
+                    "isParserDispatched missed: " + c.getName());
+            assertTrue((boolean) mapper.invoke(null, c),
+                    "isParserShortCircuitClass missed: " + c.getName());
         }
     }
 
     @Test
-    void bothHelpersAgreeOnNonHandledClasses() throws Exception {
-        Method creator = ObjectReaderCreator.class.getDeclaredMethod("isParserHandled", Class.class);
-        creator.setAccessible(true);
+    void parserDispatchedOnly_pinned() throws Exception {
+        // DISPATCH_ONLY entries are concrete impls / non-raw interfaces. They
+        // are dispatched at parser-entry (isParserDispatched +
+        // isParserShortCircuitClass) but NOT at field-level
+        // (isParserHandled). A field declared as TreeMap should still get a
+        // real TreeMap, not a JSONObject from readAny.
+        Method handled = ObjectReaderCreator.class.getDeclaredMethod("isParserHandled", Class.class);
+        handled.setAccessible(true);
+        Method dispatched = ObjectReaderCreator.class.getDeclaredMethod("isParserDispatched", Class.class);
+        dispatched.setAccessible(true);
         Method mapper = ObjectMapper.class.getDeclaredMethod("isParserShortCircuitClass", Class.class);
         mapper.setAccessible(true);
 
-        for (Class<?> c : NOT_HANDLED) {
-            boolean creatorSays = invoke(creator, c);
-            boolean mapperSays = invoke(mapper, c);
-            assertFalse(creatorSays,
-                    "ObjectReaderCreator.isParserHandled wrongly handles: " + c.getName());
-            assertFalse(mapperSays,
-                    "ObjectMapper.isParserShortCircuitClass wrongly handles: " + c.getName());
-            assertEquals(creatorSays, mapperSays,
-                    "alignment broken for: " + c.getName());
+        for (Class<?> c : DISPATCH_ONLY) {
+            assertFalse((boolean) handled.invoke(null, c),
+                    "isParserHandled wrongly tree-shape: " + c.getName());
+            assertTrue((boolean) dispatched.invoke(null, c),
+                    "isParserDispatched missed: " + c.getName());
+            assertTrue((boolean) mapper.invoke(null, c),
+                    "isParserShortCircuitClass missed: " + c.getName());
         }
     }
 
-    private static boolean invoke(Method m, Class<?> arg)
-            throws IllegalAccessException, InvocationTargetException {
-        return (boolean) m.invoke(null, arg);
+    @Test
+    void notDispatched_pinned() throws Exception {
+        Method handled = ObjectReaderCreator.class.getDeclaredMethod("isParserHandled", Class.class);
+        handled.setAccessible(true);
+        Method dispatched = ObjectReaderCreator.class.getDeclaredMethod("isParserDispatched", Class.class);
+        dispatched.setAccessible(true);
+        Method mapper = ObjectMapper.class.getDeclaredMethod("isParserShortCircuitClass", Class.class);
+        mapper.setAccessible(true);
+
+        for (Class<?> c : NOT_DISPATCHED) {
+            assertFalse((boolean) handled.invoke(null, c),
+                    "isParserHandled wrongly handles: " + c.getName());
+            assertFalse((boolean) dispatched.invoke(null, c),
+                    "isParserDispatched wrongly handles: " + c.getName());
+            assertFalse((boolean) mapper.invoke(null, c),
+                    "isParserShortCircuitClass wrongly handles: " + c.getName());
+        }
     }
+
 }

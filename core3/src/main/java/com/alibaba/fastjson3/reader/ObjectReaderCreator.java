@@ -92,6 +92,54 @@ public final class ObjectReaderCreator {
                 || target == java.util.LinkedHashSet.class;
     }
 
+    /**
+     * Strict superset of {@link #isParserHandled} that additionally lists the
+     * specific concrete impls (TreeMap, ConcurrentHashMap, LinkedList, Vector,
+     * Stack, CopyOnWriteArrayList, TreeSet, ...) the parser routes via
+     * dedicated {@code readTypedMap} / {@code readTypedList} / {@code readTypedSet}
+     * factories. Provider-level reader resolution
+     * ({@code AbstractObjectReaderProvider} subclasses) consults this list
+     * to short-circuit auto-build for these targets, letting
+     * {@link com.alibaba.fastjson3.ObjectMapper#readValue(byte[], Class)}
+     * fall through to {@code parser.read(type)}.
+     *
+     * <p>Field-level reader creation (POJO / record fields declared as
+     * concrete impls like {@code Bean { TreeMap map; }}) does NOT consult
+     * this list — it consults only {@link #isParserHandled}. Why: a typed
+     * Bean field declared as TreeMap expects a real {@link java.util.TreeMap}
+     * instance, not a JSONObject from {@code readAny()}; the auto-built POJO
+     * reader does the right thing for these field declarations.
+     *
+     * <p>Keep in sync with {@code ObjectMapper.isParserShortCircuitClass}.
+     */
+    static boolean isParserDispatched(Class<?> target) {
+        if (isParserHandled(target)) {
+            return true;
+        }
+        // Map family — concrete / non-raw interface
+        return target == java.util.HashMap.class
+                || target == java.util.TreeMap.class
+                || target == java.util.SortedMap.class
+                || target == java.util.NavigableMap.class
+                || target == java.util.concurrent.ConcurrentMap.class
+                || target == java.util.concurrent.ConcurrentHashMap.class
+                || target == java.util.concurrent.ConcurrentNavigableMap.class
+                || target == java.util.concurrent.ConcurrentSkipListMap.class
+                // List family — concrete / non-raw interface
+                || target == java.util.LinkedList.class
+                || target == java.util.Queue.class
+                || target == java.util.Deque.class
+                || target == java.util.AbstractSequentialList.class
+                || target == java.util.Vector.class
+                || target == java.util.Stack.class
+                || target == java.util.concurrent.CopyOnWriteArrayList.class
+                // Set family — concrete / non-raw interface
+                || target == java.util.TreeSet.class
+                || target == java.util.SortedSet.class
+                || target == java.util.NavigableSet.class
+                || target == java.util.concurrent.CopyOnWriteArraySet.class;
+    }
+
     private static boolean isJsonNodeOrJsonNodeArray(Class<?> target) {
         if (target == com.alibaba.fastjson3.JSONObject.class
                 || target == com.alibaba.fastjson3.JSONArray.class

@@ -35,6 +35,15 @@ public final class ASMObjectReaderProvider extends AbstractObjectReaderProvider 
 
     @Override
     protected ObjectReader<?> createReader(Class<?> type) {
+        // Parser-dispatched types (JSONObject / JSONArray / Object / raw map-list-set
+        // interfaces / specific concrete impls like TreeMap, LinkedList, ...)
+        // have native routing in JSONParser.read(Class). Returning null here
+        // lets ObjectMapper.readValue's fallback take over instead of letting
+        // ASM synthesize a broken reader.
+        if (ObjectReaderCreator.isParserDispatched(type)) {
+            return null;
+        }
+
         // Check built-in codecs first (UUID, Duration, Period, etc.)
         com.alibaba.fastjson3.ObjectReader<?> builtin = com.alibaba.fastjson3.BuiltinCodecs.getReader(type);
         if (builtin != null) {

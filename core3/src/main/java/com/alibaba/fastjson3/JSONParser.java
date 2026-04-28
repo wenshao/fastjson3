@@ -1019,20 +1019,35 @@ public abstract sealed class JSONParser implements Closeable
         if (reader != null) {
             return reader.readObject(this, type, null, features);
         }
-        // Raw collection / map interfaces (and the common abstract / default
-        // concrete classes that callers reach for as a "give me any Map" /
-        // "any List" / "any Set"): route to the untyped generic readers,
-        // matching fastjson2's ObjectReaderImplMap / ObjectReaderImplList
-        // default mapping. Placed AFTER getObjectReader so that
-        // registerReader(Map.class, ...) / module-supplied custom readers
-        // still take precedence on parser-direct paths (parser.read(Map.class),
+        // Raw collection / map interfaces and concrete impls: route to the
+        // matching default container, matching fastjson2's
+        // ObjectReaderImplMap / ObjectReaderImplList default mapping. Placed
+        // AFTER getObjectReader so that registerReader(Map.class, ...) /
+        // module-supplied custom readers still take precedence on
+        // parser-direct paths (parser.read(Map.class),
         // JSON.parseObject(json, Map.class, ReadFeature...)).
-        // Specific concrete classes that imply a particular impl
-        // (TreeMap, LinkedList, ConcurrentHashMap, ...) still go through the
-        // sealed-type / no-reader branch below since they are not in the list.
+        //
+        // Map family
         if (type == java.util.Map.class || type == java.util.AbstractMap.class) {
             return (T) readGenericMap(Object.class, Object.class);
         }
+        if (type == java.util.HashMap.class) {
+            return (T) readTypedMap(Object.class, Object.class, java.util.HashMap::new);
+        }
+        if (type == java.util.TreeMap.class
+                || type == java.util.SortedMap.class
+                || type == java.util.NavigableMap.class) {
+            return (T) readTypedMap(Object.class, Object.class, java.util.TreeMap::new);
+        }
+        if (type == java.util.concurrent.ConcurrentMap.class
+                || type == java.util.concurrent.ConcurrentHashMap.class) {
+            return (T) readTypedMap(Object.class, Object.class, java.util.concurrent.ConcurrentHashMap::new);
+        }
+        if (type == java.util.concurrent.ConcurrentNavigableMap.class
+                || type == java.util.concurrent.ConcurrentSkipListMap.class) {
+            return (T) readTypedMap(Object.class, Object.class, java.util.concurrent.ConcurrentSkipListMap::new);
+        }
+        // List family (raw container interfaces + ArrayList variants)
         if (type == java.util.List.class
                 || type == java.util.Collection.class
                 || type == Iterable.class
@@ -1041,11 +1056,35 @@ public abstract sealed class JSONParser implements Closeable
                 || type == java.util.AbstractList.class) {
             return (T) readGenericList(Object.class);
         }
+        if (type == java.util.LinkedList.class
+                || type == java.util.Queue.class
+                || type == java.util.Deque.class
+                || type == java.util.AbstractSequentialList.class) {
+            return (T) readTypedList(Object.class, java.util.LinkedList::new);
+        }
+        if (type == java.util.Vector.class) {
+            return (T) readTypedList(Object.class, java.util.Vector::new);
+        }
+        if (type == java.util.Stack.class) {
+            return (T) readTypedList(Object.class, java.util.Stack::new);
+        }
+        if (type == java.util.concurrent.CopyOnWriteArrayList.class) {
+            return (T) readTypedList(Object.class, java.util.concurrent.CopyOnWriteArrayList::new);
+        }
+        // Set family
         if (type == java.util.Set.class
                 || type == java.util.AbstractSet.class
                 || type == java.util.HashSet.class
                 || type == java.util.LinkedHashSet.class) {
             return (T) readGenericSet(Object.class);
+        }
+        if (type == java.util.TreeSet.class
+                || type == java.util.SortedSet.class
+                || type == java.util.NavigableSet.class) {
+            return (T) readTypedSet(Object.class, java.util.TreeSet::new);
+        }
+        if (type == java.util.concurrent.CopyOnWriteArraySet.class) {
+            return (T) readTypedSet(Object.class, java.util.concurrent.CopyOnWriteArraySet::new);
         }
         if (type.isInterface() || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
             throw new JSONException("cannot deserialize "
@@ -1061,6 +1100,16 @@ public abstract sealed class JSONParser implements Closeable
         if (type instanceof Class) {
             return read((Class<T>) type);
         }
+        // SPI override path: a user-registered ObjectReader keyed by the
+        // ParameterizedType wins over the built-in dispatch table. Mirrors
+        // the same ordering in read(Class) at line 1018 so direct
+        // parser.read(parameterizedType) callers see consistent behavior
+        // with the Class entry-point.
+        ObjectReader<T> registered =
+                (ObjectReader<T>) ObjectMapper.shared().getObjectReader(type);
+        if (registered != null) {
+            return registered.readObject(this, type, null, features);
+        }
         // ParameterizedType dispatch for common generic collections. Lets
         // `new TypeReference<List<User>>() {}` (and Map / Set variants)
         // work end-to-end without the user having to special-case them to
@@ -1069,21 +1118,102 @@ public abstract sealed class JSONParser implements Closeable
         if (type instanceof java.lang.reflect.ParameterizedType pt
                 && pt.getRawType() instanceof Class<?> raw) {
             java.lang.reflect.Type[] args = pt.getActualTypeArguments();
-            if (args.length == 1 && java.util.List.class.isAssignableFrom(raw)) {
-                return (T) readGenericList(args[0]);
+            if (args.length == 2) {
+                // Whitelisted Map raws. Mirrors the Class-typed dispatch
+                // table — a TypeReference whose raw type asks for a
+                // specific impl (TreeMap, ConcurrentHashMap, ...) must
+                // materialise that impl, not the generic LinkedHashMap
+                // default. The original
+                // `Map.class.isAssignableFrom(raw)` gate let user
+                // `class MyMap extends HashMap` fall through to
+                // readGenericMap, producing a downstream
+                // ClassCastException; narrow to the explicit list, same
+                // as read(Class) and the Set / List gates below.
+                if (raw == java.util.Map.class
+                        || raw == java.util.AbstractMap.class
+                        || raw == java.util.LinkedHashMap.class) {
+                    // LinkedHashMap is the actual class readGenericMap
+                    // returns, so accepting it here matches what every
+                    // existing TypeReference<LinkedHashMap<...>> caller
+                    // received before the gate narrowing.
+                    return (T) readGenericMap(args[0], args[1]);
+                }
+                if (raw == java.util.HashMap.class) {
+                    return (T) readTypedMap(args[0], args[1], java.util.HashMap::new);
+                }
+                if (raw == java.util.TreeMap.class
+                        || raw == java.util.SortedMap.class
+                        || raw == java.util.NavigableMap.class) {
+                    return (T) readTypedMap(args[0], args[1], java.util.TreeMap::new);
+                }
+                if (raw == java.util.concurrent.ConcurrentMap.class
+                        || raw == java.util.concurrent.ConcurrentHashMap.class) {
+                    return (T) readTypedMap(args[0], args[1], java.util.concurrent.ConcurrentHashMap::new);
+                }
+                if (raw == java.util.concurrent.ConcurrentNavigableMap.class
+                        || raw == java.util.concurrent.ConcurrentSkipListMap.class) {
+                    return (T) readTypedMap(args[0], args[1], java.util.concurrent.ConcurrentSkipListMap::new);
+                }
             }
-            if (args.length == 1 && java.util.Set.class.isAssignableFrom(raw)) {
-                return (T) readGenericSet(args[0]);
+            if (args.length == 1) {
+                // Whitelisted Set raws. Mirrors the Class-typed read(Class)
+                // dispatch and the narrowed List gate below — `Set
+                // .class.isAssignableFrom(raw)` would otherwise route any
+                // user `class MySet extends HashSet` through
+                // readGenericSet -> LinkedHashSet, producing a
+                // ClassCastException at the call site.
+                if (raw == java.util.Set.class
+                        || raw == java.util.AbstractSet.class
+                        || raw == java.util.HashSet.class
+                        || raw == java.util.LinkedHashSet.class) {
+                    return (T) readGenericSet(args[0]);
+                }
+                if (raw == java.util.TreeSet.class
+                        || raw == java.util.SortedSet.class
+                        || raw == java.util.NavigableSet.class) {
+                    return (T) readTypedSet(args[0], java.util.TreeSet::new);
+                }
+                if (raw == java.util.concurrent.CopyOnWriteArraySet.class) {
+                    return (T) readTypedSet(args[0], java.util.concurrent.CopyOnWriteArraySet::new);
+                }
             }
-            if (args.length == 2 && java.util.Map.class.isAssignableFrom(raw)) {
-                return (T) readGenericMap(args[0], args[1]);
+            if (args.length == 1) {
+                // Whitelisted List / Collection / Iterable / Queue / Deque
+                // raws. The original broad
+                // `Collection.class.isAssignableFrom(raw)` gate let unsupported
+                // subtypes (BlockingQueue, AbstractQueue, custom user
+                // collections, etc.) pass through to readGenericList ->
+                // ArrayList, which is not assignable back to the declared
+                // type and surfaced as a downstream ClassCastException.
+                // Mirror the explicit `==` checks the Class-typed
+                // read(Class) branch uses.
+                if (raw == java.util.List.class
+                        || raw == java.util.Collection.class
+                        || raw == Iterable.class
+                        || raw == java.util.ArrayList.class
+                        || raw == java.util.AbstractCollection.class
+                        || raw == java.util.AbstractList.class) {
+                    return (T) readGenericList(args[0]);
+                }
+                if (raw == java.util.LinkedList.class
+                        || raw == java.util.Queue.class
+                        || raw == java.util.Deque.class
+                        || raw == java.util.AbstractSequentialList.class) {
+                    return (T) readTypedList(args[0], java.util.LinkedList::new);
+                }
+                if (raw == java.util.Vector.class) {
+                    return (T) readTypedList(args[0], java.util.Vector::new);
+                }
+                if (raw == java.util.Stack.class) {
+                    return (T) readTypedList(args[0], java.util.Stack::new);
+                }
+                if (raw == java.util.concurrent.CopyOnWriteArrayList.class) {
+                    return (T) readTypedList(args[0], java.util.concurrent.CopyOnWriteArrayList::new);
+                }
             }
         }
-        ObjectReader<T> reader = (ObjectReader<T>) ObjectMapper.shared().getObjectReader(type);
-        if (reader == null) {
-            throw new JSONException("no ObjectReader registered for type: " + type);
-        }
-        return reader.readObject(this, type, null, features);
+        // No SPI override (checked at top), no built-in dispatch matched.
+        throw new JSONException("no ObjectReader registered for type: " + type);
     }
 
     /**
@@ -1135,8 +1265,49 @@ public abstract sealed class JSONParser implements Closeable
     }
 
     private <E> java.util.Set<E> readGenericSet(Type elementType) {
+        return readTypedSet(elementType, java.util.LinkedHashSet::new);
+    }
+
+    /**
+     * Read a Set whose concrete impl is supplied by {@code factory}. Mirrors
+     * {@link #readGenericSet} but lets callers route specific declared types
+     * ({@code TreeSet.class}, {@code SortedSet.class}, etc.) to the
+     * appropriate impl while reusing the elements parsed via
+     * {@link #readGenericList}.
+     */
+    private <E, S extends java.util.Set<E>> S readTypedSet(Type elementType,
+                                                           java.util.function.Supplier<S> factory) {
         java.util.List<E> list = readGenericList(elementType);
-        return list == null ? null : new java.util.LinkedHashSet<>(list);
+        if (list == null) {
+            return null;
+        }
+        S set = factory.get();
+        set.addAll(list);
+        return set;
+    }
+
+    /**
+     * Read a List whose concrete impl is supplied by {@code factory}. Mirrors
+     * {@link #readGenericList} but lets callers route specific declared types
+     * ({@code LinkedList.class}, {@code Vector.class}, etc.) to the
+     * appropriate impl. Filling the list element-by-element is correct for
+     * every JDK list including {@link java.util.concurrent.CopyOnWriteArrayList}
+     * (each {@code add} copies; an O(n²) penalty users opt into by declaring
+     * the type) — for hot-path reads of large lists, prefer a different
+     * declared type.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private <E, L extends java.util.List<E>> L readTypedList(Type elementType,
+                                                              java.util.function.Supplier<L> factory) {
+        java.util.List<E> tmp = readGenericList(elementType);
+        if (tmp == null) {
+            return null;
+        }
+        L target = factory.get();
+        // CopyOnWriteArrayList overrides addAll with a single bulk copy,
+        // beating the per-element add cost — treat it as the common case.
+        target.addAll(tmp);
+        return target;
     }
 
     /**
@@ -1173,6 +1344,62 @@ public abstract sealed class JSONParser implements Closeable
                 throw JSONException.wrapWithPath(e, rawKey);
             }
             map.put(key, value);
+            skipWhitespace();
+            if (offset >= end()) {
+                throw new JSONException("unterminated object");
+            }
+            int c = ch(offset);
+            if (c == ',') {
+                offset++;
+                skipWhitespace();
+                continue;
+            }
+            if (c == '}') {
+                offset++;
+                return map;
+            }
+            throw new JSONException("expected ',' or '}' at " + locationAt(offset));
+        }
+    }
+
+    /**
+     * Read a Map whose concrete impl is supplied by {@code factory}.
+     * Mirrors {@link #readGenericMap} but lets callers route specific
+     * declared types ({@code TreeMap.class}, {@code ConcurrentHashMap.class},
+     * etc.) to the appropriate impl. Note {@link java.util.TreeMap} /
+     * {@link java.util.concurrent.ConcurrentSkipListMap} require keys to
+     * be {@link Comparable}; with raw {@code Map.class} the keys are
+     * String which already satisfies this.
+     */
+    private <K, V, M extends java.util.Map<K, V>> M readTypedMap(Type keyType, Type valueType,
+                                                                 java.util.function.Supplier<M> factory) {
+        if (readNull()) {
+            return null;
+        }
+        skipWhitespace();
+        if (offset >= end() || ch(offset) != '{') {
+            throw new JSONException("expected '{' at " + locationAt(offset));
+        }
+        offset++;
+        skipWhitespace();
+        M map = factory.get();
+        if (offset < end() && ch(offset) == '}') {
+            offset++;
+            return map;
+        }
+        for (;;) {
+            String rawKey = readFieldName();
+            try {
+                K key = convertMapKey(rawKey, keyType);
+                V value = this.<V>read(valueType);
+                // map.put inside the try so impl-specific rejections
+                // (ConcurrentHashMap / ConcurrentSkipListMap reject null
+                // keys/values, TreeMap requires Comparable keys) surface
+                // with the same key-path context as the read failures.
+                map.put(key, value);
+            } catch (RuntimeException e) {
+                throw JSONException.wrapWithPath(e, rawKey);
+            }
             skipWhitespace();
             if (offset >= end()) {
                 throw new JSONException("unterminated object");

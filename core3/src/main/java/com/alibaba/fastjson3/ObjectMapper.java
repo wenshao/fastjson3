@@ -2058,18 +2058,40 @@ public final class ObjectMapper {
         return clazz == JSONObject.class
                 || clazz == JSONArray.class
                 || clazz == Object.class
+                // Map family
                 || clazz == java.util.Map.class
                 || clazz == java.util.AbstractMap.class
+                || clazz == java.util.HashMap.class
+                || clazz == java.util.TreeMap.class
+                || clazz == java.util.SortedMap.class
+                || clazz == java.util.NavigableMap.class
+                || clazz == java.util.concurrent.ConcurrentMap.class
+                || clazz == java.util.concurrent.ConcurrentHashMap.class
+                || clazz == java.util.concurrent.ConcurrentNavigableMap.class
+                || clazz == java.util.concurrent.ConcurrentSkipListMap.class
+                // List family
                 || clazz == java.util.List.class
                 || clazz == java.util.Collection.class
                 || clazz == Iterable.class
                 || clazz == java.util.ArrayList.class
                 || clazz == java.util.AbstractCollection.class
                 || clazz == java.util.AbstractList.class
+                || clazz == java.util.LinkedList.class
+                || clazz == java.util.Queue.class
+                || clazz == java.util.Deque.class
+                || clazz == java.util.AbstractSequentialList.class
+                || clazz == java.util.Vector.class
+                || clazz == java.util.Stack.class
+                || clazz == java.util.concurrent.CopyOnWriteArrayList.class
+                // Set family
                 || clazz == java.util.Set.class
                 || clazz == java.util.AbstractSet.class
                 || clazz == java.util.HashSet.class
-                || clazz == java.util.LinkedHashSet.class;
+                || clazz == java.util.LinkedHashSet.class
+                || clazz == java.util.TreeSet.class
+                || clazz == java.util.SortedSet.class
+                || clazz == java.util.NavigableSet.class
+                || clazz == java.util.concurrent.CopyOnWriteArraySet.class;
     }
 
     private static boolean isBasicType(Class<?> type) {
