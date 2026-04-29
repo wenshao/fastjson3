@@ -196,6 +196,15 @@ public class Fastjson3HttpMessageConverter
     @Override
     public void write(Object o, Type type, MediaType contentType, HttpOutputMessage outputMessage)
             throws IOException, HttpMessageNotWritableException {
+        // The Class-typed write path on AbstractHttpMessageConverter calls
+        // addDefaultHeaders() before writeInternal(); our generic-path
+        // override skipped that step, so Content-Type / charset / Content-
+        // Length headers were not negotiated when Spring routed a generic
+        // return type through GenericHttpMessageConverter.write(...).
+        // Call addDefaultHeaders explicitly so both paths produce headers
+        // identical to AbstractHttpMessageConverter.write(...) +
+        // writeInternal(...).
+        addDefaultHeaders(outputMessage.getHeaders(), o, contentType);
         writeInternal(o, outputMessage);
     }
 }

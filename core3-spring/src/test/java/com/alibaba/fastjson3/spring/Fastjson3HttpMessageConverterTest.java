@@ -227,6 +227,22 @@ class Fastjson3HttpMessageConverterTest {
         assertEquals(StandardCharsets.UTF_8, ct.getCharset());
     }
 
+    @Test
+    void genericWrite_setsContentType() throws Exception {
+        // Regression: pre-fix the GenericHttpMessageConverter.write(Object,
+        // Type, MediaType, HttpOutputMessage) override called writeInternal
+        // directly and skipped addDefaultHeaders, so generic return values
+        // (List<User>, Map<K,V>, etc.) ended up without negotiated
+        // Content-Type / charset headers. Now both Class-typed and
+        // generic-typed write paths flow through addDefaultHeaders.
+        MockHttpOutputMessage out = new MockHttpOutputMessage();
+        conv.write(new User(1L, "a", "a@e.com"), (Type) User.class, MediaType.APPLICATION_JSON, out);
+        MediaType ct = out.getHeaders().getContentType();
+        assertNotNull(ct);
+        assertTrue(ct.isCompatibleWith(MediaType.APPLICATION_JSON));
+        assertEquals(StandardCharsets.UTF_8, ct.getCharset());
+    }
+
     // ---- custom mapper constructor ----
 
     @Test
