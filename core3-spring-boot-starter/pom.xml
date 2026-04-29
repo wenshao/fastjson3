@@ -19,8 +19,10 @@
         <!-- Compile against Boot 3.2.0 — the first Boot release with full
              JDK 21 support. The @AutoConfiguration / @ConditionalOnClass /
              @ConditionalOnWebApplication API surface used here is stable
-             back to 3.0, but Boot 3.0/3.1 ship a Spring 6.0/6.1 ASM that
-             cannot parse Java 21 class files at autoconfig discovery time.
+             back to 3.0, but Boot 3.0/3.1 ship a Spring 6.0 ASM that
+             cannot parse Java 21 class files at autoconfig discovery time
+             (org.springframework.asm.ClassReader caps at major version 64
+             until Spring 6.1, which Boot 3.2.0 first ships).
              Consumers bring their own runtime version transitively through
              their spring-boot-starter-* dependencies. -->
         <spring.boot.version>3.2.0</spring.boot.version>

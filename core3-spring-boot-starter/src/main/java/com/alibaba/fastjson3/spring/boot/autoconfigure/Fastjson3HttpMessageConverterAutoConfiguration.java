@@ -5,16 +5,18 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
-import org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration;
+import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
  * Auto-configuration that registers {@link Fastjson3HttpMessageConverter} as
- * a bean in a servlet web context. Spring Boot's
- * {@link HttpMessageConvertersAutoConfiguration} discovers it and inserts it
- * ahead of the default Jackson converter for {@code application/json} +
- * {@code application/*+json}.
+ * a bean in a servlet web context. Boot's
+ * {@code HttpMessageConvertersAutoConfiguration} collects all
+ * {@code HttpMessageConverter} beans via an {@code ObjectProvider} and ranks
+ * user-supplied beans ahead of its built-in defaults — so the bean we
+ * register here lands ahead of the default Jackson converter for
+ * {@code application/json} + {@code application/*+json}.
  *
  * <p>Triggered when:</p>
  * <ul>
@@ -30,7 +32,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * declare their own {@code Fastjson3HttpMessageConverter} bean — this
  * auto-configuration steps aside via {@link ConditionalOnMissingBean}.</p>
  */
-@AutoConfiguration(before = HttpMessageConvertersAutoConfiguration.class)
+@AutoConfiguration(after = JacksonAutoConfiguration.class)
 @ConditionalOnClass({Fastjson3HttpMessageConverter.class, WebMvcConfigurer.class})
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class Fastjson3HttpMessageConverterAutoConfiguration {

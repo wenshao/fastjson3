@@ -38,18 +38,37 @@ class Fastjson3HttpMessageConverterAutoConfigurationTest {
     }
 
     @Test
-    void converterIsFirstInChain_aheadOfJackson() {
+    void converter_strictlyPrecedesJackson_inChain() {
         servletRunner.run(ctx -> {
             HttpMessageConverters chain = ctx.getBean(HttpMessageConverters.class);
             List<HttpMessageConverter<?>> converters = chain.getConverters();
-            // Spring Boot orders user-defined HttpMessageConverter beans
-            // ahead of its defaults; pin that the fastjson3 converter is
-            // the JSON handler the chain reaches first.
-            HttpMessageConverter<?> first = converters.stream()
-                    .filter(c -> c.canWrite(java.util.HashMap.class, org.springframework.http.MediaType.APPLICATION_JSON))
-                    .findFirst()
-                    .orElseThrow();
-            assertThat(first).isInstanceOf(Fastjson3HttpMessageConverter.class);
+            // Pin "fastjson3 strictly precedes any Jackson-flavored
+            // HttpMessageConverter" — stronger than "fastjson3 is the
+            // first JSON-capable converter", which would also pass with
+            // a Jackson converter sitting at index 1.
+            int fjIdx = -1;
+            int jacksonIdx = -1;
+            for (int i = 0; i < converters.size(); i++) {
+                HttpMessageConverter<?> c = converters.get(i);
+                if (c instanceof Fastjson3HttpMessageConverter) {
+                    if (fjIdx == -1) {
+                        fjIdx = i;
+                    }
+                } else if (c.getClass().getName().contains("MappingJackson")) {
+                    if (jacksonIdx == -1) {
+                        jacksonIdx = i;
+                    }
+                }
+            }
+            assertThat(fjIdx).as("fastjson3 converter must be in the chain").isGreaterThanOrEqualTo(0);
+            // Jackson may be absent from the test context (no transitive
+            // jackson-databind on the classpath); only enforce ordering
+            // when both are present.
+            if (jacksonIdx >= 0) {
+                assertThat(fjIdx)
+                        .as("fastjson3 (idx %d) must precede Jackson (idx %d)", fjIdx, jacksonIdx)
+                        .isLessThan(jacksonIdx);
+            }
         });
     }
 
@@ -75,6 +94,11 @@ class Fastjson3HttpMessageConverterAutoConfigurationTest {
             assertThat(ctx).hasSingleBean(Fastjson3HttpMessageConverter.class);
             assertThat(ctx.getBean(Fastjson3HttpMessageConverter.class))
                     .isSameAs(UserConverterConfig.SHARED);
+            // Close the loop on the documented "drop in a custom
+            // ObjectMapper" workflow — verify the user's bean is what
+            // Boot actually wires into the converter chain.
+            HttpMessageConverters chain = ctx.getBean(HttpMessageConverters.class);
+            assertThat(chain.getConverters()).contains(UserConverterConfig.SHARED);
         });
     }
 

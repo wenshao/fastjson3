@@ -41,7 +41,16 @@ For Boot apps, use `fastjson3-spring-boot-starter` instead — it auto-registers
 </dependency>
 ```
 
-The starter pulls `fastjson3-spring` transitively. Auto-config triggers:
+The starter pulls `fastjson3-spring` transitively. **It does not pull `spring-boot-starter-web` or `spring-boot-starter-webflux`** — by design, so the starter never forces a Spring or Boot version onto consumers. You declare those alongside the starter (any standard Boot app already does):
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-web</artifactId>      <!-- or -webflux -->
+</dependency>
+```
+
+Auto-config triggers:
 
 - **Servlet** (`spring-boot-starter-web` present): registers `Fastjson3HttpMessageConverter` ahead of Jackson via Boot's `HttpMessageConverters` discovery.
 - **Reactive** (`spring-boot-starter-webflux` present): registers `Fastjson3JsonDecoder` + `Fastjson3JsonEncoder` and a `WebFluxConfigurer` that wires them into `ServerCodecConfigurer.defaultCodecs()`.
