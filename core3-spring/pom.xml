@@ -30,14 +30,34 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+            <version>3.5.0</version>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-web</artifactId>
             <version>${spring.version}</version>
             <scope>provided</scope>
-            <!-- Mark optional so future sibling modules adding spring-webflux
-                 or spring-data-redis don't force consumers of one feature
-                 to pull all Spring artifacts at runtime. -->
+            <!-- Mark optional so consumers of one feature (e.g. only the
+                 servlet HttpMessageConverter) don't force-pull spring-webflux
+                 and reactor at runtime. The reverse holds for spring-webflux. -->
             <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webflux</artifactId>
+            <version>${spring.version}</version>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
+            <version>3.5.0</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>

@@ -1,6 +1,13 @@
 # fastjson3-spring
 
-Spring Web `HttpMessageConverter` for [fastjson3](https://github.com/wenshao/fastjson3). Drop-in replacement for Jackson's `MappingJackson2HttpMessageConverter` when you want fastjson3 in front of Spring's web layer.
+Spring Web + WebFlux JSON adapters for [fastjson3](https://github.com/wenshao/fastjson3). Single artifact, two entry points:
+
+| Entry point | Class | Use case |
+|---|---|---|
+| Spring Web (servlet) | `Fastjson3HttpMessageConverter` | `@RestController` + `@RequestBody` / `ResponseEntity` round-trip |
+| Spring WebFlux (reactive) | `Fastjson3JsonDecoder` + `Fastjson3JsonEncoder` | `Mono` / `Flux` reactive endpoints |
+
+Drop-in replacement for Jackson's `MappingJackson2HttpMessageConverter` (servlet) and `Jackson2JsonDecoder` / `Jackson2JsonEncoder` (reactive).
 
 ## Requirements
 
@@ -53,6 +60,25 @@ public class App {
 }
 ```
 
+### Spring WebFlux — register codecs
+
+```java
+import com.alibaba.fastjson3.spring.codec.Fastjson3JsonDecoder;
+import com.alibaba.fastjson3.spring.codec.Fastjson3JsonEncoder;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.codec.ServerCodecConfigurer;
+import org.springframework.web.reactive.config.WebFluxConfigurer;
+
+@Configuration
+public class WebFluxConfig implements WebFluxConfigurer {
+    @Override
+    public void configureHttpMessageCodecs(ServerCodecConfigurer cfg) {
+        cfg.defaultCodecs().jackson2JsonDecoder(new Fastjson3JsonDecoder());
+        cfg.defaultCodecs().jackson2JsonEncoder(new Fastjson3JsonEncoder());
+    }
+}
+```
+
 ### Custom `ObjectMapper`
 
 Pass a configured mapper to apply per-instance settings (modules, mapSupplier, listSupplier, etc.):
@@ -62,7 +88,9 @@ ObjectMapper mapper = ObjectMapper.builder()
         .mapSupplier(java.util.concurrent.ConcurrentHashMap::new)
         .addReaderModule(new MyDomainModule())
         .build();
-return new Fastjson3HttpMessageConverter(mapper);
+return new Fastjson3HttpMessageConverter(mapper);    // servlet
+return new Fastjson3JsonDecoder(mapper);             // WebFlux decode
+return new Fastjson3JsonEncoder(mapper);             // WebFlux encode
 ```
 
 ## Behavior
@@ -80,13 +108,32 @@ return new Fastjson3HttpMessageConverter(mapper);
 
 ## Test coverage
 
-- 20 unit tests in this module (`Fastjson3HttpMessageConverterTest`) covering supports() exclusions, generic type handling, charset honoring, error wrapping, generic write Content-Type, StreamingHttpOutputMessage support.
+- 20 servlet unit tests (`Fastjson3HttpMessageConverterTest`): `supports()` exclusions, generic type handling, charset honoring, error wrapping, generic write Content-Type, `StreamingHttpOutputMessage` support
+- 22 reactive unit tests (`Fastjson3JsonCodecTest`): Decoder + Encoder canDecode/canEncode, exclusion of `String` / `byte[]` / `ByteBuffer` / `Resource`, NDJSON not advertised, `Mono` / `Flux` round-trip with multi-buffer join semantics, generic `List<T>` via `ResolvableType`, `DecodingException` wrapping, custom `ObjectMapper`, empty `getStreamingMediaTypes`
 - 40 end-to-end MockMvc integration tests in `core3-spring-test` covering POJO / record / `Object` / `JSONObject` / `JSONArray` round-trip, ControllerAdvice error responses, header roundtrip, deep nesting, 16-thread concurrency, etc.
+
+## Migrating from `fastjson2:extension-spring6`
+
+Users moving from fj2's `Fastjson2Decoder` / `Fastjson2Encoder` swap the configuration handle from `FastJsonConfig` to `ObjectMapper`:
+
+| fastjson2 | fastjson3 |
+|---|---|
+| `new Fastjson2Decoder()` / `Fastjson2Encoder()` | `new Fastjson3JsonDecoder()` / `Fastjson3JsonEncoder()` |
+| `new Fastjson2Decoder(new FastJsonConfig())` | `new Fastjson3JsonDecoder(ObjectMapper.shared())` |
+| `FastJsonConfig.setReaderFeatures(...)` | `ObjectMapper.builder().enableRead(...).build()` |
+| `FastJsonConfig.setWriterFeatures(...)` | `ObjectMapper.builder().enableWrite(...).build()` |
+| `FastJsonConfig.setReaderFilters(...)` / `setWriterFilters(...)` | `ObjectMapper.builder().addReaderModule(...)` / `addPropertyFilter(...)` |
+| `FastJsonConfig.setDateFormat("yyyy-MM-dd")` | _(open gap on `ObjectMapper.Builder` — track as fj3 core follow-up)_ |
+| `MimeType...` ctor varargs | unchanged — same shape |
+
+Behavioral upgrades vs fj2 (you opt into automatically):
+
+- `canDecode` / `canEncode` exclude `String` / `CharSequence` / `byte[]` / `ByteBuffer` / `Resource` so dedicated codecs handle them
+- `decode(Publisher<DataBuffer>, ...)` joins buffers before parse (matches multi-chunk HTTP body shape)
+- Implements `HttpMessageDecoder<Object>` / `HttpMessageEncoder<Object>` — server-side hint propagation
+- `getStreamingMediaTypes()` returns empty (no `application/x-ndjson` until line-framing lands) — fj2 ships ndjson in default mime types but emits unframed bytes
 
 ## Related artifacts
 
 - `com.alibaba.fastjson3:fastjson3` — core JSON parsing / writing
-- _Planned_: `com.alibaba.fastjson3:fastjson3-spring-webflux` — reactive `Decoder` / `Encoder` for `Mono` / `Flux`
 - _Planned_: `com.alibaba.fastjson3:fastjson3-spring-redis` — `Fastjson3RedisSerializer` for Spring Data Redis
-
-Each Spring feature ships as its own jar so consumers don't pull `spring-webflux` or `spring-data-redis` they don't use.
