@@ -80,7 +80,7 @@ return new Fastjson3HttpMessageConverter(mapper);
 
 ## Test coverage
 
-- 18 unit tests in this module (`Fastjson3HttpMessageConverterTest`) covering supports() exclusions, generic type handling, charset honoring, error wrapping.
+- 20 unit tests in this module (`Fastjson3HttpMessageConverterTest`) covering supports() exclusions, generic type handling, charset honoring, error wrapping, generic write Content-Type, StreamingHttpOutputMessage support.
 - 40 end-to-end MockMvc integration tests in `core3-spring-test` covering POJO / record / `Object` / `JSONObject` / `JSONArray` round-trip, ControllerAdvice error responses, header roundtrip, deep nesting, 16-thread concurrency, etc.
 
 ## Related artifacts
