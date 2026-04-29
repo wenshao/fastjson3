@@ -11,80 +11,18 @@
 
     <artifactId>fastjson3-spring-boot-starter</artifactId>
     <name>fastjson3-spring-boot-starter</name>
-    <description>Spring Boot 3 auto-configuration starter for fastjson3</description>
-    <packaging>jar</packaging>
+    <description>Spring Boot 3 starter for fastjson3 — drop-in dependency that pulls fastjson3-spring-boot-autoconfigure (servlet HttpMessageConverter + reactive codecs auto-config)</description>
+    <packaging>pom</packaging>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- Single Boot version drives both compile and test scopes. The
-             API surface used (@AutoConfiguration, @ConditionalOnClass,
-             @ConditionalOnWebApplication, CodecCustomizer) is stable
-             back to Boot 3.2 — the first Boot release whose bundled
-             Spring 6.1 ASM can read JDK 21 bytecode at autoconfig
-             discovery time (org.springframework.asm.ClassReader caps at
-             major version 64 in Spring 6.0, which Boot 3.0/3.1 ship).
-             We compile against 3.3.5 only because mixing a lower
-             provided version with a 3.3.5 test classpath caused a
-             slf4j/logback ABI mismatch — runtime stays compatible with
-             3.2+ since we never touch a 3.3-only API. Consumers bring
-             their own runtime version transitively through their
-             spring-boot-starter-* dependencies. -->
-        <spring.boot.version>3.3.5</spring.boot.version>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>com.alibaba.fastjson3</groupId>
-            <artifactId>fastjson3-spring</artifactId>
+            <artifactId>fastjson3-spring-boot-autoconfigure</artifactId>
             <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-web</artifactId>
-            <version>6.1.14</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-webflux</artifactId>
-            <version>6.1.14</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-webmvc</artifactId>
-            <version>6.1.14</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-autoconfigure</artifactId>
-            <version>${spring.boot.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${junit5.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <version>${spring.boot.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-            <version>${spring.boot.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
-            <version>${spring.boot.version}</version>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

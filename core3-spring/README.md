@@ -31,7 +31,7 @@ Drop-in replacement for Jackson's `MappingJackson2HttpMessageConverter` (servlet
 
 ### Spring Boot 3 — drop in the starter (recommended)
 
-For Boot apps, use `fastjson3-spring-boot-starter` instead — it auto-registers the servlet converter and reactive codecs based on what's on the classpath, so you don't need any `@Configuration`:
+For Boot apps, use `fastjson3-spring-boot-starter` — it auto-registers the servlet converter and reactive codecs based on what's on the classpath, so you don't need any `@Configuration`:
 
 ```xml
 <dependency>
@@ -41,7 +41,7 @@ For Boot apps, use `fastjson3-spring-boot-starter` instead — it auto-registers
 </dependency>
 ```
 
-The starter pulls `fastjson3-spring` transitively. **It does not pull `spring-boot-starter-web` or `spring-boot-starter-webflux`** — by design, so the starter never forces a Spring or Boot version onto consumers. You declare those alongside the starter (any standard Boot app already does):
+The starter is a pom-only aggregator that pulls `fastjson3-spring-boot-autoconfigure` (the actual `@AutoConfiguration` classes), which in turn pulls `fastjson3-spring` (the converter / codec implementations). **It does not pull `spring-boot-starter-web` or `spring-boot-starter-webflux`** — by design, so the starter never forces a Spring or Boot version onto consumers. You declare those alongside the starter (any standard Boot app already does):
 
 ```xml
 <dependency>
@@ -53,10 +53,12 @@ The starter pulls `fastjson3-spring` transitively. **It does not pull `spring-bo
 Auto-config triggers:
 
 - **Servlet** (`spring-boot-starter-web` present): registers `Fastjson3HttpMessageConverter` ahead of Jackson via Boot's `HttpMessageConverters` discovery.
-- **Reactive** (`spring-boot-starter-webflux` present): registers `Fastjson3JsonDecoder` + `Fastjson3JsonEncoder` and a `WebFluxConfigurer` that wires them into `ServerCodecConfigurer.defaultCodecs()`.
+- **Reactive** (`spring-boot-starter-webflux` present): registers `Fastjson3JsonDecoder` + `Fastjson3JsonEncoder` and a `CodecCustomizer` at `Ordered.LOWEST_PRECEDENCE` that wires them into `ServerCodecConfigurer.defaultCodecs()`, replacing Boot's default Jackson codecs (Boot's Jackson customizer is at `@Order(0)`; ours runs after — last writer wins).
 - **Redis**: not auto-configured — declare your `RedisTemplate` and serializer beans manually (the typed/generic choice is too opinionated to default).
 
 User-supplied beans of the same types short-circuit auto-registration via `@ConditionalOnMissingBean` — pass a configured `ObjectMapper` by declaring your own `Fastjson3HttpMessageConverter` bean.
+
+If you want only the auto-config classes without the starter alias (e.g. you maintain your own dependency aggregation), depend on `fastjson3-spring-boot-autoconfigure` directly — same content, no aggregator layer.
 
 ### Spring Boot 3 — register as a `@Bean` (manual)
 
