@@ -121,6 +121,14 @@ public class Fastjson3HttpMessageConverter
      * charset rather than assumed UTF-8. fastjson3's byte-oriented reader
      * is UTF-8 only, so non-UTF-8 charsets transcode through {@code String}.
      * Defaults to UTF-8 when no charset parameter is present (RFC 8259).
+     *
+     * <p><b>Note</b>: HTTP semantics trust the header, so a body whose
+     * actual encoding doesn't match the declared {@code charset} parameter
+     * decodes successfully but to wrong characters (e.g. UTF-8 bytes
+     * decoded as GBK). This matches Jackson's behavior when an
+     * {@code InputStreamReader} is opened with the declared charset.
+     * Spring rejects unparseable / unknown charset names upstream
+     * (415 Unsupported Media Type) before our converter sees them.</p>
      */
     private static java.nio.charset.Charset resolveCharset(HttpInputMessage inputMessage) {
         MediaType contentType = inputMessage.getHeaders().getContentType();
