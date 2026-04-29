@@ -109,8 +109,29 @@ return new Fastjson3JsonEncoder(mapper);             // WebFlux encode
 ## Test coverage
 
 - 20 servlet unit tests (`Fastjson3HttpMessageConverterTest`): `supports()` exclusions, generic type handling, charset honoring, error wrapping, generic write Content-Type, `StreamingHttpOutputMessage` support
-- 14 reactive unit tests (`Fastjson3JsonCodecTest`): Decoder + Encoder canDecode/canEncode, `Mono` / `Flux` round-trip, generic `List<T>` via `ResolvableType`, `DecodingException` wrapping, custom `ObjectMapper`
+- 22 reactive unit tests (`Fastjson3JsonCodecTest`): Decoder + Encoder canDecode/canEncode, exclusion of `String` / `byte[]` / `ByteBuffer` / `Resource`, NDJSON not advertised, `Mono` / `Flux` round-trip with multi-buffer join semantics, generic `List<T>` via `ResolvableType`, `DecodingException` wrapping, custom `ObjectMapper`, empty `getStreamingMediaTypes`
 - 40 end-to-end MockMvc integration tests in `core3-spring-test` covering POJO / record / `Object` / `JSONObject` / `JSONArray` round-trip, ControllerAdvice error responses, header roundtrip, deep nesting, 16-thread concurrency, etc.
+
+## Migrating from `fastjson2:extension-spring6`
+
+Users moving from fj2's `Fastjson2Decoder` / `Fastjson2Encoder` swap the configuration handle from `FastJsonConfig` to `ObjectMapper`:
+
+| fastjson2 | fastjson3 |
+|---|---|
+| `new Fastjson2Decoder()` / `Fastjson2Encoder()` | `new Fastjson3JsonDecoder()` / `Fastjson3JsonEncoder()` |
+| `new Fastjson2Decoder(new FastJsonConfig())` | `new Fastjson3JsonDecoder(ObjectMapper.shared())` |
+| `FastJsonConfig.setReaderFeatures(...)` | `ObjectMapper.builder().enableRead(...).build()` |
+| `FastJsonConfig.setWriterFeatures(...)` | `ObjectMapper.builder().enableWrite(...).build()` |
+| `FastJsonConfig.setReaderFilters(...)` / `setWriterFilters(...)` | `ObjectMapper.builder().addReaderModule(...)` / `addPropertyFilter(...)` |
+| `FastJsonConfig.setDateFormat("yyyy-MM-dd")` | _(open gap on `ObjectMapper.Builder` — track as fj3 core follow-up)_ |
+| `MimeType...` ctor varargs | unchanged — same shape |
+
+Behavioral upgrades vs fj2 (you opt into automatically):
+
+- `canDecode` / `canEncode` exclude `String` / `CharSequence` / `byte[]` / `ByteBuffer` / `Resource` so dedicated codecs handle them
+- `decode(Publisher<DataBuffer>, ...)` joins buffers before parse (matches multi-chunk HTTP body shape)
+- Implements `HttpMessageDecoder<Object>` / `HttpMessageEncoder<Object>` — server-side hint propagation
+- `getStreamingMediaTypes()` returns empty (no `application/x-ndjson` until line-framing lands) — fj2 ships ndjson in default mime types but emits unframed bytes
 
 ## Related artifacts
 

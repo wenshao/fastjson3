@@ -7,10 +7,14 @@ import org.springframework.core.ResolvableType;
 import org.springframework.core.codec.AbstractDecoder;
 import org.springframework.core.codec.DecodingException;
 import org.springframework.core.codec.Hints;
+import org.springframework.core.io.Resource;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.core.log.LogFormatUtils;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.HttpMessageDecoder;
+import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeType;
@@ -20,6 +24,8 @@ import reactor.core.publisher.Mono;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -47,7 +53,9 @@ import java.util.Map;
  *
  * @see Fastjson3JsonEncoder
  */
-public final class Fastjson3JsonDecoder extends AbstractDecoder<Object> {
+public final class Fastjson3JsonDecoder
+        extends AbstractDecoder<Object>
+        implements HttpMessageDecoder<Object> {
     private static final int BUFFER_SIZE = 65536;
 
     private final ObjectMapper mapper;
@@ -55,8 +63,7 @@ public final class Fastjson3JsonDecoder extends AbstractDecoder<Object> {
     public Fastjson3JsonDecoder() {
         this(ObjectMapper.shared(),
                 MediaType.APPLICATION_JSON,
-                new MediaType("application", "*+json"),
-                new MediaType("application", "x-ndjson"));
+                new MediaType("application", "*+json"));
     }
 
     public Fastjson3JsonDecoder(ObjectMapper mapper, MimeType... mimeTypes) {
@@ -68,13 +75,35 @@ public final class Fastjson3JsonDecoder extends AbstractDecoder<Object> {
     }
 
     @Override
+    public boolean canDecode(@NonNull final ResolvableType elementType,
+                             @Nullable final MimeType mimeType) {
+        // Don't hijack types owned by dedicated codecs:
+        //   - String / CharSequence  -> StringDecoder
+        //   - byte[] / ByteBuffer    -> ByteArrayDecoder / ByteBufferDecoder
+        //   - Resource               -> ResourceDecoder
+        // Without this filter a `Mono<String>` @RequestBody at content-type
+        // application/json would arrive as a JSON-quoted String parsed by us
+        // instead of the raw String the user expected.
+        Class<?> clazz = elementType.resolve();
+        if (clazz != null && isExcludedType(clazz)) {
+            return false;
+        }
+        return super.canDecode(elementType, mimeType);
+    }
+
+    @Override
     @NonNull
     public Flux<Object> decode(@NonNull final Publisher<DataBuffer> inputStream,
                                @NonNull final ResolvableType elementType,
                                @Nullable final MimeType mimeType,
                                @Nullable final Map<String, Object> hints) {
-        return Flux.from(inputStream)
-                .mapNotNull(buffer -> decode(buffer, elementType, mimeType, hints));
+        // Defer to single-value Mono semantics. The Flux entry point on
+        // AbstractDecoder is contract-required but for application/json
+        // 1 buffer ≠ 1 value (large bodies arrive in multiple chunks);
+        // join the publisher and decode once, surfacing a single-element
+        // Flux. Stream-of-objects use cases (NDJSON / line-delimited)
+        // need a tokenizer — tracked as follow-up.
+        return decodeToMono(inputStream, elementType, mimeType, hints).flux();
     }
 
     @Override
@@ -117,6 +146,29 @@ public final class Fastjson3JsonDecoder extends AbstractDecoder<Object> {
             @Nullable final Map<String, Object> hints) {
         return DataBufferUtils.join(inputStream)
                 .flatMap(buffer -> Mono.justOrEmpty(decode(buffer, elementType, mimeType, hints)));
+    }
+
+    @Override
+    @NonNull
+    public Map<String, Object> getDecodeHints(@NonNull final ResolvableType actualType,
+                                              @NonNull final ResolvableType elementType,
+                                              @NonNull final ServerHttpRequest request,
+                                              @NonNull final ServerHttpResponse response) {
+        // No HTTP-aware hints today; Jackson uses this to surface
+        // controller method-level annotations to the codec. Returning an
+        // empty map keeps the Spring contract satisfied without coupling
+        // fastjson3 to Spring's annotation API.
+        return Collections.emptyMap();
+    }
+
+    private static boolean isExcludedType(final Class<?> clazz) {
+        if (clazz == byte[].class || clazz == ByteBuffer.class) {
+            return true;
+        }
+        if (CharSequence.class.isAssignableFrom(clazz)) {
+            return true;
+        }
+        return Resource.class.isAssignableFrom(clazz);
     }
 
     private void logValue(@Nullable final Object value,

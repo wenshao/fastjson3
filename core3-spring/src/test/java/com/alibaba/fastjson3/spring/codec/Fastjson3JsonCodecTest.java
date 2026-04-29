@@ -73,6 +73,32 @@ class Fastjson3JsonCodecTest {
     }
 
     @Test
+    void decoder_excludesString() {
+        // String / CharSequence / byte[] / Resource owned by dedicated codecs.
+        assertFalse(decoder.canDecode(ResolvableType.forClass(String.class), MediaType.APPLICATION_JSON));
+        assertFalse(decoder.canDecode(ResolvableType.forClass(CharSequence.class), MediaType.APPLICATION_JSON));
+    }
+
+    @Test
+    void decoder_excludesByteArrayAndByteBuffer() {
+        assertFalse(decoder.canDecode(ResolvableType.forClass(byte[].class), MediaType.APPLICATION_JSON));
+        assertFalse(decoder.canDecode(ResolvableType.forClass(java.nio.ByteBuffer.class), MediaType.APPLICATION_JSON));
+    }
+
+    @Test
+    void decoder_excludesResource() {
+        assertFalse(decoder.canDecode(ResolvableType.forClass(org.springframework.core.io.Resource.class), MediaType.APPLICATION_JSON));
+    }
+
+    @Test
+    void decoder_doesNotAdvertise_ndjson() {
+        // NDJSON support requires per-line tokenization which we don't
+        // currently implement; advertising it would route ill-framed bytes.
+        MediaType ndjson = MediaType.parseMediaType("application/x-ndjson");
+        assertFalse(decoder.canDecode(ResolvableType.forClass(User.class), ndjson));
+    }
+
+    @Test
     void decoder_decodeToMono_pojo() {
         DataBuffer buf = buffer("{\"id\":1,\"name\":\"alice\",\"email_addr\":\"a@e.com\"}");
         Mono<Object> mono = decoder.decodeToMono(Mono.just(buf),
@@ -88,14 +114,17 @@ class Fastjson3JsonCodecTest {
     }
 
     @Test
-    void decoder_decode_singleBufferPerEvent() {
-        DataBuffer b1 = buffer("{\"id\":1,\"name\":\"a\",\"email_addr\":\"a@e.com\"}");
-        DataBuffer b2 = buffer("{\"id\":2,\"name\":\"b\",\"email_addr\":\"b@e.com\"}");
+    void decoder_flux_joinsBuffersIntoSingleValue() {
+        // Decode contract: Flux entry point now joins buffers (matches
+        // production HTTP behavior where one body arrives in chunks).
+        // Splitting the input across two buffers must still decode to a
+        // single User, not two (broken) Users.
+        DataBuffer b1 = buffer("{\"id\":1,\"name\":\"al");
+        DataBuffer b2 = buffer("ice\",\"email_addr\":\"a@e.com\"}");
         Flux<Object> flux = decoder.decode(Flux.just(b1, b2),
                 ResolvableType.forClass(User.class), MediaType.APPLICATION_JSON, null);
         StepVerifier.create(flux)
-                .assertNext(o -> assertEquals("a", ((User) o).name))
-                .assertNext(o -> assertEquals("b", ((User) o).name))
+                .assertNext(o -> assertEquals("alice", ((User) o).name))
                 .verifyComplete();
     }
 
@@ -135,6 +164,29 @@ class Fastjson3JsonCodecTest {
     @Test
     void encoder_cannotEncode_xml() {
         assertFalse(encoder.canEncode(ResolvableType.forClass(User.class), MediaType.APPLICATION_XML));
+    }
+
+    @Test
+    void encoder_excludesString() {
+        assertFalse(encoder.canEncode(ResolvableType.forClass(String.class), MediaType.APPLICATION_JSON));
+        assertFalse(encoder.canEncode(ResolvableType.forClass(CharSequence.class), MediaType.APPLICATION_JSON));
+    }
+
+    @Test
+    void encoder_excludesByteArrayAndByteBuffer() {
+        assertFalse(encoder.canEncode(ResolvableType.forClass(byte[].class), MediaType.APPLICATION_JSON));
+        assertFalse(encoder.canEncode(ResolvableType.forClass(java.nio.ByteBuffer.class), MediaType.APPLICATION_JSON));
+    }
+
+    @Test
+    void encoder_excludesResource() {
+        assertFalse(encoder.canEncode(ResolvableType.forClass(org.springframework.core.io.Resource.class), MediaType.APPLICATION_JSON));
+    }
+
+    @Test
+    void encoder_streamingMediaTypes_emptyByDefault() {
+        assertTrue(encoder.getStreamingMediaTypes().isEmpty(),
+                "NDJSON / stream+json need framing — return empty until tokenizer-style support lands");
     }
 
     @Test

@@ -7,14 +7,19 @@ import org.springframework.core.ResolvableType;
 import org.springframework.core.codec.AbstractEncoder;
 import org.springframework.core.codec.EncodingException;
 import org.springframework.core.codec.Hints;
+import org.springframework.core.io.Resource;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferFactory;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.HttpMessageEncoder;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeType;
 import reactor.core.publisher.Flux;
 
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -34,14 +39,15 @@ import java.util.Map;
  *
  * @see Fastjson3JsonDecoder
  */
-public final class Fastjson3JsonEncoder extends AbstractEncoder<Object> {
+public final class Fastjson3JsonEncoder
+        extends AbstractEncoder<Object>
+        implements HttpMessageEncoder<Object> {
     private final ObjectMapper mapper;
 
     public Fastjson3JsonEncoder() {
         this(ObjectMapper.shared(),
                 MediaType.APPLICATION_JSON,
-                new MediaType("application", "*+json"),
-                new MediaType("application", "x-ndjson"));
+                new MediaType("application", "*+json"));
     }
 
     public Fastjson3JsonEncoder(ObjectMapper mapper, MimeType... mimeTypes) {
@@ -50,6 +56,19 @@ public final class Fastjson3JsonEncoder extends AbstractEncoder<Object> {
                         new MediaType("application", "*+json")}
                 : mimeTypes);
         this.mapper = mapper;
+    }
+
+    @Override
+    public boolean canEncode(@NonNull final ResolvableType elementType,
+                             @Nullable final MimeType mimeType) {
+        // See decoder canDecode comment — same exclusions apply on the
+        // write side so a controller returning a String / byte[] / Resource
+        // routes to the dedicated encoder, not us.
+        Class<?> clazz = elementType.resolve();
+        if (clazz != null && isExcludedType(clazz)) {
+            return false;
+        }
+        return super.canEncode(elementType, mimeType);
     }
 
     @Override
@@ -78,6 +97,33 @@ public final class Fastjson3JsonEncoder extends AbstractEncoder<Object> {
             return buffer;
         } catch (JSONException ex) {
             throw new EncodingException("JSON write error: " + ex.getMessage(), ex);
+        } catch (RuntimeException ex) {
+            // Buffer allocation OOM, custom mapper failures, etc. — wrap so
+            // the reactive pipeline surfaces a deterministic Spring exception.
+            throw new EncodingException(
+                    "Failed to encode JSON: " + ex.getMessage(), ex);
         }
+    }
+
+    @Override
+    @NonNull
+    public List<MediaType> getStreamingMediaTypes() {
+        // Stream-of-objects (NDJSON / application/stream+json) needs
+        // per-element line separator emission. fastjson3's encoder
+        // currently emits one JSON value per buffer with no framing,
+        // so declaring streaming media types would route ill-formed
+        // bytes to the wire. Return empty until tokenizer-style
+        // framing lands as a follow-up.
+        return Collections.emptyList();
+    }
+
+    private static boolean isExcludedType(final Class<?> clazz) {
+        if (clazz == byte[].class || clazz == ByteBuffer.class) {
+            return true;
+        }
+        if (CharSequence.class.isAssignableFrom(clazz)) {
+            return true;
+        }
+        return Resource.class.isAssignableFrom(clazz);
     }
 }
