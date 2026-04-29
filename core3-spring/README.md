@@ -1,14 +1,15 @@
 # fastjson3-spring
 
-Spring Web + WebFlux + Redis JSON adapters for [fastjson3](https://github.com/wenshao/fastjson3). Single artifact, three entry points:
+Spring Web + WebFlux + Redis JSON adapters for [fastjson3](https://github.com/wenshao/fastjson3). Single artifact, four entry points:
 
 | Entry point | Class | Use case |
 |---|---|---|
 | Spring Web (servlet) | `Fastjson3HttpMessageConverter` | `@RestController` + `@RequestBody` / `ResponseEntity` round-trip |
+| Spring MVC `View` | `Fastjson3JsonView` | `ModelAndView` / `ContentNegotiatingViewResolver` JSON rendering (legacy MVC) |
 | Spring WebFlux (reactive) | `Fastjson3JsonDecoder` + `Fastjson3JsonEncoder` | `Mono` / `Flux` reactive endpoints |
 | Spring Data Redis | `Fastjson3RedisSerializer` + `GenericFastjson3RedisSerializer` | `RedisTemplate` value serializer for JSON cache |
 
-Drop-in replacement for Jackson's `MappingJackson2HttpMessageConverter` (servlet), `Jackson2JsonDecoder` / `Jackson2JsonEncoder` (reactive), and `Jackson2JsonRedisSerializer` (Redis).
+Drop-in replacement for Jackson's `MappingJackson2HttpMessageConverter` (servlet), `MappingJackson2JsonView` (legacy view resolver), `Jackson2JsonDecoder` / `Jackson2JsonEncoder` (reactive), and `Jackson2JsonRedisSerializer` (Redis).
 
 ## Requirements
 
@@ -93,6 +94,33 @@ public class App {
     }
 }
 ```
+
+### Spring MVC `View` — register Fastjson3JsonView
+
+For legacy Spring MVC apps that return `ModelAndView` and resolve view names through `ContentNegotiatingViewResolver` or similar. Modern `@RestController` apps should use `Fastjson3HttpMessageConverter` (above) instead.
+
+```java
+import com.alibaba.fastjson3.spring.view.Fastjson3JsonView;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.view.ContentNegotiatingViewResolver;
+
+import java.util.List;
+
+@Configuration
+public class ViewConfig {
+    @Bean
+    public ContentNegotiatingViewResolver viewResolver() {
+        ContentNegotiatingViewResolver r = new ContentNegotiatingViewResolver();
+        Fastjson3JsonView view = new Fastjson3JsonView();
+        view.setExtractValueFromSingleKeyModel(true); // emit array/object directly when model has one entry
+        r.setDefaultViews(List.of(view));
+        return r;
+    }
+}
+```
+
+Knobs (mirror fastjson2's `FastJsonJsonView`): `setRenderedAttributes` (whitelist of model keys), `setDisableCaching` (default true; emits `Pragma` / `Cache-Control` / `Expires` headers), `setExtractValueFromSingleKeyModel` (un-wrap the map when there's a single entry), `setUpdateContentLength`.
 
 ### Spring WebFlux — register codecs
 
@@ -185,6 +213,7 @@ return new GenericFastjson3RedisSerializer(mapper);  // Redis generic
 - 20 servlet unit tests (`Fastjson3HttpMessageConverterTest`): `supports()` exclusions, generic type handling, charset honoring, error wrapping, generic write Content-Type, `StreamingHttpOutputMessage` support
 - 22 reactive unit tests (`Fastjson3JsonCodecTest`): Decoder + Encoder canDecode/canEncode, exclusion of `String` / `byte[]` / `ByteBuffer` / `Resource`, NDJSON not advertised, `Mono` / `Flux` round-trip with multi-buffer join semantics, generic `List<T>` via `ResolvableType`, `DecodingException` wrapping, custom `ObjectMapper`, empty `getStreamingMediaTypes`
 - 22 Redis unit tests (`Fastjson3RedisSerializerTest`): typed `Fastjson3RedisSerializer<T>` round-trip POJO + nested generic field, null / empty bytes contract, malformed payload → `SerializationException`, custom `ObjectMapper`, null-arg ctor rejection, `getTargetType()` returns concrete `T`, 16-thread × 200-iter concurrency, >10KB payload; `GenericFastjson3RedisSerializer` writes `@type`, JSONObject reconstruction by design (fj3 does not do raw `@type` class loading), Map / List value round-trip
+- 14 view unit tests (`Fastjson3JsonViewTest`): basic JSON body, `renderedAttributes` whitelist, `BindingResult` filter, `extractValueFromSingleKeyModel` un-wrap (map + list), cache header emission and suppression, `updateContentLength`, custom `ObjectMapper`, null-arg ctor rejection, default content type
 - 40 end-to-end MockMvc integration tests in `core3-spring-test` covering POJO / record / `Object` / `JSONObject` / `JSONArray` round-trip, ControllerAdvice error responses, header roundtrip, deep nesting, 16-thread concurrency, etc.
 
 ## Migrating from fastjson2 Spring extensions
