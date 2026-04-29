@@ -5,15 +5,17 @@ import com.alibaba.fastjson3.spring.codec.Fastjson3JsonDecoder;
 import com.alibaba.fastjson3.spring.codec.Fastjson3JsonEncoder;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.http.codec.CodecsAutoConfiguration;
+import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.boot.web.codec.CodecCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.codec.DecoderHttpMessageReader;
 import org.springframework.http.codec.EncoderHttpMessageWriter;
 import org.springframework.http.codec.ServerCodecConfigurer;
-import org.springframework.web.reactive.config.WebFluxConfigurer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,27 +39,71 @@ class Fastjson3JsonCodecAutoConfigurationTest {
     }
 
     @Test
-    void registersWebFluxConfigurer() {
+    void registersCodecCustomizer() {
         reactiveRunner.run(ctx -> {
-            // The configurer wires our decoder/encoder into ServerCodecConfigurer's
-            // default codecs slot. Pin that exactly one such configurer is registered
-            // so a future double-registration regression trips this test.
-            assertThat(ctx.getBeansOfType(WebFluxConfigurer.class))
-                    .hasEntrySatisfying("fastjson3WebFluxConfigurer",
+            // The customizer writes our decoder/encoder into the
+            // ServerCodecConfigurer's default codecs slot. Pin that exactly
+            // one such customizer is registered so a future double-registration
+            // regression trips this test.
+            assertThat(ctx.getBeansOfType(CodecCustomizer.class))
+                    .hasEntrySatisfying("fastjson3CodecCustomizer",
                             bean -> assertThat(bean).isNotNull());
         });
     }
 
     @Test
-    void webFluxConfigurer_actuallyWiresCodecsIntoServerCodecConfigurer() {
-        // Verify the configurer's body, not just its presence — a future
-        // refactor that empties configureHttpMessageCodecs(...) silently
-        // passed the bean-existence test, but should fail this one.
+    void fastjson3CodecCustomizer_winsAgainstBootJacksonCustomizer() {
+        // The reason fastjson3CodecCustomizer is at LOWEST_PRECEDENCE: Boot's
+        // CodecsAutoConfiguration.JacksonCodecConfiguration registers a
+        // jacksonCodecCustomizer at @Order(0) that writes the same
+        // jackson2JsonDecoder / jackson2JsonEncoder slots — last writer wins.
+        // This test loads BOTH auto-configurations into the same context and
+        // invokes ALL CodecCustomizer beans in @Order order against a fresh
+        // ServerCodecConfigurer, exactly as Boot's WebFluxConfig does at
+        // runtime. If our @Order is ever inverted (or matches Jackson's), the
+        // assertion below catches the silent regression.
+        new ReactiveWebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        JacksonAutoConfiguration.class,
+                        CodecsAutoConfiguration.class,
+                        Fastjson3JsonCodecAutoConfiguration.class))
+                .run(ctx -> {
+                    assertThat(ctx.getBeansOfType(CodecCustomizer.class))
+                            .as("expected both jacksonCodecCustomizer and fastjson3CodecCustomizer in the chain")
+                            .containsKeys("jacksonCodecCustomizer", "fastjson3CodecCustomizer");
+
+                    ServerCodecConfigurer cfg = ServerCodecConfigurer.create();
+                    ctx.getBeanProvider(CodecCustomizer.class)
+                            .orderedStream()
+                            .forEach(c -> c.customize(cfg));
+
+                    boolean hasFastjson3Decoder = cfg.getReaders().stream()
+                            .filter(r -> r instanceof DecoderHttpMessageReader<?>)
+                            .map(r -> ((DecoderHttpMessageReader<?>) r).getDecoder())
+                            .anyMatch(d -> d instanceof Fastjson3JsonDecoder);
+                    boolean hasFastjson3Encoder = cfg.getWriters().stream()
+                            .filter(w -> w instanceof EncoderHttpMessageWriter<?>)
+                            .map(w -> ((EncoderHttpMessageWriter<?>) w).getEncoder())
+                            .anyMatch(e -> e instanceof Fastjson3JsonEncoder);
+                    assertThat(hasFastjson3Decoder)
+                            .as("Fastjson3JsonDecoder must win the slot vs Jackson's @Order(0) customizer")
+                            .isTrue();
+                    assertThat(hasFastjson3Encoder)
+                            .as("Fastjson3JsonEncoder must win the slot vs Jackson's @Order(0) customizer")
+                            .isTrue();
+                });
+    }
+
+    @Test
+    void codecCustomizer_actuallyWiresCodecsIntoServerCodecConfigurer() {
+        // Verify the customizer's body, not just its presence — a future
+        // refactor that empties customize(...) silently passed the
+        // bean-existence test, but should fail this one.
         reactiveRunner.run(ctx -> {
-            WebFluxConfigurer configurer = ctx.getBean(
-                    "fastjson3WebFluxConfigurer", WebFluxConfigurer.class);
+            CodecCustomizer customizer = ctx.getBean(
+                    "fastjson3CodecCustomizer", CodecCustomizer.class);
             ServerCodecConfigurer cfg = ServerCodecConfigurer.create();
-            configurer.configureHttpMessageCodecs(cfg);
+            customizer.customize(cfg);
 
             boolean hasFastjson3Decoder = cfg.getReaders().stream()
                     .filter(r -> r instanceof DecoderHttpMessageReader<?>)
