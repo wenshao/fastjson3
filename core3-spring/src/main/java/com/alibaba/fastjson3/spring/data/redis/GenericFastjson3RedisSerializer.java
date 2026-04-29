@@ -7,21 +7,28 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.SerializationException;
 
 /**
- * Spring Data Redis {@link RedisSerializer} that handles arbitrary
- * {@link Object} values by writing the runtime type as an
- * {@code @type} discriminator (write side) and deserializing it back
- * through fastjson3's auto-type machinery (read side). Use when the
- * cache value's static type is {@code Object} or polymorphic.
+ * Spring Data Redis {@link RedisSerializer} for arbitrary
+ * {@link Object} values. Writes the runtime type as an {@code @type}
+ * discriminator on the write side. Use when the cache value's static
+ * type is {@code Object} or polymorphic.
  *
  * <p>By default uses an {@link ObjectMapper} configured with
- * {@link WriteFeature#WriteClassName} +
- * {@link ReadFeature#SupportAutoType}.</p>
+ * {@link WriteFeature#WriteClassName}.</p>
  *
- * <p><b>Security note</b>: enabling {@code SupportAutoType} on attacker-
- * controlled JSON allows instantiation of arbitrary registered classes
- * (gadget chain risk). Only use this serializer for cache values your
- * application produces; never for cache values written by external
- * systems unless you also configure an autotype allow-list.</p>
+ * <p><b>Read-side behavior — by design</b>: fastjson3 does not perform
+ * {@code @type}-driven {@link Class#forName(String)} loading. This is a
+ * deliberate departure from fastjson2's {@code SupportAutoType} mode,
+ * which was the source of CVE-2017-18349 and subsequent gadget-chain
+ * CVEs. Result: deserialization of an unknown root type yields
+ * {@link com.alibaba.fastjson3.JSONObject} or
+ * {@link com.alibaba.fastjson3.JSONArray} rather than the original POJO.
+ * The {@code @type} field is preserved in the JSON payload but is not
+ * used for instantiation. fastjson3's
+ * {@link ReadFeature#SupportAutoType} flag is a deprecated no-op.</p>
+ *
+ * <p>For typed reconstruction prefer {@link Fastjson3RedisSerializer}
+ * with a concrete {@code Class<T>}, or model the hierarchy with
+ * {@code @JSONType(seeAlso = ...)} on a sealed type.</p>
  *
  * <p><b>Usage</b>:</p>
  * <pre>{@code
@@ -39,33 +46,21 @@ public class GenericFastjson3RedisSerializer implements RedisSerializer<Object> 
     private final ObjectMapper mapper;
 
     /**
-     * Default constructor — wires {@link WriteFeature#WriteClassName} +
-     * {@link ReadFeature#SupportAutoType} on a fresh ObjectMapper.
-     *
-     * <p><b>Current behavior</b>: serialized JSON carries an {@code @type}
-     * discriminator, but fastjson3's {@code ObjectMapper.Builder} does not
-     * yet expose an {@code AutoTypeFilter} hook (the
-     * {@link com.alibaba.fastjson3.filter.AutoTypeFilter} class is declared
-     * but not wired into the parser path). Result: deserialization of an
-     * unknown root type falls back to
-     * {@link com.alibaba.fastjson3.JSONObject} or
-     * {@link com.alibaba.fastjson3.JSONArray} rather than the original POJO.
-     * For strongly-typed cache values prefer
-     * {@link Fastjson3RedisSerializer} with the concrete {@code Class<T>}.
-     * Tracked as a fj3 core follow-up; once the builder hook lands this
-     * serializer will gain typed-reconstruction support transparently.</p>
+     * Default constructor — wires {@link WriteFeature#WriteClassName} on
+     * a fresh {@link ObjectMapper}. Read side uses default behavior. See
+     * the class Javadoc for the design rationale.
      */
     public GenericFastjson3RedisSerializer() {
         this(ObjectMapper.builder()
                 .enableWrite(WriteFeature.WriteClassName)
-                .enableRead(ReadFeature.SupportAutoType)
                 .build());
     }
 
     /**
      * Caller-provided mapper. The caller is responsible for enabling
-     * {@code WriteClassName} on the writer side and {@code SupportAutoType}
-     * on the reader side; otherwise polymorphic deserialization will fail.
+     * {@link WriteFeature#WriteClassName} on the writer side. Note that
+     * {@link ReadFeature#SupportAutoType} is a deprecated no-op in
+     * fastjson3 and has no effect on read-side reconstruction.
      */
     public GenericFastjson3RedisSerializer(ObjectMapper mapper) {
         if (mapper == null) {

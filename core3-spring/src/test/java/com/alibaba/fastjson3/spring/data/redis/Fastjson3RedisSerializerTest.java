@@ -130,25 +130,19 @@ class Fastjson3RedisSerializerTest {
 
     @Test
     void generic_deserializeUnknownType_fallsBackToJsonObject() {
-        // Documented limitation: ObjectMapper.Builder doesn't yet expose an
-        // AutoTypeFilter hook, so SupportAutoType+@type round-trip lands as
-        // JSONObject rather than the original POJO. Pin the current shape so
-        // a future fj3 core fix that wires AutoTypeFilter trips this test.
+        // By design: fastjson3 does not do raw @type-driven Class.forName
+        // (fj2 CVE-2017-18349 mitigation). The @type discriminator is
+        // preserved in the payload but not used for instantiation —
+        // untyped reads land on JSONObject. Use Fastjson3RedisSerializer<T>
+        // for typed reconstruction.
         GenericFastjson3RedisSerializer s = new GenericFastjson3RedisSerializer();
         User original = new User(1L, "alice", "a@e.com");
         byte[] bytes = s.serialize(original);
         Object back = s.deserialize(bytes);
-        assertNotNull(back);
-        // Today: JSONObject. Tomorrow (after autoTypeFilter wiring): User.
-        assertTrue(back instanceof com.alibaba.fastjson3.JSONObject || back instanceof User,
-                "expected JSONObject (current) or User (post-fix), got "
-                        + back.getClass().getName());
-        // The @type / payload data is preserved either way:
-        if (back instanceof com.alibaba.fastjson3.JSONObject json) {
-            assertEquals("alice", json.get("name"));
-        } else {
-            assertEquals("alice", ((User) back).name);
-        }
+        assertInstanceOf(com.alibaba.fastjson3.JSONObject.class, back);
+        com.alibaba.fastjson3.JSONObject json = (com.alibaba.fastjson3.JSONObject) back;
+        assertEquals("alice", json.get("name"));
+        assertEquals("a@e.com", json.get("email_addr"));
     }
 
     @Test

@@ -30,6 +30,12 @@ import org.springframework.data.redis.serializer.SerializationException;
  * polymorphic / unknown-type cache values use
  * {@link GenericFastjson3RedisSerializer} instead.</p>
  *
+ * <p><b>Security</b>: this serializer is structurally safe — values are
+ * reconstructed through the declared {@code Class<T>}, never via an
+ * {@code @type} discriminator embedded in the JSON. fastjson3's
+ * {@link com.alibaba.fastjson3.ReadFeature#SupportAutoType} is a
+ * deprecated no-op and has no effect here.</p>
+ *
  * @param <T> the target value type
  */
 public class Fastjson3RedisSerializer<T> implements RedisSerializer<T> {

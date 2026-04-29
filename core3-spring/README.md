@@ -103,9 +103,9 @@ public class RedisConfig {
         return t;
     }
 
-    // Polymorphic cache: serialized JSON carries @type; today round-trips
-    // to JSONObject because ObjectMapper.Builder doesn't yet expose an
-    // AutoTypeFilter hook (tracked as fj3 core follow-up). Use
+    // Polymorphic cache: serialized JSON carries @type; deserialization
+    // round-trips to JSONObject by design — fastjson3 does not do raw
+    // @type-driven Class.forName (fj2 CVE-2017-18349 mitigation). Use
     // Fastjson3RedisSerializer<T> when typed reconstruction matters.
     @Bean
     public RedisTemplate<String, Object> genericRedisTemplate(RedisConnectionFactory cf) {
@@ -151,7 +151,7 @@ return new GenericFastjson3RedisSerializer(mapper);  // Redis generic
 
 - 20 servlet unit tests (`Fastjson3HttpMessageConverterTest`): `supports()` exclusions, generic type handling, charset honoring, error wrapping, generic write Content-Type, `StreamingHttpOutputMessage` support
 - 22 reactive unit tests (`Fastjson3JsonCodecTest`): Decoder + Encoder canDecode/canEncode, exclusion of `String` / `byte[]` / `ByteBuffer` / `Resource`, NDJSON not advertised, `Mono` / `Flux` round-trip with multi-buffer join semantics, generic `List<T>` via `ResolvableType`, `DecodingException` wrapping, custom `ObjectMapper`, empty `getStreamingMediaTypes`
-- 22 Redis unit tests (`Fastjson3RedisSerializerTest`): typed `Fastjson3RedisSerializer<T>` round-trip POJO + nested generic field, null / empty bytes contract, malformed payload → `SerializationException`, custom `ObjectMapper`, null-arg ctor rejection, `getTargetType()` returns concrete `T`, 16-thread × 200-iter concurrency, >10KB payload; `GenericFastjson3RedisSerializer` writes `@type`, current JSONObject fallback (autotype filter pending fj3 core), Map / List value round-trip
+- 22 Redis unit tests (`Fastjson3RedisSerializerTest`): typed `Fastjson3RedisSerializer<T>` round-trip POJO + nested generic field, null / empty bytes contract, malformed payload → `SerializationException`, custom `ObjectMapper`, null-arg ctor rejection, `getTargetType()` returns concrete `T`, 16-thread × 200-iter concurrency, >10KB payload; `GenericFastjson3RedisSerializer` writes `@type`, JSONObject reconstruction by design (fj3 does not do raw `@type` class loading), Map / List value round-trip
 - 40 end-to-end MockMvc integration tests in `core3-spring-test` covering POJO / record / `Object` / `JSONObject` / `JSONArray` round-trip, ControllerAdvice error responses, header roundtrip, deep nesting, 16-thread concurrency, etc.
 
 ## Migrating from `fastjson2:extension-spring6`
@@ -167,6 +167,8 @@ Users moving from fj2's `Fastjson2Decoder` / `Fastjson2Encoder` swap the configu
 | `FastJsonConfig.setReaderFilters(...)` / `setWriterFilters(...)` | `ObjectMapper.builder().addReaderModule(...)` / `addPropertyFilter(...)` |
 | `FastJsonConfig.setDateFormat("yyyy-MM-dd")` | _(open gap on `ObjectMapper.Builder` — track as fj3 core follow-up)_ |
 | `MimeType...` ctor varargs | unchanged — same shape |
+| `FastJsonRedisSerializer<>(User.class)` (typed) | `Fastjson3RedisSerializer<>(User.class)` |
+| `GenericFastJsonRedisSerializer` (autotype) | `GenericFastjson3RedisSerializer` — read side returns `JSONObject` by design; for typed reconstruction use `Fastjson3RedisSerializer<T>` or `@JSONType(seeAlso = ...)` |
 
 Behavioral upgrades vs fj2 (you opt into automatically):
 
