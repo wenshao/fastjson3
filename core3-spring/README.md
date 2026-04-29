@@ -1,13 +1,14 @@
 # fastjson3-spring
 
-Spring Web + WebFlux JSON adapters for [fastjson3](https://github.com/wenshao/fastjson3). Single artifact, two entry points:
+Spring Web + WebFlux + Redis JSON adapters for [fastjson3](https://github.com/wenshao/fastjson3). Single artifact, three entry points:
 
 | Entry point | Class | Use case |
 |---|---|---|
 | Spring Web (servlet) | `Fastjson3HttpMessageConverter` | `@RestController` + `@RequestBody` / `ResponseEntity` round-trip |
 | Spring WebFlux (reactive) | `Fastjson3JsonDecoder` + `Fastjson3JsonEncoder` | `Mono` / `Flux` reactive endpoints |
+| Spring Data Redis | `Fastjson3RedisSerializer` + `GenericFastjson3RedisSerializer` | `RedisTemplate` value serializer for JSON cache |
 
-Drop-in replacement for Jackson's `MappingJackson2HttpMessageConverter` (servlet) and `Jackson2JsonDecoder` / `Jackson2JsonEncoder` (reactive).
+Drop-in replacement for Jackson's `MappingJackson2HttpMessageConverter` (servlet), `Jackson2JsonDecoder` / `Jackson2JsonEncoder` (reactive), and `Jackson2JsonRedisSerializer` (Redis).
 
 ## Requirements
 
@@ -79,6 +80,44 @@ public class WebFluxConfig implements WebFluxConfigurer {
 }
 ```
 
+### Spring Data Redis — register serializer
+
+```java
+import com.alibaba.fastjson3.spring.data.redis.Fastjson3RedisSerializer;
+import com.alibaba.fastjson3.spring.data.redis.GenericFastjson3RedisSerializer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
+
+@Configuration
+public class RedisConfig {
+    // Strongly-typed cache: User stored as JSON; reconstruction Class<User>-driven.
+    @Bean
+    public RedisTemplate<String, User> userRedisTemplate(RedisConnectionFactory cf) {
+        RedisTemplate<String, User> t = new RedisTemplate<>();
+        t.setConnectionFactory(cf);
+        t.setKeySerializer(new StringRedisSerializer());
+        t.setValueSerializer(new Fastjson3RedisSerializer<>(User.class));
+        return t;
+    }
+
+    // Polymorphic cache: serialized JSON carries @type; today round-trips
+    // to JSONObject because ObjectMapper.Builder doesn't yet expose an
+    // AutoTypeFilter hook (tracked as fj3 core follow-up). Use
+    // Fastjson3RedisSerializer<T> when typed reconstruction matters.
+    @Bean
+    public RedisTemplate<String, Object> genericRedisTemplate(RedisConnectionFactory cf) {
+        RedisTemplate<String, Object> t = new RedisTemplate<>();
+        t.setConnectionFactory(cf);
+        t.setKeySerializer(new StringRedisSerializer());
+        t.setValueSerializer(new GenericFastjson3RedisSerializer());
+        return t;
+    }
+}
+```
+
 ### Custom `ObjectMapper`
 
 Pass a configured mapper to apply per-instance settings (modules, mapSupplier, listSupplier, etc.):
@@ -91,6 +130,8 @@ ObjectMapper mapper = ObjectMapper.builder()
 return new Fastjson3HttpMessageConverter(mapper);    // servlet
 return new Fastjson3JsonDecoder(mapper);             // WebFlux decode
 return new Fastjson3JsonEncoder(mapper);             // WebFlux encode
+return new Fastjson3RedisSerializer<>(User.class, mapper); // Redis typed
+return new GenericFastjson3RedisSerializer(mapper);  // Redis generic
 ```
 
 ## Behavior
@@ -110,6 +151,7 @@ return new Fastjson3JsonEncoder(mapper);             // WebFlux encode
 
 - 20 servlet unit tests (`Fastjson3HttpMessageConverterTest`): `supports()` exclusions, generic type handling, charset honoring, error wrapping, generic write Content-Type, `StreamingHttpOutputMessage` support
 - 22 reactive unit tests (`Fastjson3JsonCodecTest`): Decoder + Encoder canDecode/canEncode, exclusion of `String` / `byte[]` / `ByteBuffer` / `Resource`, NDJSON not advertised, `Mono` / `Flux` round-trip with multi-buffer join semantics, generic `List<T>` via `ResolvableType`, `DecodingException` wrapping, custom `ObjectMapper`, empty `getStreamingMediaTypes`
+- 18 Redis unit tests (`Fastjson3RedisSerializerTest`): typed `Fastjson3RedisSerializer<T>` round-trip POJO + nested generic field, null / empty bytes contract, malformed payload → `SerializationException`, custom `ObjectMapper`, null-arg ctor rejection; `GenericFastjson3RedisSerializer` writes `@type`, current JSONObject fallback (autotype filter pending fj3 core), Map / List value round-trip
 - 40 end-to-end MockMvc integration tests in `core3-spring-test` covering POJO / record / `Object` / `JSONObject` / `JSONArray` round-trip, ControllerAdvice error responses, header roundtrip, deep nesting, 16-thread concurrency, etc.
 
 ## Migrating from `fastjson2:extension-spring6`
@@ -136,4 +178,3 @@ Behavioral upgrades vs fj2 (you opt into automatically):
 ## Related artifacts
 
 - `com.alibaba.fastjson3:fastjson3` — core JSON parsing / writing
-- _Planned_: `com.alibaba.fastjson3:fastjson3-spring-redis` — `Fastjson3RedisSerializer` for Spring Data Redis

@@ -54,6 +54,16 @@
             <optional>true</optional>
         </dependency>
         <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-redis</artifactId>
+            <version>3.3.5</version>
+            <scope>provided</scope>
+            <!-- Redis serializer is opt-in: consumers using only the
+                 servlet converter or WebFlux codecs don't pull
+                 spring-data-redis at runtime. -->
+            <optional>true</optional>
+        </dependency>
+        <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-test</artifactId>
             <version>3.5.0</version>
