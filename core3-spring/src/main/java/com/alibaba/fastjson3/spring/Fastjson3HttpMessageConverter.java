@@ -17,15 +17,45 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Minimal Spring {@link org.springframework.http.converter.HttpMessageConverter}
+ * Spring {@link org.springframework.http.converter.HttpMessageConverter}
  * implementation that routes (de)serialization through fastjson3's
- * {@link ObjectMapper}. Designed for the {@code fastjson3-spring-test}
- * integration suite — exercises real HTTP round-trip semantics without
- * pulling in a full extension module.
+ * {@link ObjectMapper}. Drop-in replacement for Jackson's
+ * {@code MappingJackson2HttpMessageConverter} when the application wants
+ * fastjson3 in front of Spring's web layer.
  *
- * <p>Reads / writes UTF-8 JSON only; {@code application/json}
- * + {@code application/*+json} media types. Generic types (e.g.
- * {@code List<User>}) are handled via {@link GenericHttpMessageConverter}.</p>
+ * <p><b>Usage</b> (Spring Boot 3 / Spring Web 6):</p>
+ * <pre>{@code
+ * @Configuration
+ * public class WebConfig implements WebMvcConfigurer {
+ *     @Bean
+ *     public Fastjson3HttpMessageConverter fastjson3HttpMessageConverter() {
+ *         return new Fastjson3HttpMessageConverter();
+ *     }
+ *
+ *     @Override
+ *     public void configureMessageConverters(List<HttpMessageConverter<?>> converters) {
+ *         converters.add(0, fastjson3HttpMessageConverter());
+ *     }
+ * }
+ * }</pre>
+ *
+ * <p>To bypass Spring Boot's Jackson auto-configuration entirely, also
+ * exclude {@code JacksonAutoConfiguration.class} on the Boot application.</p>
+ *
+ * <p><b>Coverage</b>:</p>
+ * <ul>
+ *   <li>Media types {@code application/json} + {@code application/*+json}.</li>
+ *   <li>Generic types ({@code List<User>}, {@code Map<String, V>}, generic
+ *       records) via {@link GenericHttpMessageConverter}.</li>
+ *   <li>Charset honoring: request bodies in GBK / ISO-8859-1 / etc. decode
+ *       through the declared {@code Content-Type;charset=…} parameter
+ *       (defaults to UTF-8 per RFC 8259).</li>
+ *   <li>Doesn't hijack {@link String} / {@code byte[]} /
+ *       {@link Resource} returns — those keep their dedicated converters.</li>
+ *   <li>Reader/writer SPI honored via the underlying {@link ObjectMapper}.
+ *       Pass a configured {@code ObjectMapper} to the two-arg constructor
+ *       to wire {@code addReaderModule} / {@code mapSupplier} / etc.</li>
+ * </ul>
  */
 public class Fastjson3HttpMessageConverter
         extends AbstractHttpMessageConverter<Object>
@@ -66,11 +96,24 @@ public class Fastjson3HttpMessageConverter
 
     @Override
     public boolean canRead(Type type, Class<?> contextClass, MediaType mediaType) {
+        // Mirror the Class-typed path's supports() check so the generic
+        // entry doesn't bypass our String / byte[] / Resource exclusions.
+        // Without this, a generic-typed @RequestBody declared as
+        // List<String> with `application/json` would route to fastjson3
+        // instead of StringHttpMessageConverter where Spring put the
+        // String element handling.
+        Class<?> clazz = (type instanceof Class<?> c) ? c : null;
+        if (clazz != null && !supports(clazz)) {
+            return false;
+        }
         return canRead(mediaType);
     }
 
     @Override
     public boolean canWrite(Type type, Class<?> clazz, MediaType mediaType) {
+        if (clazz != null && !supports(clazz)) {
+            return false;
+        }
         return canWrite(mediaType);
     }
 
@@ -153,6 +196,15 @@ public class Fastjson3HttpMessageConverter
     @Override
     public void write(Object o, Type type, MediaType contentType, HttpOutputMessage outputMessage)
             throws IOException, HttpMessageNotWritableException {
-        writeInternal(o, outputMessage);
+        // Delegate to AbstractHttpMessageConverter.write so we inherit the
+        // full Spring contract: addDefaultHeaders() for Content-Type /
+        // charset / Content-Length emission AND the
+        // StreamingHttpOutputMessage branch for async / filter-chain
+        // scenarios where the body must be deferred until commit. We
+        // intentionally drop the {@code Type} parameter — fastjson3's
+        // ObjectMapper.writeValueAsBytes is runtime-class driven and
+        // doesn't currently accept a declared generic Type. The same
+        // shape fastjson2's FastJsonHttpMessageConverter ships.
+        super.write(o, contentType, outputMessage);
     }
 }
