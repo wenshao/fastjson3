@@ -3,6 +3,7 @@ package com.alibaba.fastjson3.spring;
 import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.ObjectMapper;
 import org.springframework.core.GenericTypeResolver;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpOutputMessage;
 import org.springframework.http.MediaType;
@@ -13,6 +14,7 @@ import org.springframework.http.converter.HttpMessageNotWritableException;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Minimal Spring {@link org.springframework.http.converter.HttpMessageConverter}
@@ -35,12 +37,30 @@ public class Fastjson3HttpMessageConverter
     }
 
     public Fastjson3HttpMessageConverter(ObjectMapper mapper) {
-        super(MediaType.APPLICATION_JSON, new MediaType("application", "*+json"));
+        super(StandardCharsets.UTF_8,
+                MediaType.APPLICATION_JSON,
+                new MediaType("application", "*+json"));
         this.mapper = mapper;
     }
 
     @Override
     protected boolean supports(Class<?> clazz) {
+        // Don't hijack types that are owned by other dedicated converters:
+        //   - String / CharSequence  -> StringHttpMessageConverter
+        //   - byte[]                 -> ByteArrayHttpMessageConverter
+        //   - Resource (file/stream) -> ResourceHttpMessageConverter
+        // Without this exclusion, returning a String from a @RestController
+        // would be JSON-quoted and a byte[] would parse as JSON instead of
+        // streaming through.
+        if (clazz == byte[].class) {
+            return false;
+        }
+        if (CharSequence.class.isAssignableFrom(clazz)) {
+            return false;
+        }
+        if (Resource.class.isAssignableFrom(clazz)) {
+            return false;
+        }
         return true;
     }
 
@@ -57,12 +77,24 @@ public class Fastjson3HttpMessageConverter
     @Override
     public Object read(Type type, Class<?> contextClass, HttpInputMessage inputMessage)
             throws IOException, HttpMessageNotReadableException {
-        Type resolvedType = type;
-        if (contextClass != null) {
-            resolvedType = GenericTypeResolver.resolveType(type, contextClass);
+        if (type == null) {
+            // No declared type — Spring's contract allows null; defer to the
+            // Class-only path. Fall back to Object for the runtime decision.
+            return readInternal(Object.class, inputMessage);
         }
+        Type resolvedType = (contextClass != null)
+                ? GenericTypeResolver.resolveType(type, contextClass)
+                : type;
+        java.nio.charset.Charset charset = resolveCharset(inputMessage);
         try {
-            return mapper.readValue(inputMessage.getBody(), resolvedType);
+            if (charset == StandardCharsets.UTF_8) {
+                return mapper.readValue(inputMessage.getBody(), resolvedType);
+            }
+            // Non-UTF-8 charset declared on the request — fastjson3's reader
+            // path is UTF-8 only, so transcode bytes through String to avoid
+            // silent mojibake when a client posts e.g. GBK or ISO-8859-1.
+            String json = new String(inputMessage.getBody().readAllBytes(), charset);
+            return mapper.readValue(json, resolvedType);
         } catch (JSONException e) {
             throw new HttpMessageNotReadableException("JSON parse error: " + e.getMessage(), e, inputMessage);
         }
@@ -71,11 +103,31 @@ public class Fastjson3HttpMessageConverter
     @Override
     protected Object readInternal(Class<?> clazz, HttpInputMessage inputMessage)
             throws IOException, HttpMessageNotReadableException {
+        java.nio.charset.Charset charset = resolveCharset(inputMessage);
         try {
-            return mapper.readValue(inputMessage.getBody(), clazz);
+            if (charset == StandardCharsets.UTF_8) {
+                return mapper.readValue(inputMessage.getBody(), clazz);
+            }
+            String json = new String(inputMessage.getBody().readAllBytes(), charset);
+            return mapper.readValue(json, clazz);
         } catch (JSONException e) {
             throw new HttpMessageNotReadableException("JSON parse error: " + e.getMessage(), e, inputMessage);
         }
+    }
+
+    /**
+     * Honor the request's {@code Content-Type: ...; charset=...} parameter
+     * so a body in GBK / ISO-8859-1 / etc. is decoded with the declared
+     * charset rather than assumed UTF-8. fastjson3's byte-oriented reader
+     * is UTF-8 only, so non-UTF-8 charsets transcode through {@code String}.
+     * Defaults to UTF-8 when no charset parameter is present (RFC 8259).
+     */
+    private static java.nio.charset.Charset resolveCharset(HttpInputMessage inputMessage) {
+        MediaType contentType = inputMessage.getHeaders().getContentType();
+        if (contentType != null && contentType.getCharset() != null) {
+            return contentType.getCharset();
+        }
+        return StandardCharsets.UTF_8;
     }
 
     @Override
