@@ -38,6 +38,8 @@
         <module>core3-android-test</module>
         <module>core3-kotlin</module>
         <module>core3-spring</module>
+        <module>core3-spring-boot-autoconfigure</module>
+        <module>core3-spring-boot-starter</module>
         <module>core3-spring-test</module>
     </modules>
 
