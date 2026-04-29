@@ -243,6 +243,45 @@ class Fastjson3HttpMessageConverterTest {
         assertEquals(StandardCharsets.UTF_8, ct.getCharset());
     }
 
+    @Test
+    void genericWrite_supportsStreamingHttpOutputMessage() throws Exception {
+        // Regression: pre-fix the generic write override skipped Spring's
+        // StreamingHttpOutputMessage branch that delays body emission
+        // until output-message commit (used by async / filter-chain
+        // scenarios). After the super.write() delegation, streaming output
+        // is honored: the captured "body" callback runs once, on demand.
+        java.util.concurrent.atomic.AtomicInteger callbackCount = new java.util.concurrent.atomic.AtomicInteger();
+        java.io.ByteArrayOutputStream realOut = new java.io.ByteArrayOutputStream();
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        org.springframework.http.StreamingHttpOutputMessage streaming = new org.springframework.http.StreamingHttpOutputMessage() {
+            org.springframework.http.StreamingHttpOutputMessage.Body body;
+
+            @Override
+            public java.io.OutputStream getBody() {
+                return realOut;
+            }
+
+            @Override
+            public org.springframework.http.HttpHeaders getHeaders() {
+                return headers;
+            }
+
+            @Override
+            public void setBody(org.springframework.http.StreamingHttpOutputMessage.Body callback) {
+                this.body = callback;
+                callbackCount.incrementAndGet();
+            }
+        };
+
+        conv.write(new User(1L, "a", "a@e.com"), (Type) User.class, MediaType.APPLICATION_JSON, streaming);
+
+        // setBody callback registered exactly once (deferred body emission).
+        assertEquals(1, callbackCount.get(),
+                "StreamingHttpOutputMessage.setBody must run exactly once for the deferred body");
+        // Headers still populated synchronously.
+        assertNotNull(headers.getContentType());
+    }
+
     // ---- custom mapper constructor ----
 
     @Test

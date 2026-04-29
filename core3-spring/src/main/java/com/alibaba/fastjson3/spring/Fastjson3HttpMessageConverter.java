@@ -196,15 +196,15 @@ public class Fastjson3HttpMessageConverter
     @Override
     public void write(Object o, Type type, MediaType contentType, HttpOutputMessage outputMessage)
             throws IOException, HttpMessageNotWritableException {
-        // The Class-typed write path on AbstractHttpMessageConverter calls
-        // addDefaultHeaders() before writeInternal(); our generic-path
-        // override skipped that step, so Content-Type / charset / Content-
-        // Length headers were not negotiated when Spring routed a generic
-        // return type through GenericHttpMessageConverter.write(...).
-        // Call addDefaultHeaders explicitly so both paths produce headers
-        // identical to AbstractHttpMessageConverter.write(...) +
-        // writeInternal(...).
-        addDefaultHeaders(outputMessage.getHeaders(), o, contentType);
-        writeInternal(o, outputMessage);
+        // Delegate to AbstractHttpMessageConverter.write so we inherit the
+        // full Spring contract: addDefaultHeaders() for Content-Type /
+        // charset / Content-Length emission AND the
+        // StreamingHttpOutputMessage branch for async / filter-chain
+        // scenarios where the body must be deferred until commit. We
+        // intentionally drop the {@code Type} parameter — fastjson3's
+        // ObjectMapper.writeValueAsBytes is runtime-class driven and
+        // doesn't currently accept a declared generic Type. The same
+        // shape fastjson2's FastJsonHttpMessageConverter ships.
+        super.write(o, contentType, outputMessage);
     }
 }
