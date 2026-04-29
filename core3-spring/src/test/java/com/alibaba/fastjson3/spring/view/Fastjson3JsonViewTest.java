@@ -224,6 +224,83 @@ class Fastjson3JsonViewTest {
         assertEquals(2, body.get("b"));
     }
 
+    @Test
+    void render_unicode_emitsUtf8() throws Exception {
+        // CJK characters must round-trip verbatim through the UTF-8 byte path.
+        Fastjson3JsonView view = new Fastjson3JsonView();
+        Map<String, Object> model = Map.of("name", "测试用户", "city", "北京");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        view.render(model, new MockHttpServletRequest(), resp);
+
+        byte[] body = resp.getContentAsByteArray();
+        String decoded = new String(body, java.nio.charset.StandardCharsets.UTF_8);
+        JSONObject parsed = JSON.parseObject(decoded);
+        assertEquals("测试用户", parsed.get("name"));
+        assertEquals("北京", parsed.get("city"));
+    }
+
+    @Test
+    void render_nullValue_inModel_serializesAsNull() throws Exception {
+        // Pin current write policy: null map values land in JSON as `null`
+        // rather than being skipped. Catches a future writer-feature flip.
+        Fastjson3JsonView view = new Fastjson3JsonView();
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("id", 1);
+        model.put("optional", null);
+
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        view.render(model, new MockHttpServletRequest(), resp);
+
+        String body = resp.getContentAsString();
+        assertTrue(body.contains("\"optional\":null"),
+                "expected null value preserved as JSON null, got: " + body);
+    }
+
+    @Test
+    void render_threadSafe_underConcurrentRender() throws Exception {
+        // Spring caches View beans; a single instance fields concurrent
+        // requests. Mirror the Redis serializer's 16-thread × 100-iter
+        // pattern to pin we don't mutate shared state during render.
+        Fastjson3JsonView view = new Fastjson3JsonView();
+        int threads = 16;
+        int per = 100;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(threads);
+        java.util.concurrent.atomic.AtomicInteger fails = new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            for (int t = 0; t < threads; t++) {
+                final int tid = t;
+                pool.submit(() -> {
+                    try {
+                        start.await();
+                        for (int i = 0; i < per; i++) {
+                            String name = "u-" + tid + "-" + i;
+                            MockHttpServletResponse resp = new MockHttpServletResponse();
+                            view.render(Map.of("name", name), new MockHttpServletRequest(), resp);
+                            JSONObject body = JSON.parseObject(resp.getContentAsString());
+                            if (!name.equals(body.get("name"))) {
+                                fails.incrementAndGet();
+                            }
+                        }
+                    } catch (Throwable e) {
+                        fails.incrementAndGet();
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            start.countDown();
+            assertTrue(done.await(30, java.util.concurrent.TimeUnit.SECONDS),
+                    "concurrency timeout");
+            assertEquals(0, fails.get(),
+                    "concurrent render had " + fails.get() + " failures");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     /**
      * Minimal {@link BindingResult} stub so {@code render_skipsBindingResult}
      * can verify the filter without pulling in spring-validation infrastructure.
