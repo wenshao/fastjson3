@@ -1,6 +1,5 @@
 package com.alibaba.fastjson3.spring.data.redis;
 
-import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.ObjectMapper;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.SerializationException;
@@ -59,7 +58,10 @@ public class Fastjson3RedisSerializer<T> implements RedisSerializer<T> {
         }
         try {
             return mapper.writeValueAsBytes(value);
-        } catch (JSONException ex) {
+        } catch (RuntimeException ex) {
+            // Catch broader than JSONException — adversarial input can
+            // surface as NPE / ClassCast / IAE inside the writer; users
+            // expect a SerializationException either way.
             throw new SerializationException("Could not serialize: " + ex.getMessage(), ex);
         }
     }
@@ -71,8 +73,17 @@ public class Fastjson3RedisSerializer<T> implements RedisSerializer<T> {
         }
         try {
             return mapper.readValue(bytes, type);
-        } catch (JSONException ex) {
+        } catch (RuntimeException ex) {
             throw new SerializationException("Could not deserialize: " + ex.getMessage(), ex);
         }
+    }
+
+    @Override
+    public Class<?> getTargetType() {
+        // Used by Spring's RedisCache.canSerialize() and similar
+        // type-gated callers. Default returns Object.class, which would
+        // make canSerialize(User.class) report false on a typed
+        // User-targeted serializer. Return the concrete bound type.
+        return type;
     }
 }

@@ -206,4 +206,84 @@ class Fastjson3RedisSerializerTest {
     void generic_constructor_rejectsNullMapper() {
         assertThrows(IllegalArgumentException.class, () -> new GenericFastjson3RedisSerializer(null));
     }
+
+    // ---- getTargetType ----
+
+    @Test
+    void typed_getTargetType_returnsConcreteType() {
+        // Spring's RedisCache.canSerialize(type) gates on getTargetType().
+        // The default in RedisSerializer is Object.class, which would make
+        // canSerialize(User.class) return false on a typed User serializer.
+        // Override pinned here.
+        Fastjson3RedisSerializer<User> s = new Fastjson3RedisSerializer<>(User.class);
+        assertEquals(User.class, s.getTargetType());
+    }
+
+    @Test
+    void generic_getTargetType_isObject() {
+        // Generic serializer accepts any value; default Object.class is correct.
+        GenericFastjson3RedisSerializer s = new GenericFastjson3RedisSerializer();
+        assertEquals(Object.class, s.getTargetType());
+    }
+
+    // ---- Concurrency ----
+
+    @Test
+    void typed_threadSafe_underConcurrentRoundTrip() throws Exception {
+        Fastjson3RedisSerializer<User> s = new Fastjson3RedisSerializer<>(User.class);
+        int threads = 16;
+        int per = 200;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(threads);
+        java.util.concurrent.atomic.AtomicInteger fails = new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            for (int t = 0; t < threads; t++) {
+                final int tid = t;
+                pool.submit(() -> {
+                    try {
+                        start.await();
+                        for (int i = 0; i < per; i++) {
+                            User original = new User((long) (tid * 1_000 + i), "u-" + tid + "-" + i, "x@e.com");
+                            byte[] bytes = s.serialize(original);
+                            User round = s.deserialize(bytes);
+                            if (round == null || !original.name.equals(round.name)) {
+                                fails.incrementAndGet();
+                            }
+                        }
+                    } catch (Throwable e) {
+                        fails.incrementAndGet();
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            start.countDown();
+            assertTrue(done.await(30, java.util.concurrent.TimeUnit.SECONDS),
+                    "concurrency timeout");
+            assertEquals(0, fails.get(),
+                    "concurrent serialize/deserialize had " + fails.get() + " failures");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    // ---- Large payload ----
+
+    @Test
+    void typed_largePayload_10KStringList_roundTrip() {
+        // Pin >10KB serialization works without truncation / split-buffer issues.
+        Fastjson3RedisSerializer<Order> s = new Fastjson3RedisSerializer<>(Order.class);
+        java.util.List<String> items = new java.util.ArrayList<>(2000);
+        for (int i = 0; i < 2000; i++) {
+            items.add("item-" + i + "-" + "x".repeat(8));
+        }
+        Order o = new Order(42L, items);
+        byte[] bytes = s.serialize(o);
+        assertTrue(bytes.length > 10_000, "expected >10KB, got " + bytes.length);
+        Order back = s.deserialize(bytes);
+        assertEquals(2000, back.items.size());
+        assertEquals(items.get(0), back.items.get(0));
+        assertEquals(items.get(1999), back.items.get(1999));
+    }
 }

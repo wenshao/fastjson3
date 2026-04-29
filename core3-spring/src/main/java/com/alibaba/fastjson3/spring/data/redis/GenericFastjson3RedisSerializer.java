@@ -1,6 +1,5 @@
 package com.alibaba.fastjson3.spring.data.redis;
 
-import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.ReadFeature;
 import com.alibaba.fastjson3.WriteFeature;
@@ -82,7 +81,7 @@ public class GenericFastjson3RedisSerializer implements RedisSerializer<Object> 
         }
         try {
             return mapper.writeValueAsBytes(value);
-        } catch (JSONException ex) {
+        } catch (RuntimeException ex) {
             throw new SerializationException("Could not serialize: " + ex.getMessage(), ex);
         }
     }
@@ -94,7 +93,7 @@ public class GenericFastjson3RedisSerializer implements RedisSerializer<Object> 
         }
         try {
             return mapper.readValue(bytes, Object.class);
-        } catch (JSONException ex) {
+        } catch (RuntimeException ex) {
             throw new SerializationException("Could not deserialize: " + ex.getMessage(), ex);
         }
     }
