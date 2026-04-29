@@ -1,0 +1,2 @@
+com.alibaba.fastjson3.spring.boot.autoconfigure.Fastjson3HttpMessageConverterAutoConfiguration
+com.alibaba.fastjson3.spring.boot.autoconfigure.Fastjson3JsonCodecAutoConfiguration

@@ -29,7 +29,29 @@ Drop-in replacement for Jackson's `MappingJackson2HttpMessageConverter` (servlet
 
 ## Usage
 
-### Spring Boot 3 — register as a `@Bean`
+### Spring Boot 3 — drop in the starter (recommended)
+
+For Boot apps, use `fastjson3-spring-boot-starter` instead — it auto-registers the servlet converter and reactive codecs based on what's on the classpath, so you don't need any `@Configuration`:
+
+```xml
+<dependency>
+    <groupId>com.alibaba.fastjson3</groupId>
+    <artifactId>fastjson3-spring-boot-starter</artifactId>
+    <version>3.0.0-SNAPSHOT</version>
+</dependency>
+```
+
+The starter pulls `fastjson3-spring` transitively. Auto-config triggers:
+
+- **Servlet** (`spring-boot-starter-web` present): registers `Fastjson3HttpMessageConverter` ahead of Jackson via Boot's `HttpMessageConverters` discovery.
+- **Reactive** (`spring-boot-starter-webflux` present): registers `Fastjson3JsonDecoder` + `Fastjson3JsonEncoder` and a `WebFluxConfigurer` that wires them into `ServerCodecConfigurer.defaultCodecs()`.
+- **Redis**: not auto-configured — declare your `RedisTemplate` and serializer beans manually (the typed/generic choice is too opinionated to default).
+
+User-supplied beans of the same types short-circuit auto-registration via `@ConditionalOnMissingBean` — pass a configured `ObjectMapper` by declaring your own `Fastjson3HttpMessageConverter` bean.
+
+### Spring Boot 3 — register as a `@Bean` (manual)
+
+If you don't want the starter, register the converter yourself:
 
 ```java
 import com.alibaba.fastjson3.spring.Fastjson3HttpMessageConverter;
