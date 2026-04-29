@@ -190,6 +190,55 @@ public <T> void registerReader(Type type, ObjectReader<T> reader)
 public <T> void registerWriter(Type type, ObjectWriter<T> writer)
 ```
 
+#### 已知限制：嵌套字段 / 集合元素不查 per-mapper SPI
+
+`registerReader` / `addReaderModule` 注册的自定义 reader 仅在 mapper 的**顶层** `readValue(json, X.class)` 路径生效。当 `X` 是嵌套 Bean 字段或集合元素的类型时（例如 `Bean { Item item; List<Item> items; }`），fastjson3 会用静态构建的反射 / ASM POJO reader 处理 `Item`，**不**查 mapper 的 `readerCache`（`registerReader` 写入处）也不查 mapper 的 `readerModules`。
+
+示例（**不**生效）：
+
+```java
+ObjectReader<Item> custom = (parser, fieldType, fieldName, features) -> { /* ... */ };
+
+ObjectMapper mapper = ObjectMapper.builder()
+        .addReaderModule(t -> t == Item.class ? custom : null)
+        .build();
+
+// ✓ 顶层调用：custom 被调用
+Item top = mapper.readValue("{\"x\":1}", Item.class);
+
+// ✗ 嵌套字段：custom 不被调用，使用反射默认 reader
+Bean bean = mapper.readValue("{\"item\":{\"x\":1}}", Bean.class);
+
+// ✗ 集合元素：同上
+class Holder { public List<Item> items; }
+Holder h = mapper.readValue("{\"items\":[{\"x\":1}]}", Holder.class);
+```
+
+类似的，`FieldReader.convertValue` 在做 `Map → POJO` / `List → POJO[]` 兜底转换时（例如 `Object payload` / `Object[] arr` 字段收到 `{...}` / `[{...}]` 输入），通过 `JSON.parseObject` 走 shared mapper 而不是 caller 的 mapper，同样绕过 per-mapper SPI。
+
+**根因**：reader instance 在 `ObjectReaderCreator.createObjectReader` 静态构建时即缓存，构建时不持有 mapper 引用；嵌套字段 reader 通过 `ensureFieldReaders` 在第一次 parse 时 lazy-build，此时 mapper 上下文已不可达。完整修复需要重构 reader runtime 的 mapper-context 传递（lazy build + 自循环类型 cycle 保护），属于较大架构改动。
+
+**当前可用的 workarounds**：使用字段级 `@JSONField(deserializeUsing = ...)`，注解在 reader 构建时通过 `MIXIN_CONTEXT` ThreadLocal 解析嵌套类型注解（含 mixin 注入）。
+
+```java
+// 1) 字段级注解（直接控制目标类型）
+public class Bean {
+    @JSONField(deserializeUsing = MyItemReader.class)
+    public Item item;
+}
+
+// 2) 用 mixin 注入字段级注解（无法修改目标类时）
+public abstract class BeanMixin {
+    @JSONField(deserializeUsing = MyItemReader.class)
+    Item item;
+}
+ObjectMapper mapper = ObjectMapper.builder()
+        .addMixIn(Bean.class, BeanMixin.class)  // mixin 写在持有字段的 Bean 上
+        .build();
+```
+
+`mapper.registerReader(Item.class, ...)` / `addReaderModule(...)` 当前只对**顶层** `readValue(json, Item.class)` 路径有效。跨 mapper 嵌套字段的 SPI 一致性需要 reader runtime 的 mapper-context refactor（lazy `ensureFieldReaders` + 自循环类型 cycle 保护），属于 long-form architectural follow-up。
+
 ### Mixin 配置（仅 Builder）
 
 Mixin 只能通过 Builder 配置，ObjectMapper 实例上没有 `addMixIn` 方法。
