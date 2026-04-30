@@ -631,6 +631,60 @@ class ObjectMapperDateFormatTest {
     }
 
     @Test
+    void mapperLevel_dateFormat_appliesToMapKeys() {
+        // R10 audit P1 regression: Map keys that are Date / Temporal
+        // values were emitted via String.valueOf(key) — Date.toString()
+        // produces "Tue Apr 30 16:00:00 CST 2024" (locale-dependent, ambiguous
+        // tz abbreviation, non-round-trippable). LocalDateTime.toString()
+        // emits ISO without seconds when seconds==0. Both diverged from the
+        // value-side mapper.dateFormat application.
+        // Post-fix: keys go through the same DateFormatPattern.formatToString
+        // hook the value side uses.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd").build();
+        java.util.Map<LocalDateTime, String> m1 = new LinkedHashMap<>();
+        m1.put(LocalDateTime.of(2024, 4, 30, 12, 34, 56), "x");
+        String out1 = m.writeValueAsString(m1);
+        assertEquals("{\"2024-04-30\":\"x\"}", out1);
+
+        java.util.Map<Date, String> m2 = new LinkedHashMap<>();
+        long epochMs = LocalDate.of(2024, 4, 30)
+                .atStartOfDay(java.time.ZoneId.systemDefault())
+                .toInstant().toEpochMilli();
+        m2.put(new Date(epochMs), "y");
+        String out2 = m.writeValueAsString(m2);
+        assertEquals("{\"2024-04-30\":\"y\"}", out2,
+                "Date map key must format via mapper.dateFormat, not Date.toString()");
+    }
+
+    @Test
+    void mapperLevel_millis_appliesToMapKeys() {
+        // millis token emits epoch ms. As a JSON object key, the numeric
+        // form is preserved as a quoted decimal string (JSON spec mandates
+        // string keys; we don't emit unquoted numbers as keys).
+        ObjectMapper m = ObjectMapper.builder().dateFormat("millis").build();
+        java.util.Map<Date, String> wrap = new LinkedHashMap<>();
+        long epochMs = 1714521600000L;
+        wrap.put(new Date(epochMs), "x");
+        String out = m.writeValueAsString(wrap);
+        assertEquals("{\"" + epochMs + "\":\"x\"}", out);
+    }
+
+    @Test
+    void mapperLevel_dateFormat_skipsMapKey_forTimeOnlyAndYearLikeTypes() {
+        // LocalTime / OffsetTime / Year / YearMonth / MonthDay map keys
+        // bypass mapper format (same scope as the writeAny outer guard).
+        // They emit via toString — partial-date types have no
+        // date-shaped projection.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd").build();
+        java.util.Map<java.time.LocalTime, String> wrap = new LinkedHashMap<>();
+        wrap.put(java.time.LocalTime.of(12, 34, 56), "x");
+        String out = m.writeValueAsString(wrap);
+        // LocalTime.toString = "12:34:56"
+        assertEquals("{\"12:34:56\":\"x\"}", out,
+                "LocalTime map key must NOT be re-routed through date-shaped mapper format, got: " + out);
+    }
+
+    @Test
     void mapperLevel_millis_appliesToMapValues() {
         // Map<String, Date> with "millis" emits epoch ms as JSON number,
         // not the ISO string fallback.

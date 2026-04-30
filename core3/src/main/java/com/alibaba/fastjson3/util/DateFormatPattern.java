@@ -192,6 +192,113 @@ public final class DateFormatPattern {
         return year >= FAST_PATH_YEAR_MIN && year <= FAST_PATH_YEAR_MAX;
     }
 
+    /**
+     * Format a Date / Temporal value to a String using this pattern.
+     * Used by code paths that need the formatted shape but cannot write
+     * directly to a {@link JSONGenerator} — most notably JSON object keys
+     * (a Map with a {@link Date} or {@link java.time.temporal.TemporalAccessor}
+     * key needs the formatted key to land in the {@code writeName(String)} call).
+     *
+     * <p>For {@link Kind#MILLIS} / {@link Kind#UNIXTIME}, returns the
+     * numeric representation as a decimal {@link String} (still wraps in
+     * quotes when used as a JSON object key — JSON spec mandates string
+     * keys, so the numeric form is preserved as a quoted decimal).</p>
+     *
+     * <p>For value types this strategy can't handle (e.g., {@link java.time.LocalTime}
+     * with a date-shaped Kind), throws {@link com.alibaba.fastjson3.JSONException}
+     * the same way {@link #write} does.</p>
+     */
+    public String formatToString(Object value) {
+        switch (kind) {
+            case MILLIS:
+                return Long.toString(toEpochMillis(value));
+            case UNIXTIME:
+                return Long.toString(toEpochMillis(value) / 1000);
+            case ISO8601:
+                return iso8601String(value);
+            case YYYY_MM_DD: {
+                LocalDate ld = toLocalDate(value);
+                return yearInFastPathRange(ld.getYear()) ? ld.toString() : formatter.format(ld);
+            }
+            case YYYYMMDD: {
+                LocalDate ld = toLocalDate(value);
+                if (yearInFastPathRange(ld.getYear())) {
+                    byte[] buf = new byte[8];
+                    DateUtils.writeYyyyMMdd8(buf, 0, ld);
+                    return new String(buf, 0, 8, java.nio.charset.StandardCharsets.US_ASCII);
+                }
+                return formatter.format(ld);
+            }
+            case YYYY_MM_DD_HH_MM: {
+                LocalDateTime ldt = toLocalDateTime(value);
+                if (yearInFastPathRange(ldt.getYear())) {
+                    byte[] buf = new byte[16];
+                    DateUtils.writeYyyyMMddhhmm16(buf, 0, ldt);
+                    return new String(buf, 0, 16, java.nio.charset.StandardCharsets.US_ASCII);
+                }
+                return formatter.format(ldt);
+            }
+            case YYYY_MM_DD_HH_MM_SS: {
+                LocalDateTime ldt = toLocalDateTime(value);
+                if (yearInFastPathRange(ldt.getYear())) {
+                    byte[] buf = new byte[19];
+                    DateUtils.writeYyyyMMddhhmmss19(buf, 0, ldt);
+                    return new String(buf, 0, 19, java.nio.charset.StandardCharsets.US_ASCII);
+                }
+                return formatter.format(ldt);
+            }
+            case YYYYMMDDHHMMSS: {
+                LocalDateTime ldt = toLocalDateTime(value);
+                if (yearInFastPathRange(ldt.getYear())) {
+                    byte[] buf = new byte[14];
+                    DateUtils.writeYyyyMMddhhmmss14(buf, 0, ldt);
+                    return new String(buf, 0, 14, java.nio.charset.StandardCharsets.US_ASCII);
+                }
+                return formatter.format(ldt);
+            }
+            case PATTERN:
+            default:
+                if (value instanceof Instant in) {
+                    return formatter.format(in.atZone(DateUtils.DEFAULT_ZONE_ID));
+                }
+                if (value instanceof LocalDate ld) {
+                    return formatter.format(ld.atStartOfDay());
+                }
+                if (value instanceof java.time.temporal.TemporalAccessor ta) {
+                    return formatter.format(ta);
+                }
+                if (value instanceof Date d) {
+                    return formatter.format(utilOrSqlDateToInstant(d).atZone(DateUtils.DEFAULT_ZONE_ID));
+                }
+                throw new JSONException(
+                        "Cannot format value of type " + value.getClass().getName()
+                                + " with date pattern \"" + format + "\"");
+        }
+    }
+
+    /**
+     * Same shape as {@link #writeIso8601(JSONGenerator, Object)} but
+     * returns a String. Mirrors the per-type ISO emit fastjson3 uses by
+     * default.
+     */
+    private static String iso8601String(Object value) {
+        if (value instanceof Instant in) {
+            return in.toString();
+        } else if (value instanceof LocalDateTime ldt) {
+            return ldt.toString();
+        } else if (value instanceof LocalDate ld) {
+            return ld.toString();
+        } else if (value instanceof ZonedDateTime zdt) {
+            return zdt.toString();
+        } else if (value instanceof OffsetDateTime odt) {
+            return odt.toString();
+        } else if (value instanceof Date d) {
+            return utilOrSqlDateToInstant(d).toString();
+        }
+        throw new JSONException(
+                "Cannot emit value of type " + value.getClass().getName() + " as iso8601");
+    }
+
     private void writePattern(JSONGenerator g, Object value) {
         // Instant has no calendar fields (year/month/day/hour/...) so a
         // custom pattern like "yyyy/MM/dd" would throw

@@ -860,7 +860,30 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     entries = map.entrySet();
                 }
                 for (Map.Entry<?, ?> entry : entries) {
-                    writeName(String.valueOf(entry.getKey()));
+                    Object k = entry.getKey();
+                    String name;
+                    if (k instanceof Date || k instanceof java.time.temporal.TemporalAccessor) {
+                        // Date-shaped Map keys: format via mapper.dateFormat
+                        // when set, else fall back to toString. Without this
+                        // hook, keys would land as Date.toString() (locale-
+                        // dependent, non-round-trippable) or LocalDateTime's
+                        // ISO via toString — diverging from value-side format.
+                        com.alibaba.fastjson3.util.DateFormatPattern fmt =
+                                effectiveMapper().getDateFormatPattern();
+                        if (fmt != null
+                                && !(k instanceof LocalTime
+                                        || k instanceof java.time.OffsetTime
+                                        || k instanceof java.time.Year
+                                        || k instanceof java.time.YearMonth
+                                        || k instanceof java.time.MonthDay)) {
+                            name = fmt.formatToString(k);
+                        } else {
+                            name = String.valueOf(k);
+                        }
+                    } else {
+                        name = String.valueOf(k);
+                    }
+                    writeName(name);
                     writeAny(entry.getValue());
                 }
                 endObject();
