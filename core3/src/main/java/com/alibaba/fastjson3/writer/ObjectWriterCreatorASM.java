@@ -612,6 +612,28 @@ public final class ObjectWriterCreatorASM {
                 .visitLdcInsn(totalEstimated)
                 .invokevirtual(TYPE_JSON_GENERATOR, "ensureCapacityPublic", "(I)V");
 
+        // generator.pushReference(bean) — honours WriteFeature.ReferenceDetection.
+        // Without this call the ASM-generated writer would never enter the
+        // generator's references map, so a cyclic bean graph (e.g. Node{
+        // next=Node{next=this}}) silently stack-overflows even with the
+        // ReferenceDetection feature enabled. The reflection writer at
+        // ObjectWriterCreator$ReflectObjectWriter.write already detects
+        // cycles via FieldWriter.writeObject's pushReference at line ~821;
+        // ASM was the asymmetric outlier.
+        //
+        // No try-finally around the body: pushReference is a no-op when
+        // ReferenceDetection is disabled (the default), and generators are
+        // single-use per writeValueAsString call — if a field-write throws,
+        // the generator is closed in the try-with-resources at the call
+        // site and its references map is GC'd. fj3's internal ASM library
+        // does not expose visitTryCatchBlock, so a try-finally would
+        // require generator-side instrumentation; the no-leak property of
+        // single-use generators makes that complexity unnecessary.
+        mw.chain()
+                .aload(1)
+                .aload(7)
+                .invokevirtual(TYPE_JSON_GENERATOR, "pushReference", "(Ljava/lang/Object;)V");
+
         // generator.startObject()
         mw.chain()
                 .aload(1)
@@ -627,6 +649,12 @@ public final class ObjectWriterCreatorASM {
         mw.chain()
                 .aload(1)
                 .invokevirtual(TYPE_JSON_GENERATOR, "endObject", "()V");
+
+        // generator.popReference(bean) — symmetric with pushReference.
+        mw.chain()
+                .aload(1)
+                .aload(7)
+                .invokevirtual(TYPE_JSON_GENERATOR, "popReference", "(Ljava/lang/Object;)V");
 
         mw.return_();
         // Locals 9 = elementWriter, 10 = list iterator, 11 = list item
