@@ -81,20 +81,36 @@ public final class DateFormatPattern {
                 return new DateFormatPattern(format, Kind.UNIXTIME, null);
             case "iso8601":
                 return new DateFormatPattern(format, Kind.ISO8601, null);
+            // Fast-path patterns also pre-compile a DateTimeFormatter as
+            // the out-of-range-year fallback. The hand-rolled byte writers
+            // in DateUtils (writeLocalDate / writeYyyyMMdd8 / etc.) assume
+            // year ∈ [0, 9999]; for year < 0 or year > 9999 we route
+            // through the formatter, which signs years correctly per JDK
+            // conventions. Pre-compiling here keeps the fallback alloc-free
+            // at write time.
             case "yyyy-MM-dd":
-                return new DateFormatPattern(format, Kind.YYYY_MM_DD, null);
+                return new DateFormatPattern(format, Kind.YYYY_MM_DD, DateTimeFormatter.ofPattern("yyyy-MM-dd"));
             case "yyyyMMdd":
-                return new DateFormatPattern(format, Kind.YYYYMMDD, null);
+                return new DateFormatPattern(format, Kind.YYYYMMDD, DateTimeFormatter.ofPattern("yyyyMMdd"));
             case "yyyy-MM-dd HH:mm":
-                return new DateFormatPattern(format, Kind.YYYY_MM_DD_HH_MM, null);
+                return new DateFormatPattern(format, Kind.YYYY_MM_DD_HH_MM, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
             case "yyyy-MM-dd HH:mm:ss":
-                return new DateFormatPattern(format, Kind.YYYY_MM_DD_HH_MM_SS, null);
+                return new DateFormatPattern(format, Kind.YYYY_MM_DD_HH_MM_SS, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
             case "yyyyMMddHHmmss":
-                return new DateFormatPattern(format, Kind.YYYYMMDDHHMMSS, null);
+                return new DateFormatPattern(format, Kind.YYYYMMDDHHMMSS, DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
             default:
                 return new DateFormatPattern(format, Kind.PATTERN, DateTimeFormatter.ofPattern(format));
         }
     }
+
+    /**
+     * Range used by the fast-path byte writers. Year outside this range
+     * routes through the pre-compiled {@link #formatter} fallback (which
+     * signs years correctly via JDK conventions: {@code -0001-01-01} for
+     * BCE, {@code +12345-01-01} for &gt; 9999).
+     */
+    private static final int FAST_PATH_YEAR_MIN = 0;
+    private static final int FAST_PATH_YEAR_MAX = 9999;
 
     /**
      * Dispatch a write of {@code value} according to {@link #kind}. Caller
@@ -111,26 +127,60 @@ public final class DateFormatPattern {
             case ISO8601:
                 writeIso8601(g, value);
                 return;
-            case YYYY_MM_DD:
-                g.writeLocalDate(toLocalDate(value));
+            case YYYY_MM_DD: {
+                LocalDate ld = toLocalDate(value);
+                if (yearInFastPathRange(ld.getYear())) {
+                    g.writeLocalDate(ld);
+                } else {
+                    g.writeString(formatter.format(ld));
+                }
                 return;
-            case YYYYMMDD:
-                g.writeYyyyMMdd8(toLocalDate(value));
+            }
+            case YYYYMMDD: {
+                LocalDate ld = toLocalDate(value);
+                if (yearInFastPathRange(ld.getYear())) {
+                    g.writeYyyyMMdd8(ld);
+                } else {
+                    g.writeString(formatter.format(ld));
+                }
                 return;
-            case YYYY_MM_DD_HH_MM:
-                g.writeYyyyMMddhhmm16(toLocalDateTime(value));
+            }
+            case YYYY_MM_DD_HH_MM: {
+                LocalDateTime ldt = toLocalDateTime(value);
+                if (yearInFastPathRange(ldt.getYear())) {
+                    g.writeYyyyMMddhhmm16(ldt);
+                } else {
+                    g.writeString(formatter.format(ldt));
+                }
                 return;
-            case YYYY_MM_DD_HH_MM_SS:
-                g.writeYyyyMMddhhmmss19(toLocalDateTime(value));
+            }
+            case YYYY_MM_DD_HH_MM_SS: {
+                LocalDateTime ldt = toLocalDateTime(value);
+                if (yearInFastPathRange(ldt.getYear())) {
+                    g.writeYyyyMMddhhmmss19(ldt);
+                } else {
+                    g.writeString(formatter.format(ldt));
+                }
                 return;
-            case YYYYMMDDHHMMSS:
-                g.writeYyyyMMddhhmmss14(toLocalDateTime(value));
+            }
+            case YYYYMMDDHHMMSS: {
+                LocalDateTime ldt = toLocalDateTime(value);
+                if (yearInFastPathRange(ldt.getYear())) {
+                    g.writeYyyyMMddhhmmss14(ldt);
+                } else {
+                    g.writeString(formatter.format(ldt));
+                }
                 return;
+            }
             case PATTERN:
             default:
                 writePattern(g, value);
                 return;
         }
+    }
+
+    private static boolean yearInFastPathRange(int year) {
+        return year >= FAST_PATH_YEAR_MIN && year <= FAST_PATH_YEAR_MAX;
     }
 
     private void writePattern(JSONGenerator g, Object value) {

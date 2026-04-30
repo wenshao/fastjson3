@@ -265,6 +265,66 @@ class ObjectMapperDateFormatTest {
     }
 
     @Test
+    void mapperLevel_yyyy_MM_dd_outOfRangeYear_fallsThroughToFormatter() {
+        // Round 3 audit P1: hand-rolled byte writers in DateUtils assume
+        // year ∈ [0, 9999]. For year < 0 (BCE) or year > 9999, the byte
+        // writers produce garbled output ("000/-..." for -1, "<345-..."
+        // for 12345). DateFormatPattern.write must detect out-of-range
+        // and route through the pre-compiled DateTimeFormatter fallback
+        // which signs years correctly per JDK conventions.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd").build();
+        Bean b = new Bean();
+
+        // Far-future year — JDK formats as "+12345-01-01" (5-digit signed)
+        b.date = LocalDate.of(12345, 1, 1);
+        String farFuture = m.writeValueAsString(b);
+        assertTrue(farFuture.contains("+12345-01-01"),
+                "year > 9999 must route through formatter fallback (signed year), got: " + farFuture);
+        assertFalse(farFuture.contains("<345"),
+                "garbled output indicates byte writer was used for out-of-range year, got: " + farFuture);
+
+        // Year 9999 — boundary, fast path applies
+        b.date = LocalDate.of(9999, 12, 31);
+        String boundary = m.writeValueAsString(b);
+        assertTrue(boundary.contains("\"9999-12-31\""),
+                "year 9999 (max in range) must use fast path, got: " + boundary);
+
+        // Year 0 — boundary, fast path applies (per JDK conventions, year 0 is 1 BCE in ISO)
+        b.date = LocalDate.of(0, 1, 1);
+        String yearZero = m.writeValueAsString(b);
+        assertTrue(yearZero.contains("\"0000-01-01\""),
+                "year 0 (min in range) must use fast path, got: " + yearZero);
+    }
+
+    @Test
+    void mapperLevel_yyyyMMdd_outOfRangeYear_fallsThroughToFormatter() {
+        // Same regression boundary on the no-separator pattern.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyyMMdd").build();
+        Bean b = new Bean();
+        b.date = LocalDate.of(12345, 1, 1);
+        String out = m.writeValueAsString(b);
+        // JDK formatter for "yyyyMMdd" with year=12345 emits "+123450101"
+        // (signed, adaptive width). Specific shape: not the corrupt
+        // "<3450101" the byte writer would emit.
+        assertFalse(out.contains("<345"),
+                "garbled byte writer output for year=12345, got: " + out);
+        assertTrue(out.contains("12345"),
+                "expected year digits in formatter fallback, got: " + out);
+    }
+
+    @Test
+    void mapperLevel_yyyy_MM_dd_HH_mm_ss_outOfRangeYear_fallsThroughToFormatter() {
+        // Datetime fast path for far-future year.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd HH:mm:ss").build();
+        Bean b = new Bean();
+        b.ts = LocalDateTime.of(12345, 1, 1, 0, 0, 0);
+        String out = m.writeValueAsString(b);
+        assertFalse(out.contains("<345"),
+                "garbled byte writer output for year=12345, got: " + out);
+        assertTrue(out.contains("12345"));
+    }
+
+    @Test
     void mapperLevel_dateFormat_doesNotCrashOnLocalTimeField() {
         // Round 2 audit P1 regression boundary: pre-PR, a LocalTime field
         // emitted value.toString() unconditionally. The Round 1 fix routed

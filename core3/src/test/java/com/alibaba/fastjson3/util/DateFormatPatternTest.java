@@ -44,17 +44,25 @@ class DateFormatPatternTest {
     }
 
     @Test
-    void of_specialAndFastPath_haveNoFormatter() {
-        // Caching DateTimeFormatter for a special token / fast path would
-        // be wasted memory — these paths never invoke it.
+    void of_specialTokens_haveNoFormatter() {
+        // Special tokens never delegate to DateTimeFormatter — millis /
+        // unixtime emit numbers, iso8601 routes through JSONGenerator's
+        // dedicated writeXxx methods.
         assertNull(DateFormatPattern.of("millis").formatter);
         assertNull(DateFormatPattern.of("unixtime").formatter);
         assertNull(DateFormatPattern.of("iso8601").formatter);
-        assertNull(DateFormatPattern.of("yyyy-MM-dd").formatter);
-        assertNull(DateFormatPattern.of("yyyyMMdd").formatter);
-        assertNull(DateFormatPattern.of("yyyy-MM-dd HH:mm").formatter);
-        assertNull(DateFormatPattern.of("yyyy-MM-dd HH:mm:ss").formatter);
-        assertNull(DateFormatPattern.of("yyyyMMddHHmmss").formatter);
+    }
+
+    @Test
+    void of_fastPathPatterns_eagerlyCompileFallbackFormatter() {
+        // Fast-path patterns DO pre-compile a DateTimeFormatter as the
+        // out-of-range-year (year < 0 or year > 9999) fallback. Eager
+        // compile keeps the fallback alloc-free at write time.
+        assertNotNull(DateFormatPattern.of("yyyy-MM-dd").formatter);
+        assertNotNull(DateFormatPattern.of("yyyyMMdd").formatter);
+        assertNotNull(DateFormatPattern.of("yyyy-MM-dd HH:mm").formatter);
+        assertNotNull(DateFormatPattern.of("yyyy-MM-dd HH:mm:ss").formatter);
+        assertNotNull(DateFormatPattern.of("yyyyMMddHHmmss").formatter);
     }
 
     @Test
