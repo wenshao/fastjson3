@@ -44,6 +44,19 @@ class ObjectMapperDateFormatTest {
                              LocalDateTime tsDefault) {
     }
 
+    public static class ObjectFieldBean {
+        // Object-typed field: runtime value may be any type. Field-level
+        // @JSONField(format=) must apply when the runtime value is a date.
+        @JSONField(format = "yyyy-MM-dd")
+        public Object payload;
+    }
+
+    public static class ObjectFieldBeanNoAnnotation {
+        // No field-level annotation — mapper-level dateFormat applies via
+        // writeAny (already covered in earlier tests, but pinning here too).
+        public Object payload;
+    }
+
     public static class LocalTimeFieldBean {
         // Field-level @JSONField(format) on a LocalTime: time-only patterns
         // are not in the recognized fast paths, so this falls through to
@@ -482,6 +495,75 @@ class ObjectMapperDateFormatTest {
         String out = m.writeValueAsString(b);
         assertEquals("{\"t\":\"12:34:56\"}", out,
                 "field-level @JSONField(format=HH:mm:ss) on LocalTime must format via PATTERN kind");
+    }
+
+    @Test
+    void fieldLevel_format_objectTypedField_appliesToDateValue() {
+        // R9 audit P1 regression: a field declared as `Object` holding a
+        // LocalDateTime / Date runtime value silently dropped the
+        // field-level @JSONField(format=). FieldWriter dispatched through
+        // writeGeneric (typeTag=GENERIC for Object) which had no
+        // datePattern guard. Mapper-level dateFormat applied via writeAny
+        // → BuiltinCodecs lambdas, but field-level was silently masked.
+        // Post-fix: writeGeneric mirrors writeObject's datePattern guard.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyyMMdd").build();
+        ObjectFieldBean b = new ObjectFieldBean();
+        b.payload = LocalDateTime.of(2024, 4, 30, 12, 34, 56);
+        // Field-level "yyyy-MM-dd" must beat mapper-level "yyyyMMdd".
+        assertEquals("{\"payload\":\"2024-04-30\"}", m.writeValueAsString(b));
+    }
+
+    @Test
+    void fieldLevel_format_objectTypedField_appliesToDate() {
+        ObjectMapper m = ObjectMapper.builder().build();
+        ObjectFieldBean b = new ObjectFieldBean();
+        b.payload = new Date(LocalDate.of(2024, 4, 30)
+                .atStartOfDay(java.time.ZoneId.systemDefault())
+                .toInstant().toEpochMilli());
+        String out = m.writeValueAsString(b);
+        assertTrue(out.contains("\"2024-04-30\""),
+                "Object-typed field with @JSONField(format) on java.util.Date should format, got: " + out);
+    }
+
+    @Test
+    void mapperLevel_appliesToObjectField_withoutAnnotation() {
+        // Sanity: no field-level annotation, mapper-level applies via
+        // writeAny path (already covered, pinning here for symmetry).
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd").build();
+        ObjectFieldBeanNoAnnotation b = new ObjectFieldBeanNoAnnotation();
+        b.payload = LocalDateTime.of(2024, 4, 30, 12, 34, 56);
+        assertEquals("{\"payload\":\"2024-04-30\"}", m.writeValueAsString(b));
+    }
+
+    @Test
+    void timestamp_routesAsDate_withMapperFormat() {
+        // R9 audit P2 pin: java.sql.Timestamp routing through writeAny's
+        // `instanceof Date` whitelist is currently accidental — relies on
+        // BuiltinCodecs.getWriter(Timestamp.class) returning null (which
+        // happens because core3's module-info doesn't `requires java.sql`,
+        // so reflection-based POJO creation fails and the codec falls
+        // through). Pin the current behavior with a regression test —
+        // if module-info ever changes, this test fails loudly so we
+        // explicitly handle Timestamp at that point.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd").build();
+        java.util.Map<String, Object> wrap = new LinkedHashMap<>();
+        // Use reflection to construct a Timestamp without compile-time dep
+        // on java.sql (this test module doesn't `requires java.sql`).
+        try {
+            Class<?> tsClass = Class.forName("java.sql.Timestamp");
+            Object ts = tsClass.getConstructor(long.class)
+                    .newInstance(LocalDate.of(2024, 4, 30)
+                            .atStartOfDay(java.time.ZoneId.systemDefault())
+                            .toInstant().toEpochMilli());
+            wrap.put("ts", ts);
+            String out = m.writeValueAsString(wrap);
+            assertTrue(out.contains("\"2024-04-30\""),
+                    "java.sql.Timestamp must route as Date with mapper format, got: " + out);
+        } catch (ClassNotFoundException unavailable) {
+            // java.sql not on this test runtime — skip silently.
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Could not construct java.sql.Timestamp", e);
+        }
     }
 
     @Test

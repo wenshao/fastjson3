@@ -1027,6 +1027,18 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 return;
             }
         }
+        // Field-level @JSONField(format=) on a generic-typed field (declared
+        // type Object / T) — runtime value may still be a Temporal or Date.
+        // Mirror the writeObject branch at line ~810: pin field-level format
+        // ahead of the type dispatch so the format string isn't silently
+        // dropped just because the field's declared type is Object.
+        if (datePattern != null
+                && (value instanceof java.time.temporal.TemporalAccessor
+                        || value instanceof java.util.Date)) {
+            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            datePattern.write(generator, value);
+            return;
+        }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         if (value instanceof String s) {
             generator.writeString(s);
