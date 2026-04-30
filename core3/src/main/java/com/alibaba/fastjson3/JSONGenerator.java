@@ -912,8 +912,18 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             // emit AND over the dateAsMillis JSONGenerator flag — it's a
             // more explicit user intent. Field-level @JSONField(format=...)
             // is handled higher up via FieldWriter.datePattern.
+            //
+            // Time-only types (LocalTime / OffsetTime) bypass the mapper
+            // format because the format strings (yyyy-MM-dd / millis /
+            // unixtime / etc.) speak date-shaped values; applying them to
+            // a time-of-day value would crash in the convert helpers.
+            // Field-level @JSONField(format="HH:mm:ss") on a LocalTime
+            // still works because FieldWriter handles it directly via the
+            // PATTERN kind.
             com.alibaba.fastjson3.util.DateFormatPattern fmt =
-                    effectiveMapper().getDateFormatPattern();
+                    (value instanceof LocalTime || value instanceof java.time.OffsetTime)
+                            ? null
+                            : effectiveMapper().getDateFormatPattern();
             if (fmt != null) {
                 fmt.write(this, value);
             } else if (value instanceof LocalDateTime ldt) {

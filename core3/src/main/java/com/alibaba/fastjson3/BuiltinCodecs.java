@@ -474,13 +474,15 @@ public final class BuiltinCodecs {
 
     private static final ObjectWriter<LocalTime> LOCAL_TIME_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
-                com.alibaba.fastjson3.util.DateFormatPattern p =
-                        generator.effectiveMapper().getDateFormatPattern();
-                if (p != null) {
-                    p.write(generator, object);
-                } else {
-                    generator.writeString(((LocalTime) object).toString());
-                }
+                // Mapper-level dateFormat speaks date-of-the-day patterns
+                // (yyyy-MM-dd, millis, etc.) that have no meaningful
+                // mapping to a time-of-day value — applying them crashes
+                // in DateFormatPattern.toLocalDate / toEpochMillis.
+                // Field-level @JSONField(format="HH:mm:ss") still works
+                // because that path runs at FieldWriter.writeDate via the
+                // PATTERN kind, which delegates to DateTimeFormatter and
+                // accepts any TemporalAccessor.
+                generator.writeString(((LocalTime) object).toString());
             };
 
     private static final ObjectReader<Instant> INSTANT_READER =
@@ -542,13 +544,9 @@ public final class BuiltinCodecs {
 
     private static final ObjectWriter<OffsetTime> OFFSET_TIME_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
-                com.alibaba.fastjson3.util.DateFormatPattern p =
-                        generator.effectiveMapper().getDateFormatPattern();
-                if (p != null) {
-                    p.write(generator, object);
-                } else {
-                    generator.writeString(((OffsetTime) object).toString());
-                }
+                // See LOCAL_TIME_WRITER comment — date-shaped mapper
+                // patterns don't apply to time-only values.
+                generator.writeString(((OffsetTime) object).toString());
             };
 
     private static final ObjectReader<Date> DATE_READER =
