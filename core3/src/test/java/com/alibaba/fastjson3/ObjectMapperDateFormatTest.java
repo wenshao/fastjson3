@@ -670,6 +670,29 @@ class ObjectMapperDateFormatTest {
     }
 
     @Test
+    void mapperLevel_dateFormat_skipsMapKey_forChronologyDates() {
+        // R13 audit P2: HijrahDate / JapaneseDate / ThaiBuddhistDate /
+        // MinguoDate are TemporalAccessor instances but NOT in the
+        // value-side date-shape whitelist. Pre-fix, R10's blacklist
+        // approach passed them through to fmt.formatToString → toLocalDate
+        // → throws JSONException. Post-fix, key-side whitelist matches
+        // value-side exactly: only LocalDateTime/LocalDate/Instant/
+        // ZonedDateTime/OffsetDateTime/Date land in the format hook;
+        // chronology subtypes fall through to String.valueOf.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd").build();
+        java.util.Map<java.time.chrono.HijrahDate, String> wrap = new LinkedHashMap<>();
+        java.time.chrono.HijrahDate h = java.time.chrono.HijrahDate.from(LocalDate.of(2024, 4, 30));
+        wrap.put(h, "x");
+        // Must not throw — chronology dates emit via toString, the same as
+        // they would without mapper.dateFormat.
+        String out = m.writeValueAsString(wrap);
+        assertTrue(out.contains("\"x\""),
+                "HijrahDate Map key must not crash, got: " + out);
+        assertTrue(out.contains(h.toString()),
+                "expected HijrahDate.toString() in output, got: " + out);
+    }
+
+    @Test
     void mapperLevel_dateFormat_skipsMapKey_forTimeOnlyAndYearLikeTypes() {
         // LocalTime / OffsetTime / Year / YearMonth / MonthDay map keys
         // bypass mapper format (same scope as the writeAny outer guard).

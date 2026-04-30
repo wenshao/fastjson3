@@ -2418,10 +2418,15 @@ public final class ObjectMapper {
          *       types pass through unchanged — date-shaped patterns have
          *       no meaningful projection onto these.</li>
          *   <li><b>Year range</b>: the fast-path byte writers handle years
-         *       {@code 0–9999}. Out-of-range years (BCE or {@code > 9999})
-         *       route through the pre-compiled {@link java.time.format.DateTimeFormatter}
-         *       fallback, which signs them per JDK conventions
-         *       ({@code -0001-01-01}, {@code +12345-01-01}).</li>
+         *       {@code 1–9999}. Year {@code 0} and out-of-range years
+         *       (BCE or {@code > 9999}) route through the pre-compiled
+         *       {@link java.time.format.DateTimeFormatter} fallback. Year
+         *       {@code 0} is routed because the {@code yyyy} pattern letter
+         *       is year-of-era — the formatter prints ISO year {@code 0}
+         *       as {@code "0001"} (BCE year-of-era 1), and routing through
+         *       it guarantees byte-equivalent output. Out-of-range years
+         *       are signed per JDK conventions ({@code -0001-01-01},
+         *       {@code +12345-01-01}).</li>
          *   <li><b>Module / WriterCreator overrides win</b>: a custom
          *       {@code ObjectWriter} for a Date type registered via
          *       {@link #addWriterModule(com.alibaba.fastjson3.modules.ObjectWriterModule)}

@@ -862,24 +862,28 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                 for (Map.Entry<?, ?> entry : entries) {
                     Object k = entry.getKey();
                     String name;
-                    if (k instanceof Date || k instanceof java.time.temporal.TemporalAccessor) {
-                        // Date-shaped Map keys: format via mapper.dateFormat
-                        // when set, else fall back to toString. Without this
-                        // hook, keys would land as Date.toString() (locale-
-                        // dependent, non-round-trippable) or LocalDateTime's
-                        // ISO via toString — diverging from value-side format.
+                    // Date-shaped Map keys: format via mapper.dateFormat
+                    // when set, else fall back to toString. Without this
+                    // hook, keys would land as Date.toString() (locale-
+                    // dependent, non-round-trippable) or LocalDateTime's
+                    // ISO via toString — diverging from value-side format.
+                    // The whitelist must mirror the value-side guard at
+                    // line ~932 exactly: only date-of-the-day types get
+                    // routed. Chronology subtypes (HijrahDate, JapaneseDate,
+                    // ThaiBuddhistDate, MinguoDate) and partial-date types
+                    // (Year, YearMonth, MonthDay, LocalTime, OffsetTime)
+                    // fall through to toString — their convert helpers
+                    // would crash in DateFormatPattern.
+                    boolean dateShaped = k instanceof LocalDateTime
+                            || k instanceof LocalDate
+                            || k instanceof Instant
+                            || k instanceof ZonedDateTime
+                            || k instanceof OffsetDateTime
+                            || k instanceof Date;
+                    if (dateShaped) {
                         com.alibaba.fastjson3.util.DateFormatPattern fmt =
                                 effectiveMapper().getDateFormatPattern();
-                        if (fmt != null
-                                && !(k instanceof LocalTime
-                                        || k instanceof java.time.OffsetTime
-                                        || k instanceof java.time.Year
-                                        || k instanceof java.time.YearMonth
-                                        || k instanceof java.time.MonthDay)) {
-                            name = fmt.formatToString(k);
-                        } else {
-                            name = String.valueOf(k);
-                        }
+                        name = (fmt != null) ? fmt.formatToString(k) : String.valueOf(k);
                     } else {
                         name = String.valueOf(k);
                     }
