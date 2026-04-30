@@ -18,7 +18,7 @@ import org.springframework.util.MimeType;
 import reactor.core.publisher.Flux;
 
 import java.nio.ByteBuffer;
-import java.util.Collections;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -42,6 +42,9 @@ import java.util.Map;
 public final class Fastjson3JsonEncoder
         extends AbstractEncoder<Object>
         implements HttpMessageEncoder<Object> {
+    private static final byte[] NEWLINE = "\n".getBytes(StandardCharsets.UTF_8);
+    private static final List<MediaType> STREAMING_MEDIA_TYPES = List.of(MediaType.APPLICATION_NDJSON);
+
     private final ObjectMapper mapper;
 
     public Fastjson3JsonEncoder() {
@@ -78,8 +81,44 @@ public final class Fastjson3JsonEncoder
                                    @NonNull final ResolvableType elementType,
                                    @Nullable final MimeType mimeType,
                                    @Nullable final Map<String, Object> hints) {
+        if (isStreamingMediaType(mimeType)) {
+            // NDJSON / line-delimited JSON: per-element body + '\n' framing.
+            return Flux.from(inputStream)
+                    .map(value -> encodeStreamValue(value, bufferFactory, elementType, mimeType, hints));
+        }
         return Flux.from(inputStream)
                 .map(value -> encodeValue(value, bufferFactory, elementType, mimeType, hints));
+    }
+
+    private DataBuffer encodeStreamValue(@Nullable final Object value,
+                                         @NonNull final DataBufferFactory bufferFactory,
+                                         @NonNull final ResolvableType valueType,
+                                         @Nullable final MimeType mimeType,
+                                         @Nullable final Map<String, Object> hints) {
+        try {
+            byte[] bytes = mapper.writeValueAsBytes(value);
+            DataBuffer buffer = bufferFactory.allocateBuffer(bytes.length + NEWLINE.length)
+                    .write(bytes, 0, bytes.length)
+                    .write(NEWLINE, 0, NEWLINE.length);
+            Hints.touchDataBuffer(buffer, hints, logger);
+            return buffer;
+        } catch (JSONException ex) {
+            throw new EncodingException("JSON write error: " + ex.getMessage(), ex);
+        } catch (RuntimeException ex) {
+            throw new EncodingException("Failed to encode JSON: " + ex.getMessage(), ex);
+        }
+    }
+
+    private static boolean isStreamingMediaType(@Nullable final MimeType mimeType) {
+        if (mimeType == null) {
+            return false;
+        }
+        for (MediaType streaming : STREAMING_MEDIA_TYPES) {
+            if (streaming.isCompatibleWith(mimeType)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -108,13 +147,12 @@ public final class Fastjson3JsonEncoder
     @Override
     @NonNull
     public List<MediaType> getStreamingMediaTypes() {
-        // Stream-of-objects (NDJSON / application/stream+json) needs
-        // per-element line separator emission. fastjson3's encoder
-        // currently emits one JSON value per buffer with no framing,
-        // so declaring streaming media types would route ill-formed
-        // bytes to the wire. Return empty until tokenizer-style
-        // framing lands as a follow-up.
-        return Collections.emptyList();
+        // application/x-ndjson: each emitted DataBuffer carries one JSON
+        // value followed by a single '\n' byte. encode(...) routes through
+        // encodeStreamValue when the negotiated media type matches.
+        // application/stream+json (the deprecated Spring 5.x predecessor)
+        // is NOT advertised — clients should migrate to application/x-ndjson.
+        return STREAMING_MEDIA_TYPES;
     }
 
     private static boolean isExcludedType(final Class<?> clazz) {
