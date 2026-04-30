@@ -906,23 +906,36 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             } else {
                 writeString(e.name());
             }
-        } else if (value instanceof LocalDateTime ldt) {
-            writeLocalDateTime(ldt);
-        } else if (value instanceof LocalDate ld) {
-            writeLocalDate(ld);
-        } else if (value instanceof LocalTime lt) {
-            writeLocalTime(lt);
-        } else if (value instanceof Instant inst) {
-            writeInstant(inst);
-        } else if (value instanceof ZonedDateTime zdt) {
-            writeString(zdt.toString());
-        } else if (value instanceof OffsetDateTime odt) {
-            writeString(odt.toString());
-        } else if (value instanceof Date date) {
-            if (dateAsMillis) {
-                writeInt64(date.getTime());
-            } else {
-                writeInstant(date.toInstant());
+        } else if (value instanceof java.time.temporal.TemporalAccessor
+                || value instanceof Date) {
+            // Mapper-level dateFormat takes precedence over the natural ISO
+            // emit AND over the dateAsMillis JSONGenerator flag — it's a
+            // more explicit user intent. Field-level @JSONField(format=...)
+            // is handled higher up via FieldWriter.datePattern.
+            com.alibaba.fastjson3.util.DateFormatPattern fmt =
+                    effectiveMapper().getDateFormatPattern();
+            if (fmt != null) {
+                fmt.write(this, value);
+            } else if (value instanceof LocalDateTime ldt) {
+                writeLocalDateTime(ldt);
+            } else if (value instanceof LocalDate ld) {
+                writeLocalDate(ld);
+            } else if (value instanceof LocalTime lt) {
+                writeLocalTime(lt);
+            } else if (value instanceof Instant inst) {
+                writeInstant(inst);
+            } else if (value instanceof ZonedDateTime zdt) {
+                writeString(zdt.toString());
+            } else if (value instanceof OffsetDateTime odt) {
+                writeString(odt.toString());
+            } else /* Date */ {
+                Date date = (Date) value;
+                if (dateAsMillis) {
+                    writeInt64(date.getTime());
+                } else {
+                    // java.sql.Date.toInstant() throws — sidestep via epoch ms.
+                    writeInstant(java.time.Instant.ofEpochMilli(date.getTime()));
+                }
             }
         } else {
             // Try ObjectWriter-based serialization via the owning mapper so mix-in /

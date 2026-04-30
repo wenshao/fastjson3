@@ -137,7 +137,11 @@ public final class DateFormatPattern {
         if (value instanceof java.time.temporal.TemporalAccessor ta) {
             g.writeString(formatter.format(ta));
         } else if (value instanceof Date d) {
-            g.writeString(formatter.format(d.toInstant().atZone(DateUtils.DEFAULT_ZONE_ID)));
+            // java.sql.Date / java.sql.Time override toInstant() to throw
+            // UnsupportedOperationException — reroute through epoch ms +
+            // a fresh Instant.
+            Instant in = utilOrSqlDateToInstant(d);
+            g.writeString(formatter.format(in.atZone(DateUtils.DEFAULT_ZONE_ID)));
         } else {
             throw new JSONException(
                     "Cannot format value of type " + value.getClass().getName()
@@ -160,12 +164,24 @@ public final class DateFormatPattern {
         } else if (value instanceof OffsetDateTime odt) {
             g.writeLocalDateTime(odt.toLocalDateTime());
         } else if (value instanceof Date d) {
-            g.writeInstant(d.toInstant());
+            g.writeInstant(utilOrSqlDateToInstant(d));
         } else {
             throw new JSONException(
                     "Cannot emit value of type " + value.getClass().getName()
                             + " as iso8601");
         }
+    }
+
+    /**
+     * Convert a {@link Date} (including {@code java.sql.Date} /
+     * {@code java.sql.Time} which throw on {@code toInstant()}) to a
+     * fresh {@link Instant} via epoch millis. The JDK's
+     * {@code java.sql.Date.toInstant} contract is "always throws
+     * UnsupportedOperationException because date does not have a time
+     * component" — going through {@code getTime()} sidesteps that.
+     */
+    private static Instant utilOrSqlDateToInstant(Date d) {
+        return Instant.ofEpochMilli(d.getTime());
     }
 
     private static long toEpochMillis(Object value) {
@@ -208,7 +224,7 @@ public final class DateFormatPattern {
             return LocalDateTime.ofInstant(in, DateUtils.DEFAULT_ZONE_ID).toLocalDate();
         }
         if (value instanceof Date d) {
-            return d.toInstant().atZone(DateUtils.DEFAULT_ZONE_ID).toLocalDate();
+            return utilOrSqlDateToInstant(d).atZone(DateUtils.DEFAULT_ZONE_ID).toLocalDate();
         }
         throw new JSONException(
                 "Cannot convert value of type " + value.getClass().getName() + " to LocalDate");
@@ -231,7 +247,7 @@ public final class DateFormatPattern {
             return LocalDateTime.ofInstant(in, DateUtils.DEFAULT_ZONE_ID);
         }
         if (value instanceof Date d) {
-            return d.toInstant().atZone(DateUtils.DEFAULT_ZONE_ID).toLocalDateTime();
+            return utilOrSqlDateToInstant(d).atZone(DateUtils.DEFAULT_ZONE_ID).toLocalDateTime();
         }
         throw new JSONException(
                 "Cannot convert value of type " + value.getClass().getName() + " to LocalDateTime");

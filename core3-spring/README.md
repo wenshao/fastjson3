@@ -227,7 +227,7 @@ Users moving from fj2's `Fastjson2Decoder` / `Fastjson2Encoder` (WebFlux) and `F
 | `FastJsonConfig.setReaderFeatures(...)` | `ObjectMapper.builder().enableRead(...).build()` |
 | `FastJsonConfig.setWriterFeatures(...)` | `ObjectMapper.builder().enableWrite(...).build()` |
 | `FastJsonConfig.setReaderFilters(...)` / `setWriterFilters(...)` | `ObjectMapper.builder().addReaderModule(...)` / `addPropertyFilter(...)` |
-| `FastJsonConfig.setDateFormat("yyyy-MM-dd")` | `ObjectMapper.builder().dateFormat("yyyy-MM-dd").build()` — applies to typed POJO fields (same scope as `@JSONField(format=...)`). Recognizes the fj2 special tokens `"millis"` / `"unixtime"` / `"iso8601"` plus 5 fast-path patterns hand-rolled at the byte level. |
+| `FastJsonConfig.setDateFormat("yyyy-MM-dd")` | `ObjectMapper.builder().dateFormat("yyyy-MM-dd").build()` — applies to typed POJO fields, untyped `Map<String, Date>` values, and `writeAny(Object)` callers via a single hook in `JSONGenerator.writeAny` plus the per-type `BuiltinCodecs` writers. Recognizes the fj2 special tokens `"millis"` / `"unixtime"` / `"iso8601"` plus 5 fast-path patterns hand-rolled at the byte level. Field-level `@JSONField(format=...)` always wins over the mapper-level default. |
 | `MimeType...` ctor varargs | unchanged — same shape |
 | `FastJsonRedisSerializer<>(User.class)` (typed) | `Fastjson3RedisSerializer<>(User.class)` |
 | `GenericFastJsonRedisSerializer` (autotype) | `GenericFastjson3RedisSerializer` — read side returns `JSONObject` by design; for typed reconstruction use `Fastjson3RedisSerializer<T>` or `@JSONType(seeAlso = ...)` |

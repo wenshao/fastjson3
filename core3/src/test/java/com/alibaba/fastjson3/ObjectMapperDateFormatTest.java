@@ -45,6 +45,7 @@ class ObjectMapperDateFormatTest {
         public Date d;
     }
 
+
     // ---- Builder API ----
 
     @Test
@@ -208,5 +209,62 @@ class ObjectMapperDateFormatTest {
         String out = m.writeValueAsString(b);
         assertTrue(out.contains("2024/04/30"),
                 "expected slash-separated date in: " + out);
+    }
+
+    // ---- Path coverage: ASM and Map<String, Date> ----
+
+    @Test
+    void mapperLevel_explicitAsmWriter_appliesFormat() {
+        // ASM-generated POJO writers cache child writers via
+        // BuiltinCodecs.getWriter, but only for "nested POJOs" — Date /
+        // Temporal types miss the cache and fall through to
+        // generator.writeAny(value). The fix is at writeAny: it consults
+        // mapper.getDateFormatPattern() at the top of the date-dispatch
+        // block. Without that, ASM-emitted Bean writers silently emit
+        // default ISO regardless of the configured dateFormat.
+        ObjectMapper m = ObjectMapper.builder()
+                .writerCreatorType(com.alibaba.fastjson3.writer.WriterCreatorType.ASM)
+                .dateFormat("yyyy-MM-dd")
+                .build();
+        Bean b = new Bean();
+        b.ts = LocalDateTime.of(2024, 4, 30, 12, 34, 56);
+        assertEquals("{\"ts\":\"2024-04-30\"}", m.writeValueAsString(b),
+                "ASM writer must honor mapper-level dateFormat (writeAny path)");
+    }
+
+    @Test
+    void mapperLevel_explicitReflectWriter_appliesFormat() {
+        // Companion to the ASM coverage test — reflection path goes through
+        // FieldWriter then BuiltinCodecs LOCAL_DATE_TIME_WRITER, both of
+        // which now consult mapper format. Pin the same expected output.
+        ObjectMapper m = ObjectMapper.builder()
+                .writerCreatorType(com.alibaba.fastjson3.writer.WriterCreatorType.REFLECT)
+                .dateFormat("yyyy-MM-dd")
+                .build();
+        Bean b = new Bean();
+        b.ts = LocalDateTime.of(2024, 4, 30, 12, 34, 56);
+        assertEquals("{\"ts\":\"2024-04-30\"}", m.writeValueAsString(b));
+    }
+
+    @Test
+    void mapperLevel_appliesToMapValues() {
+        // Map<String, Date> values flow through writeAny; mapper-level
+        // dateFormat should now reach them too (was a documented scope
+        // limitation in v1; the writeAny fix lifts it).
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd").build();
+        Map<String, LocalDate> wrap = new LinkedHashMap<>();
+        wrap.put("d", LocalDate.of(2024, 4, 30));
+        assertEquals("{\"d\":\"2024-04-30\"}", m.writeValueAsString(wrap));
+    }
+
+    @Test
+    void mapperLevel_millis_appliesToMapValues() {
+        // Map<String, Date> with "millis" emits epoch ms as JSON number,
+        // not the ISO string fallback.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("millis").build();
+        long epochMs = 1714521600000L;
+        Map<String, Date> wrap = new LinkedHashMap<>();
+        wrap.put("d", new Date(epochMs));
+        assertEquals("{\"d\":" + epochMs + "}", m.writeValueAsString(wrap));
     }
 }

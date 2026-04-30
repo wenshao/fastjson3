@@ -802,25 +802,17 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 return;
             }
         }
-        // Format temporal types with explicit pattern. Field-level
-        // @JSONField(format=...) wins over mapper-level
-        // ObjectMapper.dateFormat. Either path goes through the same
-        // DateFormatPattern strategy so behavior (including special
-        // tokens like "millis" / "unixtime" / "iso8601") is uniform.
-        com.alibaba.fastjson3.util.DateFormatPattern effective = datePattern;
-        if (effective == null) {
-            effective = generator.effectiveMapper().getDateFormatPattern();
-        }
-        if (effective != null) {
-            if (value instanceof java.time.temporal.TemporalAccessor
-                    || value instanceof java.util.Date) {
-                generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-                effective.write(generator, value);
-                return;
-            }
-            // Non-Temporal/non-Date with a date pattern: fall through to
-            // the default ObjectWriter so e.g. a String field doesn't get
-            // misrouted into the date strategy.
+        // Field-level @JSONField(format=...) handled here (datePattern is
+        // pre-classified at FieldWriter construction). Mapper-level default
+        // dateFormat is honored further down inside the per-type
+        // ObjectWriter (see BuiltinCodecs date/temporal writers), which
+        // works for both the reflection path AND the ASM-generated path.
+        if (datePattern != null
+                && (value instanceof java.time.temporal.TemporalAccessor
+                        || value instanceof java.util.Date)) {
+            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            datePattern.write(generator, value);
+            return;
         }
         // Only push reference for non-container types; writeAny handles its own
         // pushReference for Map/Collection/Object[]/JSONObject/JSONArray internally
