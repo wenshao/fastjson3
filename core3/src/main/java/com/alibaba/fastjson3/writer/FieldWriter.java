@@ -814,47 +814,43 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             datePattern.write(generator, value);
             return;
         }
-        // Only push reference for non-container types; writeAny handles its own
-        // pushReference for Map/Collection/Object[]/JSONObject/JSONArray internally
-        boolean trackRef = !isContainerType(value);
-        if (trackRef) {
-            generator.pushReference(value);
-        }
-        try {
-            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+        // Reference tracking lives on the writer side: bean writers (ASM
+        // and ReflectObjectWriter) push their own bean before emitting
+        // its body. Pushing the value here (the FieldWriter / value side)
+        // would double-push when the resolved writer is also a bean writer
+        // — surfacing as a false circular reference for an acyclic graph.
+        // Container writers (Map/List/Object[]/JSONObject/JSONArray) push
+        // themselves at writeAny time (lines 911/1064 below + JSONGenerator's
+        // own writeAny container branches).
+        generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
 
-            Class<?> valueClass = value.getClass();
-            ObjectWriter<Object> writer = cachedWriter;
-            if (writer == null || cachedWriterClass != valueClass) {
-                writer = (ObjectWriter<Object>) generator.effectiveMapper().getObjectWriter(valueClass);
-                if (writer != null) {
-                    // Write class guard BEFORE writer data to prevent another thread
-                    // from seeing new writer with stale class guard
-                    cachedWriterClass = valueClass;
-                    cachedWriter = writer;
-                }
-            }
+        Class<?> valueClass = value.getClass();
+        ObjectWriter<Object> writer = cachedWriter;
+        if (writer == null || cachedWriterClass != valueClass) {
+            writer = (ObjectWriter<Object>) generator.effectiveMapper().getObjectWriter(valueClass);
             if (writer != null) {
-                writer.write(generator, value, fieldName, fieldType, features);
-            } else {
-                // Fallback: inline common types instead of writeAny
-                if (value instanceof String s) {
-                    generator.writeString(s);
-                } else if (value instanceof Integer i) {
-                    generator.writeInt32(i);
-                } else if (value instanceof Long l) {
-                    generator.writeInt64(l);
-                } else if (value instanceof Boolean b) {
-                    generator.writeBool(b);
-                } else if (value instanceof Double d) {
-                    generator.writeDouble(d);
-                } else {
-                    generator.writeAny(value);
-                }
+                // Write class guard BEFORE writer data to prevent another thread
+                // from seeing new writer with stale class guard
+                cachedWriterClass = valueClass;
+                cachedWriter = writer;
             }
-        } finally {
-            if (trackRef) {
-                generator.popReference(value);
+        }
+        if (writer != null) {
+            writer.write(generator, value, fieldName, fieldType, features);
+        } else {
+            // Fallback: inline common types instead of writeAny
+            if (value instanceof String s) {
+                generator.writeString(s);
+            } else if (value instanceof Integer i) {
+                generator.writeInt32(i);
+            } else if (value instanceof Long l) {
+                generator.writeInt64(l);
+            } else if (value instanceof Boolean b) {
+                generator.writeBool(b);
+            } else if (value instanceof Double d) {
+                generator.writeDouble(d);
+            } else {
+                generator.writeAny(value);
             }
         }
     }
@@ -1127,17 +1123,16 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     }
 
     private void writeObjectWithWriter(JSONGenerator generator, Object value, long features) {
-        generator.pushReference(value);
-        try {
-            Class<?> valueClass = value.getClass();
-            ObjectWriter<Object> writer = (ObjectWriter<Object>) generator.effectiveMapper().getObjectWriter(valueClass);
-            if (writer != null) {
-                writer.write(generator, value, fieldName, fieldType, features);
-            } else {
-                generator.writeAny(value);
-            }
-        } finally {
-            generator.popReference(value);
+        // Reference tracking moved to writer side (ReflectObjectWriter / ASM
+        // generated writers). Pushing here would double-push when the
+        // resolved writer is itself a bean writer; see comment in
+        // writeObject above.
+        Class<?> valueClass = value.getClass();
+        ObjectWriter<Object> writer = (ObjectWriter<Object>) generator.effectiveMapper().getObjectWriter(valueClass);
+        if (writer != null) {
+            writer.write(generator, value, fieldName, fieldType, features);
+        } else {
+            generator.writeAny(value);
         }
     }
 
