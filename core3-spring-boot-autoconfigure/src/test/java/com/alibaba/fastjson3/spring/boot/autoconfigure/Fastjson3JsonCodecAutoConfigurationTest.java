@@ -28,7 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class Fastjson3JsonCodecAutoConfigurationTest {
     private final ReactiveWebApplicationContextRunner reactiveRunner = new ReactiveWebApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(Fastjson3JsonCodecAutoConfiguration.class));
+            .withConfiguration(AutoConfigurations.of(
+                        Fastjson3ObjectMapperAutoConfiguration.class,
+                        Fastjson3JsonCodecAutoConfiguration.class));
 
     @Test
     void registersDecoderAndEncoder_inReactiveContext() {
@@ -66,6 +68,7 @@ class Fastjson3JsonCodecAutoConfigurationTest {
                 .withConfiguration(AutoConfigurations.of(
                         JacksonAutoConfiguration.class,
                         CodecsAutoConfiguration.class,
+                        Fastjson3ObjectMapperAutoConfiguration.class,
                         Fastjson3JsonCodecAutoConfiguration.class))
                 .run(ctx -> {
                     assertThat(ctx.getBeansOfType(CodecCustomizer.class))
@@ -125,7 +128,9 @@ class Fastjson3JsonCodecAutoConfigurationTest {
     @Test
     void doesNotRegister_inServletContext() {
         new WebApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(Fastjson3JsonCodecAutoConfiguration.class))
+                .withConfiguration(AutoConfigurations.of(
+                        Fastjson3ObjectMapperAutoConfiguration.class,
+                        Fastjson3JsonCodecAutoConfiguration.class))
                 .run(ctx -> {
                     assertThat(ctx).doesNotHaveBean(Fastjson3JsonDecoder.class);
                     assertThat(ctx).doesNotHaveBean(Fastjson3JsonEncoder.class);
@@ -135,7 +140,9 @@ class Fastjson3JsonCodecAutoConfigurationTest {
     @Test
     void doesNotRegister_inNonWebContext() {
         new ApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(Fastjson3JsonCodecAutoConfiguration.class))
+                .withConfiguration(AutoConfigurations.of(
+                        Fastjson3ObjectMapperAutoConfiguration.class,
+                        Fastjson3JsonCodecAutoConfiguration.class))
                 .run(ctx -> {
                     assertThat(ctx).doesNotHaveBean(Fastjson3JsonDecoder.class);
                     assertThat(ctx).doesNotHaveBean(Fastjson3JsonEncoder.class);
@@ -156,6 +163,76 @@ class Fastjson3JsonCodecAutoConfigurationTest {
             assertThat(ctx).hasSingleBean(Fastjson3JsonEncoder.class);
             assertThat(ctx.getBean(Fastjson3JsonEncoder.class)).isSameAs(UserEncoderConfig.SHARED);
         });
+    }
+
+    @Test
+    void encoderAndDecoder_shareSameObjectMapper() {
+        // R-audit P1 fix: pre-fix, Fastjson3Properties.buildObjectMapper()
+        // was called twice (once per bean factory) and produced two
+        // separate ObjectMapper instances when dateFormat was set —
+        // doubling heap footprint. Post-fix, both consume the
+        // fastjson3ObjectMapper @Bean and reference the SAME instance.
+        reactiveRunner
+                .withPropertyValues("spring.fastjson3.date-format=yyyy-MM-dd")
+                .run(ctx -> {
+                    Fastjson3JsonEncoder enc = ctx.getBean(Fastjson3JsonEncoder.class);
+                    Fastjson3JsonDecoder dec = ctx.getBean(Fastjson3JsonDecoder.class);
+                    com.alibaba.fastjson3.ObjectMapper bean =
+                            ctx.getBean(com.alibaba.fastjson3.ObjectMapper.class);
+                    // Field reflection — encoder/decoder don't expose mapper.
+                    java.lang.reflect.Field encField =
+                            Fastjson3JsonEncoder.class.getDeclaredField("mapper");
+                    encField.setAccessible(true);
+                    java.lang.reflect.Field decField =
+                            Fastjson3JsonDecoder.class.getDeclaredField("mapper");
+                    decField.setAccessible(true);
+                    assertThat(encField.get(enc)).isSameAs(bean);
+                    assertThat(decField.get(dec)).isSameAs(bean);
+                });
+    }
+
+    @Test
+    void userSuppliedObjectMapper_replacesAutoConfigured() {
+        // Mirrors Jackson's pattern: user declares their own ObjectMapper
+        // bean and the converter / encoder / decoder all consume it,
+        // bypassing Fastjson3Properties entirely. spring.fastjson3.date-format
+        // is ignored when the user-supplied mapper has its own config.
+        reactiveRunner
+                .withUserConfiguration(UserMapperConfig.class)
+                .withPropertyValues("spring.fastjson3.date-format=yyyy-MM-dd")
+                .run(ctx -> {
+                    com.alibaba.fastjson3.ObjectMapper bean =
+                            ctx.getBean(com.alibaba.fastjson3.ObjectMapper.class);
+                    assertThat(bean).isSameAs(UserMapperConfig.SHARED);
+                    // Property is bound (Boot still sees it) but the user
+                    // mapper doesn't honor it — its own dateFormat (null
+                    // here) wins.
+                    assertThat(bean.getDateFormat()).isNull();
+                });
+    }
+
+    @Test
+    void appliesDateFormatProperty_camelCaseBindingAlsoWorks() {
+        // Spring's relaxed binder accepts kebab-case (date-format) AND
+        // camelCase (dateFormat). Pin both forms route to the same field.
+        reactiveRunner
+                .withPropertyValues("spring.fastjson3.dateFormat=yyyy-MM-dd")
+                .run(ctx -> {
+                    com.alibaba.fastjson3.ObjectMapper bean =
+                            ctx.getBean(com.alibaba.fastjson3.ObjectMapper.class);
+                    assertThat(bean.getDateFormat()).isEqualTo("yyyy-MM-dd");
+                });
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserMapperConfig {
+        static final com.alibaba.fastjson3.ObjectMapper SHARED =
+                com.alibaba.fastjson3.ObjectMapper.builder().build();
+
+        @Bean
+        com.alibaba.fastjson3.ObjectMapper userObjectMapper() {
+            return SHARED;
+        }
     }
 
     @Test

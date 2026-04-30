@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class Fastjson3HttpMessageConverterAutoConfigurationTest {
     private final WebApplicationContextRunner servletRunner = new WebApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(
+                    Fastjson3ObjectMapperAutoConfiguration.class,
                     Fastjson3HttpMessageConverterAutoConfiguration.class,
                     HttpMessageConvertersAutoConfiguration.class));
 
@@ -76,6 +77,7 @@ class Fastjson3HttpMessageConverterAutoConfigurationTest {
     void doesNotRegister_inReactiveContext() {
         new ReactiveWebApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(
+                        Fastjson3ObjectMapperAutoConfiguration.class,
                         Fastjson3HttpMessageConverterAutoConfiguration.class))
                 .run(ctx -> assertThat(ctx).doesNotHaveBean(Fastjson3HttpMessageConverter.class));
     }
@@ -84,6 +86,7 @@ class Fastjson3HttpMessageConverterAutoConfigurationTest {
     void doesNotRegister_inNonWebContext() {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(
+                        Fastjson3ObjectMapperAutoConfiguration.class,
                         Fastjson3HttpMessageConverterAutoConfiguration.class))
                 .run(ctx -> assertThat(ctx).doesNotHaveBean(Fastjson3HttpMessageConverter.class));
     }

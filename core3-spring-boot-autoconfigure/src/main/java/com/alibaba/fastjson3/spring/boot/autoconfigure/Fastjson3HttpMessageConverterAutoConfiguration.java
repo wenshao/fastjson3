@@ -1,12 +1,12 @@
 package com.alibaba.fastjson3.spring.boot.autoconfigure;
 
+import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.spring.Fastjson3HttpMessageConverter;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -33,18 +33,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * declare their own {@code Fastjson3HttpMessageConverter} bean — this
  * auto-configuration steps aside via {@link ConditionalOnMissingBean}.</p>
  */
-@AutoConfiguration(after = JacksonAutoConfiguration.class)
+@AutoConfiguration(after = {JacksonAutoConfiguration.class, Fastjson3ObjectMapperAutoConfiguration.class})
 @ConditionalOnClass({Fastjson3HttpMessageConverter.class, WebMvcConfigurer.class})
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-@EnableConfigurationProperties(Fastjson3Properties.class)
 public class Fastjson3HttpMessageConverterAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
-    public Fastjson3HttpMessageConverter fastjson3HttpMessageConverter(Fastjson3Properties properties) {
-        // Build the converter against the property-configured ObjectMapper.
-        // When no property is set, Fastjson3Properties.buildObjectMapper()
-        // returns ObjectMapper.shared() so this path is alloc-equivalent
-        // to the pre-property no-arg constructor.
-        return new Fastjson3HttpMessageConverter(properties.buildObjectMapper());
+    public Fastjson3HttpMessageConverter fastjson3HttpMessageConverter(ObjectMapper fastjson3ObjectMapper) {
+        // Single shared ObjectMapper bean — see Fastjson3ObjectMapperAutoConfiguration.
+        return new Fastjson3HttpMessageConverter(fastjson3ObjectMapper);
     }
 }
