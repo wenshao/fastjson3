@@ -766,6 +766,12 @@ public final class ObjectWriterCreator {
             // Track depth for NotWriteRootClassName (depth 0 = root)
             int depth = generator.getWriteDepth();
             generator.incrementDepth();
+            // Bean writers own their bean's reference tracking. Pushing
+            // here (not at the FieldWriter / value level) means a parent
+            // field that resolves to either a reflection or ASM bean
+            // writer doesn't double-push — single-source-of-truth.
+            // Honors WriteFeature.ReferenceDetection (no-op when disabled).
+            generator.pushReference(object);
             try {
                 generator.startObject();
                 // Write type discriminator: annotation-driven (@JSONType/@JsonTypeInfo)
@@ -837,6 +843,9 @@ public final class ObjectWriterCreator {
                 generator.endObject();
             } finally {
                 generator.decrementDepth();
+                // Symmetric pop — runs even if a field-write throws so
+                // a reused generator's references map stays balanced.
+                generator.popReference(object);
             }
         }
 
