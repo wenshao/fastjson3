@@ -657,6 +657,49 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         writeString(val.toString());
     }
 
+    /**
+     * Write a LocalDate as 8-char {@code "yyyyMMdd"} JSON string.
+     * Default impl builds an ASCII String via {@link com.alibaba.fastjson3.util.DateUtils#writeYyyyMMdd8(byte[], int, LocalDate)}
+     * — bypasses {@link java.time.format.DateTimeFormatter}'s allocation
+     * profile while staying correct under any subclass. UTF-8 generators
+     * may override for zero-alloc direct buffer writes.
+     */
+    public void writeYyyyMMdd8(LocalDate val) {
+        byte[] buf = new byte[8];
+        com.alibaba.fastjson3.util.DateUtils.writeYyyyMMdd8(buf, 0, val);
+        writeString(new String(buf, 0, 8, java.nio.charset.StandardCharsets.US_ASCII));
+    }
+
+    /**
+     * Write a LocalDateTime as 16-char {@code "yyyy-MM-dd HH:mm"} JSON string
+     * (space separator, no seconds).
+     */
+    public void writeYyyyMMddhhmm16(LocalDateTime val) {
+        byte[] buf = new byte[16];
+        com.alibaba.fastjson3.util.DateUtils.writeYyyyMMddhhmm16(buf, 0, val);
+        writeString(new String(buf, 0, 16, java.nio.charset.StandardCharsets.US_ASCII));
+    }
+
+    /**
+     * Write a LocalDateTime as 19-char {@code "yyyy-MM-dd HH:mm:ss"} JSON string
+     * (space separator, no fractional seconds).
+     */
+    public void writeYyyyMMddhhmmss19(LocalDateTime val) {
+        byte[] buf = new byte[19];
+        com.alibaba.fastjson3.util.DateUtils.writeYyyyMMddhhmmss19(buf, 0, val);
+        writeString(new String(buf, 0, 19, java.nio.charset.StandardCharsets.US_ASCII));
+    }
+
+    /**
+     * Write a LocalDateTime as 14-char {@code "yyyyMMddHHmmss"} JSON string
+     * (no separators).
+     */
+    public void writeYyyyMMddhhmmss14(LocalDateTime val) {
+        byte[] buf = new byte[14];
+        com.alibaba.fastjson3.util.DateUtils.writeYyyyMMddhhmmss14(buf, 0, val);
+        writeString(new String(buf, 0, 14, java.nio.charset.StandardCharsets.US_ASCII));
+    }
+
     // ---- Name-Value convenience ----
 
     /**

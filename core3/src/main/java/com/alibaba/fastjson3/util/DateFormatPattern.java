@@ -1,0 +1,239 @@
+package com.alibaba.fastjson3.util;
+
+import com.alibaba.fastjson3.JSONException;
+import com.alibaba.fastjson3.JSONGenerator;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Date;
+
+/**
+ * Classified view of a date/time format string. Constructed once at
+ * {@code @JSONField(format=...)} parse time or {@code ObjectMapper.Builder
+ * .dateFormat(...)} build time, then reused per write.
+ *
+ * <p>Recognizes three special tokens that emit JSON numbers / default ISO
+ * shape, plus five common patterns hand-rolled at the byte level via
+ * {@link DateUtils} (bypassing {@link DateTimeFormatter}'s allocation
+ * profile, which the fastjson2 author measured at roughly an order of
+ * magnitude slower than direct byte writing). Anything else falls through
+ * to a cached {@link DateTimeFormatter}.</p>
+ *
+ * <table>
+ *   <caption>Recognized format strings</caption>
+ *   <tr><th>format</th><th>kind</th><th>output shape</th></tr>
+ *   <tr><td>{@code "millis"}</td><td>{@link Kind#MILLIS}</td><td>{@code 1714521600000} (epoch ms as JSON number)</td></tr>
+ *   <tr><td>{@code "unixtime"}</td><td>{@link Kind#UNIXTIME}</td><td>{@code 1714521600} (epoch s as JSON number)</td></tr>
+ *   <tr><td>{@code "iso8601"}</td><td>{@link Kind#ISO8601}</td><td>{@code "2024-04-30T12:00:00"} (default ISO emit)</td></tr>
+ *   <tr><td>{@code "yyyy-MM-dd"}</td><td>{@link Kind#YYYY_MM_DD}</td><td>{@code "2024-04-30"} (10 chars)</td></tr>
+ *   <tr><td>{@code "yyyyMMdd"}</td><td>{@link Kind#YYYYMMDD}</td><td>{@code "20240430"} (8 chars)</td></tr>
+ *   <tr><td>{@code "yyyy-MM-dd HH:mm"}</td><td>{@link Kind#YYYY_MM_DD_HH_MM}</td><td>{@code "2024-04-30 12:00"} (16 chars)</td></tr>
+ *   <tr><td>{@code "yyyy-MM-dd HH:mm:ss"}</td><td>{@link Kind#YYYY_MM_DD_HH_MM_SS}</td><td>{@code "2024-04-30 12:00:00"} (19 chars)</td></tr>
+ *   <tr><td>{@code "yyyyMMddHHmmss"}</td><td>{@link Kind#YYYYMMDDHHMMSS}</td><td>{@code "20240430120000"} (14 chars)</td></tr>
+ *   <tr><td>any other</td><td>{@link Kind#PATTERN}</td><td>via {@link DateTimeFormatter}</td></tr>
+ * </table>
+ */
+public final class DateFormatPattern {
+    public enum Kind {
+        MILLIS,
+        UNIXTIME,
+        ISO8601,
+        YYYY_MM_DD,
+        YYYYMMDD,
+        YYYY_MM_DD_HH_MM,
+        YYYY_MM_DD_HH_MM_SS,
+        YYYYMMDDHHMMSS,
+        PATTERN
+    }
+
+    public final String format;
+    public final Kind kind;
+    /** Non-null only when {@link #kind} == {@link Kind#PATTERN}. */
+    public final DateTimeFormatter formatter;
+
+    private DateFormatPattern(String format, Kind kind, DateTimeFormatter formatter) {
+        this.format = format;
+        this.kind = kind;
+        this.formatter = formatter;
+    }
+
+    /**
+     * Classify a format string. Returns {@code null} for null / empty input
+     * (treat as "no format set"). Never throws — even unrecognized patterns
+     * are accepted and pre-compile a {@link DateTimeFormatter}.
+     *
+     * @throws java.time.format.DateTimeParseException if {@code format} is
+     *     not a valid {@link DateTimeFormatter} pattern (and not one of the
+     *     recognized special tokens / fast paths)
+     */
+    public static DateFormatPattern of(String format) {
+        if (format == null || format.isEmpty()) {
+            return null;
+        }
+        switch (format) {
+            case "millis":
+                return new DateFormatPattern(format, Kind.MILLIS, null);
+            case "unixtime":
+                return new DateFormatPattern(format, Kind.UNIXTIME, null);
+            case "iso8601":
+                return new DateFormatPattern(format, Kind.ISO8601, null);
+            case "yyyy-MM-dd":
+                return new DateFormatPattern(format, Kind.YYYY_MM_DD, null);
+            case "yyyyMMdd":
+                return new DateFormatPattern(format, Kind.YYYYMMDD, null);
+            case "yyyy-MM-dd HH:mm":
+                return new DateFormatPattern(format, Kind.YYYY_MM_DD_HH_MM, null);
+            case "yyyy-MM-dd HH:mm:ss":
+                return new DateFormatPattern(format, Kind.YYYY_MM_DD_HH_MM_SS, null);
+            case "yyyyMMddHHmmss":
+                return new DateFormatPattern(format, Kind.YYYYMMDDHHMMSS, null);
+            default:
+                return new DateFormatPattern(format, Kind.PATTERN, DateTimeFormatter.ofPattern(format));
+        }
+    }
+
+    /**
+     * Dispatch a write of {@code value} according to {@link #kind}. Caller
+     * must have already emitted the field name (this only writes the value).
+     */
+    public void write(JSONGenerator g, Object value) {
+        switch (kind) {
+            case MILLIS:
+                g.writeInt64(toEpochMillis(value));
+                return;
+            case UNIXTIME:
+                g.writeInt64(toEpochMillis(value) / 1000);
+                return;
+            case ISO8601:
+                writeIso8601(g, value);
+                return;
+            case YYYY_MM_DD:
+                g.writeLocalDate(toLocalDate(value));
+                return;
+            case YYYYMMDD:
+                g.writeYyyyMMdd8(toLocalDate(value));
+                return;
+            case YYYY_MM_DD_HH_MM:
+                g.writeYyyyMMddhhmm16(toLocalDateTime(value));
+                return;
+            case YYYY_MM_DD_HH_MM_SS:
+                g.writeYyyyMMddhhmmss19(toLocalDateTime(value));
+                return;
+            case YYYYMMDDHHMMSS:
+                g.writeYyyyMMddhhmmss14(toLocalDateTime(value));
+                return;
+            case PATTERN:
+            default:
+                writePattern(g, value);
+                return;
+        }
+    }
+
+    private void writePattern(JSONGenerator g, Object value) {
+        if (value instanceof java.time.temporal.TemporalAccessor ta) {
+            g.writeString(formatter.format(ta));
+        } else if (value instanceof Date d) {
+            g.writeString(formatter.format(d.toInstant().atZone(DateUtils.DEFAULT_ZONE_ID)));
+        } else {
+            throw new JSONException(
+                    "Cannot format value of type " + value.getClass().getName()
+                            + " with date pattern \"" + format + "\"");
+        }
+    }
+
+    private static void writeIso8601(JSONGenerator g, Object value) {
+        // Equivalent to fj3's default ISO-8601 emit. Routes each Temporal
+        // type to its dedicated JSONGenerator method; java.util.Date goes
+        // through Instant.
+        if (value instanceof Instant in) {
+            g.writeInstant(in);
+        } else if (value instanceof LocalDateTime ldt) {
+            g.writeLocalDateTime(ldt);
+        } else if (value instanceof LocalDate ld) {
+            g.writeLocalDate(ld);
+        } else if (value instanceof ZonedDateTime zdt) {
+            g.writeLocalDateTime(zdt.toLocalDateTime());
+        } else if (value instanceof OffsetDateTime odt) {
+            g.writeLocalDateTime(odt.toLocalDateTime());
+        } else if (value instanceof Date d) {
+            g.writeInstant(d.toInstant());
+        } else {
+            throw new JSONException(
+                    "Cannot emit value of type " + value.getClass().getName()
+                            + " as iso8601");
+        }
+    }
+
+    private static long toEpochMillis(Object value) {
+        if (value instanceof Date d) {
+            return d.getTime();
+        }
+        if (value instanceof Instant in) {
+            return in.toEpochMilli();
+        }
+        if (value instanceof ZonedDateTime zdt) {
+            return zdt.toInstant().toEpochMilli();
+        }
+        if (value instanceof OffsetDateTime odt) {
+            return odt.toInstant().toEpochMilli();
+        }
+        if (value instanceof LocalDateTime ldt) {
+            return ldt.atZone(DateUtils.DEFAULT_ZONE_ID).toInstant().toEpochMilli();
+        }
+        if (value instanceof LocalDate ld) {
+            return ld.atStartOfDay(DateUtils.DEFAULT_ZONE_ID).toInstant().toEpochMilli();
+        }
+        throw new JSONException(
+                "Cannot convert value of type " + value.getClass().getName() + " to epoch millis");
+    }
+
+    private static LocalDate toLocalDate(Object value) {
+        if (value instanceof LocalDate ld) {
+            return ld;
+        }
+        if (value instanceof LocalDateTime ldt) {
+            return ldt.toLocalDate();
+        }
+        if (value instanceof ZonedDateTime zdt) {
+            return zdt.toLocalDate();
+        }
+        if (value instanceof OffsetDateTime odt) {
+            return odt.toLocalDate();
+        }
+        if (value instanceof Instant in) {
+            return LocalDateTime.ofInstant(in, DateUtils.DEFAULT_ZONE_ID).toLocalDate();
+        }
+        if (value instanceof Date d) {
+            return d.toInstant().atZone(DateUtils.DEFAULT_ZONE_ID).toLocalDate();
+        }
+        throw new JSONException(
+                "Cannot convert value of type " + value.getClass().getName() + " to LocalDate");
+    }
+
+    private static LocalDateTime toLocalDateTime(Object value) {
+        if (value instanceof LocalDateTime ldt) {
+            return ldt;
+        }
+        if (value instanceof LocalDate ld) {
+            return ld.atStartOfDay();
+        }
+        if (value instanceof ZonedDateTime zdt) {
+            return zdt.toLocalDateTime();
+        }
+        if (value instanceof OffsetDateTime odt) {
+            return odt.toLocalDateTime();
+        }
+        if (value instanceof Instant in) {
+            return LocalDateTime.ofInstant(in, DateUtils.DEFAULT_ZONE_ID);
+        }
+        if (value instanceof Date d) {
+            return d.toInstant().atZone(DateUtils.DEFAULT_ZONE_ID).toLocalDateTime();
+        }
+        throw new JSONException(
+                "Cannot convert value of type " + value.getClass().getName() + " to LocalDateTime");
+    }
+}

@@ -74,9 +74,12 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     // For TYPE_LIST_STRING / TYPE_LIST_OBJECT: element class
     public final Class<?> elementClass;
 
-    // Optional: date/time format pattern + cached formatter
+    // Optional: date/time format pattern + classified strategy. The strategy
+    // recognizes special tokens ("millis", "unixtime", "iso8601") and the
+    // five fastjson2-equivalent fast-path patterns; anything else falls
+    // through to a cached DateTimeFormatter.
     public final String format;
-    final java.time.format.DateTimeFormatter formatter;
+    final com.alibaba.fastjson3.util.DateFormatPattern datePattern;
 
     // Optional: custom ObjectWriter for this field (from @JSONField(serializeUsing=))
     public final ObjectWriter<Object> customWriter;
@@ -126,8 +129,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         this.elementClass = elementClass;
         this.inclusion = inclusion;
         this.format = format;
-        this.formatter = (format != null && !format.isEmpty())
-                ? java.time.format.DateTimeFormatter.ofPattern(format) : null;
+        this.datePattern = com.alibaba.fastjson3.util.DateFormatPattern.of(format);
         this.customWriter = (ObjectWriter<Object>) customWriter;
         this.label = (label != null && !label.isEmpty()) ? label : null;
         this.fieldFeatures = fieldFeatures;
@@ -800,19 +802,25 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 return;
             }
         }
-        // Format temporal types with explicit pattern
-        if (formatter != null) {
-            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-            if (value instanceof java.time.temporal.TemporalAccessor ta) {
-                generator.writeString(formatter.format(ta));
-            } else if (value instanceof java.util.Date d) {
-                generator.writeString(formatter.format(
-                        d.toInstant().atZone(com.alibaba.fastjson3.util.DateUtils.DEFAULT_ZONE_ID)));
-            } else {
-                // Fallback: use ObjectWriter instead of writeAny
-                writeObjectWithWriter(generator, value, features);
+        // Format temporal types with explicit pattern. Field-level
+        // @JSONField(format=...) wins over mapper-level
+        // ObjectMapper.dateFormat. Either path goes through the same
+        // DateFormatPattern strategy so behavior (including special
+        // tokens like "millis" / "unixtime" / "iso8601") is uniform.
+        com.alibaba.fastjson3.util.DateFormatPattern effective = datePattern;
+        if (effective == null) {
+            effective = generator.effectiveMapper().getDateFormatPattern();
+        }
+        if (effective != null) {
+            if (value instanceof java.time.temporal.TemporalAccessor
+                    || value instanceof java.util.Date) {
+                generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+                effective.write(generator, value);
+                return;
             }
-            return;
+            // Non-Temporal/non-Date with a date pattern: fall through to
+            // the default ObjectWriter so e.g. a String field doesn't get
+            // misrouted into the date strategy.
         }
         // Only push reference for non-container types; writeAny handles its own
         // pushReference for Map/Collection/Object[]/JSONObject/JSONArray internally

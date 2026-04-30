@@ -145,7 +145,7 @@ public final class ObjectMapper {
             null,
             null,
             com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance(),
-            null, null);
+            null, null, null);
 
     private final long readFeatures;
     private final long writeFeatures;
@@ -191,6 +191,12 @@ public final class ObjectMapper {
     // JSONObject.setMapCreator() global / JSONObjectMap default.
     private final java.util.function.Supplier<? extends java.util.Map<String, Object>> mapSupplier;
     private final java.util.function.Supplier<? extends java.util.List<Object>> listSupplier;
+
+    // Mapper-level default date/time format. Field-level @JSONField(format=)
+    // wins over this; applies to fields that have no field-level override.
+    // null = use fastjson3's default ISO-8601 emit per Temporal type.
+    private final String dateFormat;
+    private final com.alibaba.fastjson3.util.DateFormatPattern dateFormatPattern;
 
     // Holder for ObjectReader that supports invalidation via cleanup
     private static final class ReaderHolder {
@@ -317,7 +323,8 @@ public final class ObjectMapper {
             ObjectWriterProvider writerProvider,
             com.alibaba.fastjson3.util.DynamicClassLoader classLoader,
             java.util.function.Supplier<? extends java.util.Map<String, Object>> mapSupplier,
-            java.util.function.Supplier<? extends java.util.List<Object>> listSupplier
+            java.util.function.Supplier<? extends java.util.List<Object>> listSupplier,
+            String dateFormat
     ) {
         this.readFeatures = readFeatures;
         this.writeFeatures = writeFeatures;
@@ -333,6 +340,8 @@ public final class ObjectMapper {
         this.useJacksonAnnotation = useJacksonAnnotation;
         this.mapSupplier = mapSupplier;
         this.listSupplier = listSupplier;
+        this.dateFormat = dateFormat;
+        this.dateFormatPattern = com.alibaba.fastjson3.util.DateFormatPattern.of(dateFormat);
         this.classLoader = classLoader != null ? classLoader
             : com.alibaba.fastjson3.util.DynamicClassLoader.getSharedInstance();
 
@@ -554,7 +563,28 @@ public final class ObjectMapper {
         b.mixIns.putAll(this.mixInCache);
         b.labelFilter = this.labelFilter;
         b.useJacksonAnnotation = this.useJacksonAnnotation;
+        b.mapSupplier = this.mapSupplier;
+        b.listSupplier = this.listSupplier;
+        b.dateFormat = this.dateFormat;
         return b;
+    }
+
+    /**
+     * Mapper-level date/time format string, or {@code null} if not configured.
+     * Field-level {@code @JSONField(format=...)} overrides this.
+     *
+     * @see Builder#dateFormat(String)
+     */
+    public String getDateFormat() {
+        return dateFormat;
+    }
+
+    /**
+     * Pre-classified strategy for {@link #getDateFormat()}, or {@code null}
+     * when no format is set. Used by the writer dispatch path.
+     */
+    public com.alibaba.fastjson3.util.DateFormatPattern getDateFormatPattern() {
+        return dateFormatPattern;
     }
 
     /**
@@ -2353,8 +2383,35 @@ public final class ObjectMapper {
         boolean useJacksonAnnotation;
         java.util.function.Supplier<? extends java.util.Map<String, Object>> mapSupplier;
         java.util.function.Supplier<? extends java.util.List<Object>> listSupplier;
+        String dateFormat;
 
         Builder() {
+        }
+
+        /**
+         * Set a default date/time format for this mapper. Applied to fields
+         * that have no field-level {@code @JSONField(format=...)} override.
+         * Field-level annotation always wins.
+         *
+         * <p>Recognized values:</p>
+         * <ul>
+         *   <li>{@code null} or empty — clear the default; emit per the
+         *       Temporal type's natural ISO shape (current fastjson3 behavior).</li>
+         *   <li>{@code "millis"} — emit {@code Date.getTime()} as a JSON number.</li>
+         *   <li>{@code "unixtime"} — emit {@code Date.getTime() / 1000} as a JSON number.</li>
+         *   <li>{@code "iso8601"} — emit ISO-8601 (equivalent to no format set).</li>
+         *   <li>{@code "yyyy-MM-dd"} / {@code "yyyyMMdd"} /
+         *       {@code "yyyy-MM-dd HH:mm"} / {@code "yyyy-MM-dd HH:mm:ss"} /
+         *       {@code "yyyyMMddHHmmss"} — fast hand-rolled byte writers.
+         *       Other patterns fall through to a cached {@link java.time.format.DateTimeFormatter}.</li>
+         * </ul>
+         *
+         * <p>Mirrors fastjson2's {@code FastJsonConfig.setDateFormat(...)} for
+         * fj2 → fj3 migration parity.</p>
+         */
+        public Builder dateFormat(String pattern) {
+            this.dateFormat = pattern;
+            return this;
         }
 
         /**
@@ -2696,7 +2753,8 @@ public final class ObjectMapper {
                     writerProvider,
                     loader,
                     mapSupplier,
-                    listSupplier
+                    listSupplier,
+                    dateFormat
             );
             // Set before/after/pre filters
             if (!beforeFilters.isEmpty()) {
