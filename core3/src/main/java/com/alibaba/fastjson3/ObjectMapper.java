@@ -2431,6 +2431,17 @@ public final class ObjectMapper {
          *       if it wants to honor mapper-level formats.</li>
          *   <li><b>Read side</b>: this is a write-side feature only. Parser
          *       configuration for the same format is a separate follow-up.</li>
+         *   <li><b>Round-trip caveats</b>: writing a {@link java.time.LocalDateTime}
+         *       under a date-only pattern ({@code "yyyy-MM-dd"} / {@code "yyyyMMdd"})
+         *       emits a date-only string; parsing that string back into a
+         *       {@code LocalDateTime} field silently pads the time component
+         *       to midnight — the original time-of-day is unrecoverable.
+         *       Writing a {@code LocalDateTime} as {@code "millis"} or
+         *       {@code "unixtime"} emits a JSON number; the default reader
+         *       expects a string for {@code LocalDateTime} fields and will
+         *       fail to parse the number back. Use {@code "yyyy-MM-dd HH:mm:ss"}
+         *       (or omit {@code dateFormat}) when round-trip fidelity
+         *       matters.</li>
          * </ul>
          *
          * <p>Mirrors fastjson2's {@code FastJsonConfig.setDateFormat(...)} for
