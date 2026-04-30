@@ -238,6 +238,57 @@ class Fastjson3JsonCodecTest {
     }
 
     @Test
+    void encoder_encode_ndjson_withCharsetParameter_stillFrames() {
+        // application/x-ndjson;charset=UTF-8 — the charset parameter must
+        // not break the streaming-mode dispatch. MediaType.isCompatibleWith
+        // ignores parameters, so the match should hold.
+        Flux<DataBuffer> buffers = encoder.encode(
+                Flux.just(new User(1L, "alice", "a@e.com")),
+                factory, ResolvableType.forClass(User.class),
+                MediaType.parseMediaType("application/x-ndjson;charset=UTF-8"),
+                null);
+        StepVerifier.create(buffers)
+                .assertNext(b -> assertTrue(bufferToString(b).endsWith("\n"),
+                        "charset parameter should not break ndjson framing"))
+                .verifyComplete();
+    }
+
+    @Test
+    void encoder_encode_streamPlusJson_doesNotFrame() {
+        // application/stream+json (Spring 5.x deprecated NDJSON predecessor)
+        // is intentionally NOT in our streaming list — clients should migrate
+        // to application/x-ndjson. Pin that we do NOT silently route
+        // stream+json to the framing path.
+        Flux<DataBuffer> buffers = encoder.encode(
+                Flux.just(new User(1L, "alice", "a@e.com")),
+                factory, ResolvableType.forClass(User.class),
+                MediaType.parseMediaType("application/stream+json"),
+                null);
+        StepVerifier.create(buffers)
+                .assertNext(b -> assertFalse(bufferToString(b).endsWith("\n"),
+                        "stream+json must NOT be routed to ndjson framing"))
+                .verifyComplete();
+    }
+
+    @Test
+    void encoder_encode_ndjson_monoSingleValue_alsoFramed() {
+        // Spring's EncoderHttpMessageWriter always invokes encode(publisher)
+        // regardless of Mono vs Flux shape, so a Mono<T> with NDJSON content
+        // type lands in our encode() and gets framed. This is a deliberate
+        // divergence from Jackson2JsonEncoder, which special-cases Mono into
+        // encodeValue and emits an unframed body — violating the NDJSON
+        // convention that every record terminate with '\n'. Pin our shape.
+        Flux<DataBuffer> buffers = encoder.encode(
+                reactor.core.publisher.Mono.just(new User(1L, "alice", "a@e.com")),
+                factory, ResolvableType.forClass(User.class),
+                MediaType.APPLICATION_NDJSON, null);
+        StepVerifier.create(buffers)
+                .assertNext(b -> assertTrue(bufferToString(b).endsWith("\n"),
+                        "Mono<T> with ndjson must still be framed (fj3 deliberate divergence)"))
+                .verifyComplete();
+    }
+
+    @Test
     void encoder_encode_applicationJson_doesNotFrame() {
         // Pin the regression boundary: application/json must NOT get '\n'
         // framing — Spring's Flux-to-array logic upstream wraps the stream

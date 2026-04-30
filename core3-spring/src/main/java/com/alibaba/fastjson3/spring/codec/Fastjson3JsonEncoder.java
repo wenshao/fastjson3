@@ -83,6 +83,14 @@ public final class Fastjson3JsonEncoder
                                    @Nullable final Map<String, Object> hints) {
         if (isStreamingMediaType(mimeType)) {
             // NDJSON / line-delimited JSON: per-element body + '\n' framing.
+            //
+            // Deliberate divergence from Jackson2JsonEncoder: Spring's
+            // EncoderHttpMessageWriter always invokes encode(publisher, ...)
+            // for both Mono and Flux response shapes, so a Mono<T> declared
+            // with content-type application/x-ndjson lands here too — and
+            // we frame it. Jackson special-cases Mono into encodeValue and
+            // emits an unframed body; that violates the NDJSON convention
+            // that every record terminate with '\n'. fj3 frames consistently.
             return Flux.from(inputStream)
                     .map(value -> encodeStreamValue(value, bufferFactory, elementType, mimeType, hints));
         }
