@@ -218,16 +218,24 @@ public final class ObjectWriterCreator {
                 rejectNonPojoUnwrappedInner(type, propertyName, accessorReturn);
             }
 
+            // Field-level @JSONField(format=...) / Jackson @JsonFormat: must
+            // be resolved here so that record components honor the same
+            // field-level format precedence as POJO fields. Pre-fix the
+            // record path silently dropped the format string, leaving
+            // mapper-level dateFormat to "win" over a field-level annotation
+            // — an inconsistent precedence vs the POJO writer.
+            String format = resolveFormat(jsonField, jacksonField, backingField, mixIn, useJacksonAnnotation);
+
             if (backingField != null) {
                 writerMap.put(propertyName, FieldWriter.ofField(
                         jsonName, ordinal, accessor.getGenericReturnType(), accessorReturn,
-                        backingField, fieldInclusion, null, null, null, 0L, unwrapped
+                        backingField, fieldInclusion, format, null, null, 0L, unwrapped
                 ));
             } else {
                 accessor.setAccessible(true);
                 writerMap.put(propertyName, FieldWriter.ofGetter(
                         jsonName, ordinal, accessor.getGenericReturnType(), accessorReturn,
-                        accessor, fieldInclusion, null, null, null, 0L, unwrapped
+                        accessor, fieldInclusion, format, null, null, 0L, unwrapped
                 ));
             }
         }

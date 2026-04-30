@@ -200,6 +200,14 @@ public final class DateFormatPattern {
         // before formatting — same convention as the Date branch.
         if (value instanceof Instant in) {
             g.writeString(formatter.format(in.atZone(DateUtils.DEFAULT_ZONE_ID)));
+        } else if (value instanceof LocalDate ld) {
+            // LocalDate has no time fields, so a pattern containing
+            // {@code HH/mm/ss} (e.g., the common ISO "yyyy-MM-dd'T'HH:mm:ss")
+            // throws UnsupportedTemporalTypeException at format time.
+            // Promote to LocalDateTime via atStartOfDay() — same upgrade
+            // the fast-path date-time Kinds already perform via
+            // toLocalDateTime, so behavior is consistent across Kinds.
+            g.writeString(formatter.format(ld.atStartOfDay()));
         } else if (value instanceof java.time.temporal.TemporalAccessor ta) {
             g.writeString(formatter.format(ta));
         } else if (value instanceof Date d) {

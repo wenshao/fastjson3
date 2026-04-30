@@ -39,6 +39,11 @@ class ObjectMapperDateFormatTest {
         public java.time.OffsetTime ot;
     }
 
+    public record DateRecord(Long id,
+                             @JSONField(format = "yyyy-MM-dd") LocalDateTime ts,
+                             LocalDateTime tsDefault) {
+    }
+
     public static class LocalTimeFieldBean {
         // Field-level @JSONField(format) on a LocalTime: time-only patterns
         // are not in the recognized fast paths, so this falls through to
@@ -205,6 +210,26 @@ class ObjectMapperDateFormatTest {
         String out = m.writeValueAsString(b);
         assertTrue(out.contains("+08:00"),
                 "iso8601 must preserve OffsetDateTime offset, got: " + out);
+    }
+
+    @Test
+    void mapperLevel_customPattern_localDate_handlesTimePattern() {
+        // R8 audit P1 regression: pre-fix, a LocalDate field + custom
+        // pattern that includes time fields (e.g. "yyyy-MM-dd'T'HH:mm:ss"
+        // — the most common ISO pattern users reach for) crashed with
+        // UnsupportedTemporalTypeException because LocalDate has no
+        // hour/minute/second accessors. Fast-path Kinds (YYYY_MM_DD_HH_MM_SS)
+        // already promote LocalDate to LocalDateTime via toLocalDateTime;
+        // PATTERN kind now matches.
+        ObjectMapper m = ObjectMapper.builder()
+                .dateFormat("yyyy-MM-dd'T'HH:mm:ss")
+                .build();
+        Bean b = new Bean();
+        b.date = LocalDate.of(2024, 4, 30);
+        // Must not throw — atStartOfDay() upgrade fills in 00:00:00.
+        String out = m.writeValueAsString(b);
+        assertTrue(out.contains("\"2024-04-30T00:00:00\""),
+                "LocalDate + time-bearing pattern must promote to LocalDateTime, got: " + out);
     }
 
     @Test
@@ -457,6 +482,27 @@ class ObjectMapperDateFormatTest {
         String out = m.writeValueAsString(b);
         assertEquals("{\"t\":\"12:34:56\"}", out,
                 "field-level @JSONField(format=HH:mm:ss) on LocalTime must format via PATTERN kind");
+    }
+
+    @Test
+    void records_honorFieldLevelFormat() {
+        // R8 audit P1 regression: createRecordWriter previously passed
+        // null for the format slot, so @JSONField(format=...) on a record
+        // component was silently dropped. mapper-level dateFormat then
+        // "won" over a field-level annotation that should have taken
+        // precedence — inconsistent vs the POJO writer.
+        // Post-fix: createRecordWriter calls resolveFormat and threads
+        // the format string through to FieldWriter.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd HH:mm:ss").build();
+        DateRecord r = new DateRecord(
+                1L,
+                LocalDateTime.of(2024, 4, 30, 12, 34, 56),
+                LocalDateTime.of(2024, 4, 30, 12, 34, 56));
+        String out = m.writeValueAsString(r);
+        assertTrue(out.contains("\"ts\":\"2024-04-30\""),
+                "record component @JSONField(format) must win over mapper.dateFormat, got: " + out);
+        assertTrue(out.contains("\"tsDefault\":\"2024-04-30 12:34:56\""),
+                "record component without @JSONField must use mapper.dateFormat, got: " + out);
     }
 
     @Test
