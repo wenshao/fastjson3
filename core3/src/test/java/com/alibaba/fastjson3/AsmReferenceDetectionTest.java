@@ -80,6 +80,54 @@ class AsmReferenceDetectionTest {
     }
 
     @Test
+    void mixed_reflectParent_asmChild_acyclic_noFalsePositive() {
+        // qwen R5-PR154-Critical-#1: pre-fix, a reflection bean writer
+        // calling into an ASM-generated child writer with
+        // ReferenceDetection enabled would double-push the child value
+        // (FieldWriter.writeObject pushed the value, then ASM-generated
+        // write pushed the same value at entry → put-twice → false
+        // "circular reference" on an acyclic graph).
+        //
+        // Post-fix: reference tracking moved to writer side
+        // (ReflectObjectWriter.write + ASM emitted push); FieldWriter no
+        // longer pushes the value. Single-source-of-truth tracking,
+        // mixed reflection→ASM paths emit correctly.
+        Outer o = new Outer();
+        o.tag = "x";
+        o.first = new Inner("a", 1);
+        o.second = new Inner("b", 2);
+        ObjectMapper m = ObjectMapper.builder()
+                .enableWrite(WriteFeature.ReferenceDetection)
+                .build();
+        // Outer has @JSONField(format=) so it falls back to REFLECT;
+        // Inner is a simple POJO so it's ASM-generatable.
+        String out = m.writeValueAsString(o);
+        assertTrue(out.contains("\"tag\":\"x\"")
+                && out.contains("\"first\":{") && out.contains("\"second\":{"),
+                "acyclic mixed reflection→ASM graph must serialize cleanly, got: " + out);
+    }
+
+    public static class Inner {
+        public String tag;
+        public int n;
+        public Inner() {}
+        public Inner(String tag, int n) { this.tag = tag; this.n = n; }
+    }
+
+    public static class Outer {
+        // @JSONField(format=) forces REFLECT writer for Outer (per
+        // ObjectWriterCreatorASM.canGenerate's @JSONField(format=) gate
+        // at line ~178), while Inner (no annotations) gets the default
+        // ASM writer. Reproduces the mixed reflection-parent / ASM-child
+        // path that qwen flagged.
+        @com.alibaba.fastjson3.annotation.JSONField(format = "yyyy-MM-dd")
+        public java.time.LocalDateTime when;
+        public String tag;
+        public Inner first;
+        public Inner second;
+    }
+
+    @Test
     void asm_referenceDetectionDisabled_isFastPathNoop() {
         // Without the feature, pushReference is a no-op. We can't directly
         // observe that from the public API, but at least confirm output
