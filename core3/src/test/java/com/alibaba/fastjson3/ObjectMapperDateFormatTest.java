@@ -39,6 +39,15 @@ class ObjectMapperDateFormatTest {
         public java.time.OffsetTime ot;
     }
 
+    public static class LocalTimeFieldBean {
+        // Field-level @JSONField(format) on a LocalTime: time-only patterns
+        // are not in the recognized fast paths, so this falls through to
+        // PATTERN kind, which delegates to DateTimeFormatter.format and
+        // accepts any TemporalAccessor including LocalTime.
+        @JSONField(format = "HH:mm:ss")
+        public java.time.LocalTime t;
+    }
+
     public static class FieldOverrideBean {
         @JSONField(format = "yyyy-MM-dd")
         public LocalDateTime ts;
@@ -162,6 +171,58 @@ class ObjectMapperDateFormatTest {
         b.ts = LocalDateTime.of(2024, 4, 30, 12, 34, 56);
         // fj3's default LocalDateTime ISO shape is yyyy-MM-ddTHH:mm:ss[.nanos].
         assertEquals("{\"ts\":\"2024-04-30T12:34:56\"}", m.writeValueAsString(b));
+    }
+
+    public static class ZonedBean {
+        public java.time.ZonedDateTime zdt;
+        public java.time.OffsetDateTime odt;
+    }
+
+    @Test
+    void mapperLevel_iso8601_preservesZonedDateTimeOffset() {
+        // qwen P-Critical regression: pre-fix, iso8601 routed
+        // ZonedDateTime through writeLocalDateTime(zdt.toLocalDateTime())
+        // which silently dropped the zone — data loss. Post-fix, emit via
+        // value.toString() which includes the offset.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("iso8601").build();
+        ZonedBean b = new ZonedBean();
+        b.zdt = java.time.ZonedDateTime.of(
+                LocalDateTime.of(2024, 4, 30, 12, 34, 56),
+                java.time.ZoneId.of("Asia/Shanghai"));
+        String out = m.writeValueAsString(b);
+        assertTrue(out.contains("+08:00") || out.contains("Asia/Shanghai"),
+                "iso8601 must preserve ZonedDateTime offset/zone, got: " + out);
+    }
+
+    @Test
+    void mapperLevel_iso8601_preservesOffsetDateTimeOffset() {
+        // Same data-loss bug for OffsetDateTime — preserve the offset.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("iso8601").build();
+        ZonedBean b = new ZonedBean();
+        b.odt = java.time.OffsetDateTime.of(
+                LocalDateTime.of(2024, 4, 30, 12, 34, 56),
+                java.time.ZoneOffset.ofHours(8));
+        String out = m.writeValueAsString(b);
+        assertTrue(out.contains("+08:00"),
+                "iso8601 must preserve OffsetDateTime offset, got: " + out);
+    }
+
+    @Test
+    void mapperLevel_customPattern_handlesInstant() {
+        // qwen P-Critical regression: pre-fix, writePattern called
+        // formatter.format(instant) directly. Custom patterns like
+        // "yyyy/MM/dd" require calendar fields that Instant lacks, so
+        // this threw UnsupportedTemporalTypeException. Post-fix, project
+        // Instant onto ZonedDateTime at the default zone before formatting
+        // (matches the Date branch convention).
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy/MM/dd").build();
+        Map<String, Object> wrap = new LinkedHashMap<>();
+        wrap.put("ts", java.time.Instant.parse("2024-04-30T12:34:56Z"));
+        // Must not throw — output uses the system default zone, so we don't
+        // pin the exact date; just confirm it parses and contains a slash.
+        String out = m.writeValueAsString(wrap);
+        assertTrue(out.contains("\"ts\":\"") && out.contains("/"),
+                "custom pattern on Instant must format without crashing, got: " + out);
     }
 
     // ---- Field-level overrides mapper-level ----
@@ -356,25 +417,18 @@ class ObjectMapperDateFormatTest {
 
     @Test
     void fieldLevel_HHmmss_onLocalTime_stillWorks() {
-        // Sanity: a field-level pattern that DOES apply to LocalTime
-        // (HH:mm:ss is not in the recognized fast paths so it falls
-        // through to PATTERN kind, which delegates to DateTimeFormatter
-        // and accepts any TemporalAccessor).
-        @SuppressWarnings("unused")
-        class LocalTimeFieldBean {
-            @JSONField(format = "HH:mm:ss")
-            public java.time.LocalTime t;
-        }
-        // (Inline class disallowed in the test runner; verify via field on
-        // a separate top-level test type instead — covered by manual
-        // inspection of FieldWriter.writeDate going through datePattern
-        // with kind PATTERN.)
-        ObjectMapper m = ObjectMapper.builder().build();
-        TimeBean b = new TimeBean();
+        // Pin: field-level @JSONField(format="HH:mm:ss") on a LocalTime
+        // routes through FieldWriter.datePattern → PATTERN kind, which
+        // delegates to DateTimeFormatter.format(TemporalAccessor) and
+        // produces "HH:mm:ss". Mapper-level dateFormat (date-shaped) is
+        // bypassed for time-only types, but field-level pattern always
+        // applies regardless.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd").build();
+        LocalTimeFieldBean b = new LocalTimeFieldBean();
         b.t = java.time.LocalTime.of(12, 34, 56);
-        // Without mapper format, default ISO emit applies → "12:34:56".
         String out = m.writeValueAsString(b);
-        assertTrue(out.contains("12:34:56"));
+        assertEquals("{\"t\":\"12:34:56\"}", out,
+                "field-level @JSONField(format=HH:mm:ss) on LocalTime must format via PATTERN kind");
     }
 
     @Test

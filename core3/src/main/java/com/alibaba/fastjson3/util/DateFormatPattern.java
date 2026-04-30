@@ -184,7 +184,14 @@ public final class DateFormatPattern {
     }
 
     private void writePattern(JSONGenerator g, Object value) {
-        if (value instanceof java.time.temporal.TemporalAccessor ta) {
+        // Instant has no calendar fields (year/month/day/hour/...) so a
+        // custom pattern like "yyyy/MM/dd" would throw
+        // UnsupportedTemporalTypeException at formatter.format(instant).
+        // Project the Instant into a ZonedDateTime at the default zone
+        // before formatting — same convention as the Date branch.
+        if (value instanceof Instant in) {
+            g.writeString(formatter.format(in.atZone(DateUtils.DEFAULT_ZONE_ID)));
+        } else if (value instanceof java.time.temporal.TemporalAccessor ta) {
             g.writeString(formatter.format(ta));
         } else if (value instanceof Date d) {
             // java.sql.Date / java.sql.Time override toInstant() to throw
@@ -202,7 +209,10 @@ public final class DateFormatPattern {
     private static void writeIso8601(JSONGenerator g, Object value) {
         // Equivalent to fj3's default ISO-8601 emit. Routes each Temporal
         // type to its dedicated JSONGenerator method; java.util.Date goes
-        // through Instant.
+        // through Instant. ZonedDateTime / OffsetDateTime preserve their
+        // offset/zone information via toString() — calling
+        // writeLocalDateTime(zdt.toLocalDateTime()) here would silently
+        // drop the offset, which is data loss.
         if (value instanceof Instant in) {
             g.writeInstant(in);
         } else if (value instanceof LocalDateTime ldt) {
@@ -210,9 +220,9 @@ public final class DateFormatPattern {
         } else if (value instanceof LocalDate ld) {
             g.writeLocalDate(ld);
         } else if (value instanceof ZonedDateTime zdt) {
-            g.writeLocalDateTime(zdt.toLocalDateTime());
+            g.writeString(zdt.toString());
         } else if (value instanceof OffsetDateTime odt) {
-            g.writeLocalDateTime(odt.toLocalDateTime());
+            g.writeString(odt.toString());
         } else if (value instanceof Date d) {
             g.writeInstant(utilOrSqlDateToInstant(d));
         } else {
