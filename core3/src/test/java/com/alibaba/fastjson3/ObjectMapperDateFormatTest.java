@@ -344,17 +344,45 @@ class ObjectMapperDateFormatTest {
         assertFalse(farFuture.contains("<345"),
                 "garbled output indicates byte writer was used for out-of-range year, got: " + farFuture);
 
-        // Year 9999 — boundary, fast path applies
+        // Year 9999 — upper boundary, fast path applies (max in range)
         b.date = LocalDate.of(9999, 12, 31);
         String boundary = m.writeValueAsString(b);
         assertTrue(boundary.contains("\"9999-12-31\""),
                 "year 9999 (max in range) must use fast path, got: " + boundary);
 
-        // Year 0 — boundary, fast path applies (per JDK conventions, year 0 is 1 BCE in ISO)
+        // Year 1 — lower boundary, fast path applies
+        b.date = LocalDate.of(1, 1, 1);
+        String lowerBoundary = m.writeValueAsString(b);
+        assertTrue(lowerBoundary.contains("\"0001-01-01\""),
+                "year 1 (min in range) must use fast path, got: " + lowerBoundary);
+
+        // Year 0 — out of fast-path range. DateTimeFormatter's "yyyy"
+        // pattern letter is year-of-era (not proleptic), so year 0 emits
+        // "0001" via the formatter. Hand-rolled would emit "0000" — that
+        // divergence is exactly why FAST_PATH_YEAR_MIN = 1 (year 0 routes
+        // through the formatter for byte-equivalent output).
         b.date = LocalDate.of(0, 1, 1);
         String yearZero = m.writeValueAsString(b);
-        assertTrue(yearZero.contains("\"0000-01-01\""),
-                "year 0 (min in range) must use fast path, got: " + yearZero);
+        assertTrue(yearZero.contains("\"0001-01-01\""),
+                "year 0 (out of fast path) must route through formatter, got: " + yearZero);
+    }
+
+    @Test
+    void mapperLevel_yyyy_MM_dd_year0_byteEquivalentToFormatter() {
+        // Round 6 audit P0 regression: year 0 used to emit "0000-01-01"
+        // via the hand-rolled byte writer (raw proleptic digits). The
+        // DateTimeFormatter ("yyyy" = year-of-era) emits "0001-01-01"
+        // for the same input. Tightened FAST_PATH_YEAR_MIN to 1 so year
+        // 0 routes through the formatter — byte-equivalent output.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd").build();
+        Bean b = new Bean();
+        b.date = LocalDate.of(0, 6, 15);
+        String out = m.writeValueAsString(b);
+        // DateTimeFormatter renders ISO year 0 as year-of-era 1 BCE → "0001"
+        String expected = java.time.format.DateTimeFormatter
+                .ofPattern("yyyy-MM-dd").format(LocalDate.of(0, 6, 15));
+        assertTrue(out.contains("\"" + expected + "\""),
+                "year 0 must produce formatter-equivalent output (" + expected + "), got: " + out);
     }
 
     @Test

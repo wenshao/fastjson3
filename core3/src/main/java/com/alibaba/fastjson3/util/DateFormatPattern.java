@@ -105,11 +105,20 @@ public final class DateFormatPattern {
 
     /**
      * Range used by the fast-path byte writers. Year outside this range
-     * routes through the pre-compiled {@link #formatter} fallback (which
-     * signs years correctly via JDK conventions: {@code -0001-01-01} for
-     * BCE, {@code +12345-01-01} for &gt; 9999).
+     * routes through the pre-compiled {@link #formatter} fallback.
+     *
+     * <p>The lower bound is {@code 1} (year 1 CE), not {@code 0}, because
+     * {@link DateTimeFormatter}'s {@code yyyy} pattern letter is
+     * <em>year-of-era</em>, not proleptic ISO year. ISO year {@code 0}
+     * is BCE year-of-era {@code 1}, so a formatter emits {@code "0001"}
+     * for {@code LocalDate.of(0, ...)}, while the hand-rolled writers
+     * would emit raw digits {@code "0000"}. Tightening to
+     * {@code [1, 9999]} routes year {@code 0} (and any negative /
+     * &gt; 9999 year) through the formatter, ensuring byte-equivalent
+     * output. Years 1–9999 are byte-identical between fast path and
+     * formatter.</p>
      */
-    private static final int FAST_PATH_YEAR_MIN = 0;
+    private static final int FAST_PATH_YEAR_MIN = 1;
     private static final int FAST_PATH_YEAR_MAX = 9999;
 
     /**
