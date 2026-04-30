@@ -906,32 +906,34 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             } else {
                 writeString(e.name());
             }
-        } else if (value instanceof java.time.temporal.TemporalAccessor
+        } else if (value instanceof LocalDateTime
+                || value instanceof LocalDate
+                || value instanceof Instant
+                || value instanceof ZonedDateTime
+                || value instanceof OffsetDateTime
                 || value instanceof Date) {
-            // Mapper-level dateFormat takes precedence over the natural ISO
-            // emit AND over the dateAsMillis JSONGenerator flag — it's a
-            // more explicit user intent. Field-level @JSONField(format=...)
-            // is handled higher up via FieldWriter.datePattern.
+            // Date-shaped types: have full date-of-the-day semantics, so
+            // mapper-level dateFormat ({yyyy-MM-dd, millis, etc.}) applies.
+            // Mapper.dateFormat takes precedence over the natural ISO emit
+            // AND the dateAsMillis JSONGenerator flag — it's a more
+            // explicit user intent. Field-level @JSONField(format=...) is
+            // handled higher up via FieldWriter.datePattern.
             //
-            // Time-only types (LocalTime / OffsetTime) bypass the mapper
-            // format because the format strings (yyyy-MM-dd / millis /
-            // unixtime / etc.) speak date-shaped values; applying them to
-            // a time-of-day value would crash in the convert helpers.
-            // Field-level @JSONField(format="HH:mm:ss") on a LocalTime
-            // still works because FieldWriter handles it directly via the
-            // PATTERN kind.
+            // Partial-date / time-only TemporalAccessor types (LocalTime,
+            // OffsetTime, Year, YearMonth, MonthDay, HijrahDate, etc.)
+            // are NOT in this whitelist — they have no meaningful
+            // date-of-day projection, so applying a date-shaped pattern
+            // would either crash or silently misformat. They fall through
+            // to the LocalTime branch below (preserved from pre-PR) or
+            // the ObjectWriter fallback at the end.
             com.alibaba.fastjson3.util.DateFormatPattern fmt =
-                    (value instanceof LocalTime || value instanceof java.time.OffsetTime)
-                            ? null
-                            : effectiveMapper().getDateFormatPattern();
+                    effectiveMapper().getDateFormatPattern();
             if (fmt != null) {
                 fmt.write(this, value);
             } else if (value instanceof LocalDateTime ldt) {
                 writeLocalDateTime(ldt);
             } else if (value instanceof LocalDate ld) {
                 writeLocalDate(ld);
-            } else if (value instanceof LocalTime lt) {
-                writeLocalTime(lt);
             } else if (value instanceof Instant inst) {
                 writeInstant(inst);
             } else if (value instanceof ZonedDateTime zdt) {
@@ -947,6 +949,12 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     writeInstant(java.time.Instant.ofEpochMilli(date.getTime()));
                 }
             }
+        } else if (value instanceof LocalTime lt) {
+            // Time-only branch preserved from pre-PR shape — not in the
+            // mapper.dateFormat whitelist above. Field-level
+            // @JSONField(format="HH:mm:ss") still works via FieldWriter
+            // -> DateFormatPattern.PATTERN.
+            writeLocalTime(lt);
         } else {
             // Try ObjectWriter-based serialization via the owning mapper so mix-in /
             // registerWriter configurations attached to a custom mapper drive nested

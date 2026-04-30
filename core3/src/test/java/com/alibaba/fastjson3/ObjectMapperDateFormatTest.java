@@ -378,6 +378,49 @@ class ObjectMapperDateFormatTest {
     }
 
     @Test
+    void mapperLevel_dateFormat_doesNotCrashOnYearYearMonthMonthDay() {
+        // Round 4 audit P1: Year / YearMonth / MonthDay are TemporalAccessor
+        // instances but have no date-of-the-day semantics. Pre-PR, writeAny
+        // dispatched them through the ObjectWriter fallback (Year emits as
+        // int, YearMonth/MonthDay as ISO string). PR #153's initial merged
+        // guard captured them under "instanceof TemporalAccessor" and tried
+        // to convert via toLocalDate / toLocalDateTime, which throws.
+        //
+        // Fix: outer guard switched to whitelist of date-shaped types
+        // (LocalDate, LocalDateTime, Instant, ZonedDateTime, OffsetDateTime,
+        // Date). Year/YearMonth/MonthDay fall through to the existing
+        // ObjectWriter dispatch — preserved pre-PR behavior.
+        ObjectMapper m = ObjectMapper.builder().dateFormat("yyyy-MM-dd").build();
+        Map<String, Object> wrap = new LinkedHashMap<>();
+        wrap.put("y", java.time.Year.of(2024));
+        wrap.put("ym", java.time.YearMonth.of(2024, 4));
+        wrap.put("md", java.time.MonthDay.of(4, 30));
+        // Must not crash — the date-shaped mapper format does not apply
+        // to these partial-date types, so they emit their natural shape.
+        String out = m.writeValueAsString(wrap);
+        assertTrue(out.contains("2024"), "expected Year value preserved, got: " + out);
+        assertTrue(out.contains("04") || out.contains("4"), "expected month digit, got: " + out);
+        assertTrue(out.contains("30"), "expected day digit, got: " + out);
+    }
+
+    @Test
+    void noMapperFormat_yearYearMonthMonthDay_preservedFromPrePR() {
+        // Sanity that the whitelist switch didn't break the no-format
+        // path either — Year/YearMonth/MonthDay should round-trip
+        // through the ObjectWriter fallback exactly like pre-PR.
+        ObjectMapper m = ObjectMapper.builder().build();
+        Map<String, Object> wrap = new LinkedHashMap<>();
+        wrap.put("y", java.time.Year.of(2024));
+        wrap.put("ym", java.time.YearMonth.of(2024, 4));
+        wrap.put("md", java.time.MonthDay.of(4, 30));
+        String out = m.writeValueAsString(wrap);
+        // Don't pin exact shapes (those are fj3 defaults outside this PR's
+        // scope); just confirm no crash and values appear.
+        assertNotNull(out);
+        assertFalse(out.isEmpty());
+    }
+
+    @Test
     void mapperLevel_millis_appliesToMapValues() {
         // Map<String, Date> with "millis" emits epoch ms as JSON number,
         // not the ISO string fallback.

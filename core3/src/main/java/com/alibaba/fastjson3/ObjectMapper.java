@@ -2406,6 +2406,33 @@ public final class ObjectMapper {
          *       Other patterns fall through to a cached {@link java.time.format.DateTimeFormatter}.</li>
          * </ul>
          *
+         * <h4>Scope and edge cases</h4>
+         * <ul>
+         *   <li><b>Date-shaped types only</b>: applies to {@link java.time.LocalDate},
+         *       {@link java.time.LocalDateTime}, {@link java.time.Instant},
+         *       {@link java.time.ZonedDateTime}, {@link java.time.OffsetDateTime},
+         *       and {@link java.util.Date} (and subclasses). Time-only
+         *       ({@link java.time.LocalTime}, {@link java.time.OffsetTime})
+         *       and partial-date ({@link java.time.Year},
+         *       {@link java.time.YearMonth}, {@link java.time.MonthDay})
+         *       types pass through unchanged — date-shaped patterns have
+         *       no meaningful projection onto these.</li>
+         *   <li><b>Year range</b>: the fast-path byte writers handle years
+         *       {@code 0–9999}. Out-of-range years (BCE or {@code > 9999})
+         *       route through the pre-compiled {@link java.time.format.DateTimeFormatter}
+         *       fallback, which signs them per JDK conventions
+         *       ({@code -0001-01-01}, {@code +12345-01-01}).</li>
+         *   <li><b>Module / WriterCreator overrides win</b>: a custom
+         *       {@code ObjectWriter} for a Date type registered via
+         *       {@link #addWriterModule(com.alibaba.fastjson3.modules.ObjectWriterModule)}
+         *       or {@link #writerCreator(java.util.function.Function)} bypasses
+         *       the built-in mapper-format hook. The user's writer is responsible
+         *       for consulting {@code generator.effectiveMapper().getDateFormatPattern()}
+         *       if it wants to honor mapper-level formats.</li>
+         *   <li><b>Read side</b>: this is a write-side feature only. Parser
+         *       configuration for the same format is a separate follow-up.</li>
+         * </ul>
+         *
          * <p>Mirrors fastjson2's {@code FastJsonConfig.setDateFormat(...)} for
          * fj2 → fj3 migration parity.</p>
          */
