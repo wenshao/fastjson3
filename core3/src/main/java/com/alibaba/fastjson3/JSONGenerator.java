@@ -657,6 +657,49 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
         writeString(val.toString());
     }
 
+    /**
+     * Write a LocalDate as 8-char {@code "yyyyMMdd"} JSON string.
+     * Default impl builds an ASCII String via {@link com.alibaba.fastjson3.util.DateUtils#writeYyyyMMdd8(byte[], int, LocalDate)}
+     * — bypasses {@link java.time.format.DateTimeFormatter}'s allocation
+     * profile while staying correct under any subclass. UTF-8 generators
+     * may override for zero-alloc direct buffer writes.
+     */
+    public void writeYyyyMMdd8(LocalDate val) {
+        byte[] buf = new byte[8];
+        com.alibaba.fastjson3.util.DateUtils.writeYyyyMMdd8(buf, 0, val);
+        writeString(new String(buf, 0, 8, java.nio.charset.StandardCharsets.US_ASCII));
+    }
+
+    /**
+     * Write a LocalDateTime as 16-char {@code "yyyy-MM-dd HH:mm"} JSON string
+     * (space separator, no seconds).
+     */
+    public void writeYyyyMMddhhmm16(LocalDateTime val) {
+        byte[] buf = new byte[16];
+        com.alibaba.fastjson3.util.DateUtils.writeYyyyMMddhhmm16(buf, 0, val);
+        writeString(new String(buf, 0, 16, java.nio.charset.StandardCharsets.US_ASCII));
+    }
+
+    /**
+     * Write a LocalDateTime as 19-char {@code "yyyy-MM-dd HH:mm:ss"} JSON string
+     * (space separator, no fractional seconds).
+     */
+    public void writeYyyyMMddhhmmss19(LocalDateTime val) {
+        byte[] buf = new byte[19];
+        com.alibaba.fastjson3.util.DateUtils.writeYyyyMMddhhmmss19(buf, 0, val);
+        writeString(new String(buf, 0, 19, java.nio.charset.StandardCharsets.US_ASCII));
+    }
+
+    /**
+     * Write a LocalDateTime as 14-char {@code "yyyyMMddHHmmss"} JSON string
+     * (no separators).
+     */
+    public void writeYyyyMMddhhmmss14(LocalDateTime val) {
+        byte[] buf = new byte[14];
+        com.alibaba.fastjson3.util.DateUtils.writeYyyyMMddhhmmss14(buf, 0, val);
+        writeString(new String(buf, 0, 14, java.nio.charset.StandardCharsets.US_ASCII));
+    }
+
     // ---- Name-Value convenience ----
 
     /**
@@ -817,7 +860,34 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
                     entries = map.entrySet();
                 }
                 for (Map.Entry<?, ?> entry : entries) {
-                    writeName(String.valueOf(entry.getKey()));
+                    Object k = entry.getKey();
+                    String name;
+                    // Date-shaped Map keys: format via mapper.dateFormat
+                    // when set, else fall back to toString. Without this
+                    // hook, keys would land as Date.toString() (locale-
+                    // dependent, non-round-trippable) or LocalDateTime's
+                    // ISO via toString — diverging from value-side format.
+                    // The whitelist must mirror the value-side guard at
+                    // line ~932 exactly: only date-of-the-day types get
+                    // routed. Chronology subtypes (HijrahDate, JapaneseDate,
+                    // ThaiBuddhistDate, MinguoDate) and partial-date types
+                    // (Year, YearMonth, MonthDay, LocalTime, OffsetTime)
+                    // fall through to toString — their convert helpers
+                    // would crash in DateFormatPattern.
+                    boolean dateShaped = k instanceof LocalDateTime
+                            || k instanceof LocalDate
+                            || k instanceof Instant
+                            || k instanceof ZonedDateTime
+                            || k instanceof OffsetDateTime
+                            || k instanceof Date;
+                    if (dateShaped) {
+                        com.alibaba.fastjson3.util.DateFormatPattern fmt =
+                                effectiveMapper().getDateFormatPattern();
+                        name = (fmt != null) ? fmt.formatToString(k) : String.valueOf(k);
+                    } else {
+                        name = String.valueOf(k);
+                    }
+                    writeName(name);
                     writeAny(entry.getValue());
                 }
                 endObject();
@@ -863,24 +933,55 @@ public abstract sealed class JSONGenerator implements Closeable, Flushable
             } else {
                 writeString(e.name());
             }
-        } else if (value instanceof LocalDateTime ldt) {
-            writeLocalDateTime(ldt);
-        } else if (value instanceof LocalDate ld) {
-            writeLocalDate(ld);
-        } else if (value instanceof LocalTime lt) {
-            writeLocalTime(lt);
-        } else if (value instanceof Instant inst) {
-            writeInstant(inst);
-        } else if (value instanceof ZonedDateTime zdt) {
-            writeString(zdt.toString());
-        } else if (value instanceof OffsetDateTime odt) {
-            writeString(odt.toString());
-        } else if (value instanceof Date date) {
-            if (dateAsMillis) {
-                writeInt64(date.getTime());
-            } else {
-                writeInstant(date.toInstant());
+        } else if (value instanceof LocalDateTime
+                || value instanceof LocalDate
+                || value instanceof Instant
+                || value instanceof ZonedDateTime
+                || value instanceof OffsetDateTime
+                || value instanceof Date) {
+            // Date-shaped types: have full date-of-the-day semantics, so
+            // mapper-level dateFormat ({yyyy-MM-dd, millis, etc.}) applies.
+            // Mapper.dateFormat takes precedence over the natural ISO emit
+            // AND the dateAsMillis JSONGenerator flag — it's a more
+            // explicit user intent. Field-level @JSONField(format=...) is
+            // handled higher up via FieldWriter.datePattern.
+            //
+            // Partial-date / time-only TemporalAccessor types (LocalTime,
+            // OffsetTime, Year, YearMonth, MonthDay, HijrahDate, etc.)
+            // are NOT in this whitelist — they have no meaningful
+            // date-of-day projection, so applying a date-shaped pattern
+            // would either crash or silently misformat. They fall through
+            // to the LocalTime branch below (preserved from pre-PR) or
+            // the ObjectWriter fallback at the end.
+            com.alibaba.fastjson3.util.DateFormatPattern fmt =
+                    effectiveMapper().getDateFormatPattern();
+            if (fmt != null) {
+                fmt.write(this, value);
+            } else if (value instanceof LocalDateTime ldt) {
+                writeLocalDateTime(ldt);
+            } else if (value instanceof LocalDate ld) {
+                writeLocalDate(ld);
+            } else if (value instanceof Instant inst) {
+                writeInstant(inst);
+            } else if (value instanceof ZonedDateTime zdt) {
+                writeString(zdt.toString());
+            } else if (value instanceof OffsetDateTime odt) {
+                writeString(odt.toString());
+            } else /* Date */ {
+                Date date = (Date) value;
+                if (dateAsMillis) {
+                    writeInt64(date.getTime());
+                } else {
+                    // java.sql.Date.toInstant() throws — sidestep via epoch ms.
+                    writeInstant(java.time.Instant.ofEpochMilli(date.getTime()));
+                }
             }
+        } else if (value instanceof LocalTime lt) {
+            // Time-only branch preserved from pre-PR shape — not in the
+            // mapper.dateFormat whitelist above. Field-level
+            // @JSONField(format="HH:mm:ss") still works via FieldWriter
+            // -> DateFormatPattern.PATTERN.
+            writeLocalTime(lt);
         } else {
             // Try ObjectWriter-based serialization via the owning mapper so mix-in /
             // registerWriter configurations attached to a custom mapper drive nested

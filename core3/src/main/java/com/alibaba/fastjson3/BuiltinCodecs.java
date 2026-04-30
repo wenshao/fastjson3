@@ -440,7 +440,13 @@ public final class BuiltinCodecs {
 
     private static final ObjectWriter<LocalDate> LOCAL_DATE_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
-                generator.writeString(((LocalDate) object).toString());
+                com.alibaba.fastjson3.util.DateFormatPattern p =
+                        generator.effectiveMapper().getDateFormatPattern();
+                if (p != null) {
+                    p.write(generator, object);
+                } else {
+                    generator.writeString(((LocalDate) object).toString());
+                }
             };
 
     private static final ObjectReader<LocalDateTime> LOCAL_DATE_TIME_READER =
@@ -451,7 +457,13 @@ public final class BuiltinCodecs {
 
     private static final ObjectWriter<LocalDateTime> LOCAL_DATE_TIME_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
-                generator.writeString(((LocalDateTime) object).toString());
+                com.alibaba.fastjson3.util.DateFormatPattern p =
+                        generator.effectiveMapper().getDateFormatPattern();
+                if (p != null) {
+                    p.write(generator, object);
+                } else {
+                    generator.writeString(((LocalDateTime) object).toString());
+                }
             };
 
     private static final ObjectReader<LocalTime> LOCAL_TIME_READER =
@@ -462,6 +474,14 @@ public final class BuiltinCodecs {
 
     private static final ObjectWriter<LocalTime> LOCAL_TIME_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
+                // Mapper-level dateFormat speaks date-of-the-day patterns
+                // (yyyy-MM-dd, millis, etc.) that have no meaningful
+                // mapping to a time-of-day value — applying them crashes
+                // in DateFormatPattern.toLocalDate / toEpochMillis.
+                // Field-level @JSONField(format="HH:mm:ss") still works
+                // because that path runs at FieldWriter.writeDate via the
+                // PATTERN kind, which delegates to DateTimeFormatter and
+                // accepts any TemporalAccessor.
                 generator.writeString(((LocalTime) object).toString());
             };
 
@@ -473,7 +493,13 @@ public final class BuiltinCodecs {
 
     private static final ObjectWriter<Instant> INSTANT_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
-                generator.writeString(((Instant) object).toString());
+                com.alibaba.fastjson3.util.DateFormatPattern p =
+                        generator.effectiveMapper().getDateFormatPattern();
+                if (p != null) {
+                    p.write(generator, object);
+                } else {
+                    generator.writeString(((Instant) object).toString());
+                }
             };
 
     private static final ObjectReader<ZonedDateTime> ZONED_DATE_TIME_READER =
@@ -484,7 +510,13 @@ public final class BuiltinCodecs {
 
     private static final ObjectWriter<ZonedDateTime> ZONED_DATE_TIME_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
-                generator.writeString(((ZonedDateTime) object).toString());
+                com.alibaba.fastjson3.util.DateFormatPattern p =
+                        generator.effectiveMapper().getDateFormatPattern();
+                if (p != null) {
+                    p.write(generator, object);
+                } else {
+                    generator.writeString(((ZonedDateTime) object).toString());
+                }
             };
 
     private static final ObjectReader<OffsetDateTime> OFFSET_DATE_TIME_READER =
@@ -495,7 +527,13 @@ public final class BuiltinCodecs {
 
     private static final ObjectWriter<OffsetDateTime> OFFSET_DATE_TIME_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
-                generator.writeString(((OffsetDateTime) object).toString());
+                com.alibaba.fastjson3.util.DateFormatPattern p =
+                        generator.effectiveMapper().getDateFormatPattern();
+                if (p != null) {
+                    p.write(generator, object);
+                } else {
+                    generator.writeString(((OffsetDateTime) object).toString());
+                }
             };
 
     private static final ObjectReader<OffsetTime> OFFSET_TIME_READER =
@@ -506,6 +544,8 @@ public final class BuiltinCodecs {
 
     private static final ObjectWriter<OffsetTime> OFFSET_TIME_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
+                // See LOCAL_TIME_WRITER comment — date-shaped mapper
+                // patterns don't apply to time-only values.
                 generator.writeString(((OffsetTime) object).toString());
             };
 
@@ -517,7 +557,13 @@ public final class BuiltinCodecs {
 
     private static final ObjectWriter<Date> DATE_WRITER =
             (generator, object, fieldName, fieldType, features) -> {
-                generator.writeString(((Date) object).toInstant().toString());
+                com.alibaba.fastjson3.util.DateFormatPattern p =
+                        generator.effectiveMapper().getDateFormatPattern();
+                if (p != null) {
+                    p.write(generator, object);
+                } else {
+                    generator.writeString(((Date) object).toInstant().toString());
+                }
             };
 
     // ==================== java.util.concurrent.atomic types ====================

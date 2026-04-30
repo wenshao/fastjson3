@@ -74,9 +74,12 @@ public final class FieldWriter implements Comparable<FieldWriter> {
     // For TYPE_LIST_STRING / TYPE_LIST_OBJECT: element class
     public final Class<?> elementClass;
 
-    // Optional: date/time format pattern + cached formatter
+    // Optional: date/time format pattern + classified strategy. The strategy
+    // recognizes special tokens ("millis", "unixtime", "iso8601") and the
+    // five fastjson2-equivalent fast-path patterns; anything else falls
+    // through to a cached DateTimeFormatter.
     public final String format;
-    final java.time.format.DateTimeFormatter formatter;
+    final com.alibaba.fastjson3.util.DateFormatPattern datePattern;
 
     // Optional: custom ObjectWriter for this field (from @JSONField(serializeUsing=))
     public final ObjectWriter<Object> customWriter;
@@ -126,8 +129,7 @@ public final class FieldWriter implements Comparable<FieldWriter> {
         this.elementClass = elementClass;
         this.inclusion = inclusion;
         this.format = format;
-        this.formatter = (format != null && !format.isEmpty())
-                ? java.time.format.DateTimeFormatter.ofPattern(format) : null;
+        this.datePattern = com.alibaba.fastjson3.util.DateFormatPattern.of(format);
         this.customWriter = (ObjectWriter<Object>) customWriter;
         this.label = (label != null && !label.isEmpty()) ? label : null;
         this.fieldFeatures = fieldFeatures;
@@ -800,18 +802,16 @@ public final class FieldWriter implements Comparable<FieldWriter> {
                 return;
             }
         }
-        // Format temporal types with explicit pattern
-        if (formatter != null) {
+        // Field-level @JSONField(format=...) handled here (datePattern is
+        // pre-classified at FieldWriter construction). Mapper-level default
+        // dateFormat is honored further down inside the per-type
+        // ObjectWriter (see BuiltinCodecs date/temporal writers), which
+        // works for both the reflection path AND the ASM-generated path.
+        if (datePattern != null
+                && (value instanceof java.time.temporal.TemporalAccessor
+                        || value instanceof java.util.Date)) {
             generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
-            if (value instanceof java.time.temporal.TemporalAccessor ta) {
-                generator.writeString(formatter.format(ta));
-            } else if (value instanceof java.util.Date d) {
-                generator.writeString(formatter.format(
-                        d.toInstant().atZone(com.alibaba.fastjson3.util.DateUtils.DEFAULT_ZONE_ID)));
-            } else {
-                // Fallback: use ObjectWriter instead of writeAny
-                writeObjectWithWriter(generator, value, features);
-            }
+            datePattern.write(generator, value);
             return;
         }
         // Only push reference for non-container types; writeAny handles its own
@@ -1026,6 +1026,18 @@ public final class FieldWriter implements Comparable<FieldWriter> {
             if (value.getClass().isArray() && java.lang.reflect.Array.getLength(value) == 0) {
                 return;
             }
+        }
+        // Field-level @JSONField(format=) on a generic-typed field (declared
+        // type Object / T) — runtime value may still be a Temporal or Date.
+        // Mirror the writeObject branch at line ~810: pin field-level format
+        // ahead of the type dispatch so the format string isn't silently
+        // dropped just because the field's declared type is Object.
+        if (datePattern != null
+                && (value instanceof java.time.temporal.TemporalAccessor
+                        || value instanceof java.util.Date)) {
+            generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
+            datePattern.write(generator, value);
+            return;
         }
         generator.writePreEncodedNameLongs(nameByteLongs, nameBytesLen, nameChars, nameBytes);
         if (value instanceof String s) {

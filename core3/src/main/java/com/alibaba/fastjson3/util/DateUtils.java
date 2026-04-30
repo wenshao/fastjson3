@@ -744,6 +744,71 @@ public final class DateUtils {
         return 8;
     }
 
+    /**
+     * Write a LocalDate as 8-char {@code "yyyyMMdd"} (no separators).
+     * Caller must ensure {@code off+8} capacity. Returns 8.
+     */
+    public static int writeYyyyMMdd8(byte[] buf, int off, LocalDate date) {
+        int year = date.getYear();
+        int month = date.getMonthValue();
+        int dom = date.getDayOfMonth();
+        buf[off] = (byte) (year / 1000 + '0');
+        buf[off + 1] = (byte) (year / 100 % 10 + '0');
+        buf[off + 2] = (byte) (year / 10 % 10 + '0');
+        buf[off + 3] = (byte) (year % 10 + '0');
+        buf[off + 4] = (byte) (month / 10 + '0');
+        buf[off + 5] = (byte) (month % 10 + '0');
+        buf[off + 6] = (byte) (dom / 10 + '0');
+        buf[off + 7] = (byte) (dom % 10 + '0');
+        return 8;
+    }
+
+    /**
+     * Write a LocalDateTime as 16-char {@code "yyyy-MM-dd HH:mm"} (space
+     * separator, no seconds). Caller must ensure {@code off+16} capacity.
+     * Returns 16.
+     */
+    public static int writeYyyyMMddhhmm16(byte[] buf, int off, LocalDateTime ldt) {
+        writeLocalDate(buf, off, ldt.toLocalDate());
+        buf[off + 10] = ' ';
+        LocalTime t = ldt.toLocalTime();
+        buf[off + 11] = (byte) (t.getHour() / 10 + '0');
+        buf[off + 12] = (byte) (t.getHour() % 10 + '0');
+        buf[off + 13] = ':';
+        buf[off + 14] = (byte) (t.getMinute() / 10 + '0');
+        buf[off + 15] = (byte) (t.getMinute() % 10 + '0');
+        return 16;
+    }
+
+    /**
+     * Write a LocalDateTime as 19-char {@code "yyyy-MM-dd HH:mm:ss"} (space
+     * separator). Caller must ensure {@code off+19} capacity. Returns 19.
+     * Truncates sub-second precision — pattern carries no fractional digits.
+     */
+    public static int writeYyyyMMddhhmmss19(byte[] buf, int off, LocalDateTime ldt) {
+        writeLocalDate(buf, off, ldt.toLocalDate());
+        buf[off + 10] = ' ';
+        writeLocalTime(buf, off + 11, ldt.toLocalTime());
+        return 19;
+    }
+
+    /**
+     * Write a LocalDateTime as 14-char {@code "yyyyMMddHHmmss"} (no
+     * separators). Caller must ensure {@code off+14} capacity. Returns 14.
+     * Truncates sub-second precision.
+     */
+    public static int writeYyyyMMddhhmmss14(byte[] buf, int off, LocalDateTime ldt) {
+        writeYyyyMMdd8(buf, off, ldt.toLocalDate());
+        LocalTime t = ldt.toLocalTime();
+        buf[off + 8] = (byte) (t.getHour() / 10 + '0');
+        buf[off + 9] = (byte) (t.getHour() % 10 + '0');
+        buf[off + 10] = (byte) (t.getMinute() / 10 + '0');
+        buf[off + 11] = (byte) (t.getMinute() % 10 + '0');
+        buf[off + 12] = (byte) (t.getSecond() / 10 + '0');
+        buf[off + 13] = (byte) (t.getSecond() % 10 + '0');
+        return 14;
+    }
+
     public static int writeFractionNanos(byte[] buf, int off, int nanos) {
         buf[off] = '.';
         // Write up to 9 digits, trimming trailing zeros
