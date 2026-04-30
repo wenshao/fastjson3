@@ -2442,6 +2442,31 @@ public final class ObjectMapper {
          *       fail to parse the number back. Use {@code "yyyy-MM-dd HH:mm:ss"}
          *       (or omit {@code dateFormat}) when round-trip fidelity
          *       matters.</li>
+         *   <li><b>Locale-sensitive patterns</b>: the cached
+         *       {@link java.time.format.DateTimeFormatter} is built with
+         *       {@code DateTimeFormatter.ofPattern(pattern)} — i.e. the JVM's
+         *       default {@link java.util.Locale} (specifically
+         *       {@code Locale.getDefault(Locale.Category.FORMAT)}) at builder
+         *       call time. Patterns that include locale-sensitive letters
+         *       ({@code MMMM}/{@code MMM} for month names, {@code EEEE}/{@code E}
+         *       for day-of-week names, {@code GGGG} for era) therefore emit
+         *       text that varies with the running JVM's default locale —
+         *       e.g. {@code "MMMM yyyy"} produces {@code "April 2024"} under
+         *       {@code Locale.US} but {@code "4月 2024"} under
+         *       {@code Locale.JAPAN}. This matches fastjson2's behavior
+         *       (it also calls {@code DateTimeFormatter.ofPattern(format)}
+         *       without an explicit locale). If you need reproducible output
+         *       independent of host locale, either avoid these letters
+         *       (use {@code MM}/{@code dd} numeric forms) or pin the JVM
+         *       default with {@code -Duser.language=en -Duser.country=US}
+         *       at startup before constructing the mapper.</li>
+         *   <li><b>Inheritance</b>: inherited fields (declared in a superclass
+         *       and serialised on a subclass instance) are honored — both
+         *       mapper-level {@code dateFormat} and parent-class
+         *       {@code @JSONField(format=...)} apply just as they do for
+         *       fields declared on the concrete class. Field-level
+         *       annotations on the parent still win over the mapper format
+         *       per the standard precedence rules.</li>
          * </ul>
          *
          * <p>Mirrors fastjson2's {@code FastJsonConfig.setDateFormat(...)} for
