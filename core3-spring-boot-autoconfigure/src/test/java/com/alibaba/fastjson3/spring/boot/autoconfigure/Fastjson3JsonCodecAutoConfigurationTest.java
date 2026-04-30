@@ -158,6 +158,49 @@ class Fastjson3JsonCodecAutoConfigurationTest {
         });
     }
 
+    @Test
+    void appliesDateFormatProperty_toEncoder() {
+        // spring.fastjson3.date-format pipes through Fastjson3Properties →
+        // ObjectMapper.builder().dateFormat() → Fastjson3JsonEncoder.
+        // Encoder.encodeValue uses the mapper, so the format reaches the
+        // wire bytes.
+        reactiveRunner
+                .withPropertyValues("spring.fastjson3.date-format=yyyy-MM-dd")
+                .run(ctx -> {
+                    Fastjson3JsonEncoder e = ctx.getBean(Fastjson3JsonEncoder.class);
+                    org.springframework.core.io.buffer.DataBufferFactory factory =
+                            new org.springframework.core.io.buffer.DefaultDataBufferFactory();
+                    LocalDateTimeBean b = new LocalDateTimeBean();
+                    b.ts = java.time.LocalDateTime.of(2024, 4, 30, 12, 34, 56);
+                    org.springframework.core.io.buffer.DataBuffer buf = e.encodeValue(b, factory,
+                            org.springframework.core.ResolvableType.forClass(LocalDateTimeBean.class),
+                            org.springframework.http.MediaType.APPLICATION_JSON, null);
+                    String body = buf.toString(java.nio.charset.StandardCharsets.UTF_8);
+                    assertThat(body).contains("\"ts\":\"2024-04-30\"")
+                            .doesNotContain("12:34:56");
+                });
+    }
+
+    @Test
+    void noDateFormatProperty_encoder_keepsSharedMapperBehavior() {
+        reactiveRunner.run(ctx -> {
+            Fastjson3JsonEncoder e = ctx.getBean(Fastjson3JsonEncoder.class);
+            org.springframework.core.io.buffer.DataBufferFactory factory =
+                    new org.springframework.core.io.buffer.DefaultDataBufferFactory();
+            LocalDateTimeBean b = new LocalDateTimeBean();
+            b.ts = java.time.LocalDateTime.of(2024, 4, 30, 12, 34, 56);
+            org.springframework.core.io.buffer.DataBuffer buf = e.encodeValue(b, factory,
+                    org.springframework.core.ResolvableType.forClass(LocalDateTimeBean.class),
+                    org.springframework.http.MediaType.APPLICATION_JSON, null);
+            String body = buf.toString(java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(body).contains("12:34:56");  // ISO with time preserved
+        });
+    }
+
+    public static class LocalDateTimeBean {
+        public java.time.LocalDateTime ts;
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class UserDecoderConfig {
         static final Fastjson3JsonDecoder SHARED = new Fastjson3JsonDecoder(ObjectMapper.builder().build());

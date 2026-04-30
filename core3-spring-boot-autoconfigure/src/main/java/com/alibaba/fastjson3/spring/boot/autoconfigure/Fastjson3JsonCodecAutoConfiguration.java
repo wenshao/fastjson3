@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.autoconfigure.http.codec.CodecsAutoConfiguration;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.codec.CodecCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.Ordered;
@@ -50,17 +51,22 @@ import org.springframework.web.reactive.config.WebFluxConfigurer;
 @AutoConfiguration(after = {JacksonAutoConfiguration.class, CodecsAutoConfiguration.class})
 @ConditionalOnClass({Fastjson3JsonDecoder.class, WebFluxConfigurer.class})
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.REACTIVE)
+@EnableConfigurationProperties(Fastjson3Properties.class)
 public class Fastjson3JsonCodecAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
-    public Fastjson3JsonDecoder fastjson3JsonDecoder() {
-        return new Fastjson3JsonDecoder();
+    public Fastjson3JsonDecoder fastjson3JsonDecoder(Fastjson3Properties properties) {
+        // Decoder doesn't observe write-side dateFormat, but we wire the
+        // same ObjectMapper for symmetry — when fj3 grows a read-side
+        // dateFormat hook later, encoder/decoder stay aligned without
+        // a config split.
+        return new Fastjson3JsonDecoder(properties.buildObjectMapper());
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public Fastjson3JsonEncoder fastjson3JsonEncoder() {
-        return new Fastjson3JsonEncoder();
+    public Fastjson3JsonEncoder fastjson3JsonEncoder(Fastjson3Properties properties) {
+        return new Fastjson3JsonEncoder(properties.buildObjectMapper());
     }
 
     @Bean

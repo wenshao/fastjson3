@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -35,10 +36,15 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @AutoConfiguration(after = JacksonAutoConfiguration.class)
 @ConditionalOnClass({Fastjson3HttpMessageConverter.class, WebMvcConfigurer.class})
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+@EnableConfigurationProperties(Fastjson3Properties.class)
 public class Fastjson3HttpMessageConverterAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
-    public Fastjson3HttpMessageConverter fastjson3HttpMessageConverter() {
-        return new Fastjson3HttpMessageConverter();
+    public Fastjson3HttpMessageConverter fastjson3HttpMessageConverter(Fastjson3Properties properties) {
+        // Build the converter against the property-configured ObjectMapper.
+        // When no property is set, Fastjson3Properties.buildObjectMapper()
+        // returns ObjectMapper.shared() so this path is alloc-equivalent
+        // to the pre-property no-arg constructor.
+        return new Fastjson3HttpMessageConverter(properties.buildObjectMapper());
     }
 }

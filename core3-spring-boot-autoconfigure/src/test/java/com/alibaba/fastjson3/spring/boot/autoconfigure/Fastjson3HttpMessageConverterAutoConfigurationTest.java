@@ -102,6 +102,51 @@ class Fastjson3HttpMessageConverterAutoConfigurationTest {
         });
     }
 
+    @Test
+    void appliesDateFormatProperty() {
+        // spring.fastjson3.date-format pipes through Fastjson3Properties →
+        // ObjectMapper.builder().dateFormat() → Fastjson3HttpMessageConverter.
+        // Verify by exercising the converter on a Bean with a LocalDateTime
+        // field; mapper-level format must be observed in the bytes written.
+        servletRunner
+                .withPropertyValues("spring.fastjson3.date-format=yyyy-MM-dd")
+                .run(ctx -> {
+                    Fastjson3HttpMessageConverter c =
+                            ctx.getBean(Fastjson3HttpMessageConverter.class);
+                    org.springframework.mock.http.MockHttpOutputMessage out =
+                            new org.springframework.mock.http.MockHttpOutputMessage();
+                    LocalDateTimeBean b = new LocalDateTimeBean();
+                    b.ts = java.time.LocalDateTime.of(2024, 4, 30, 12, 34, 56);
+                    c.write(b, org.springframework.http.MediaType.APPLICATION_JSON, out);
+                    String body = out.getBodyAsString();
+                    assertThat(body).contains("\"ts\":\"2024-04-30\"")
+                            .doesNotContain("12:34:56");
+                });
+    }
+
+    @Test
+    void noDateFormatProperty_keepsSharedMapperBehavior() {
+        // No property set → Fastjson3Properties.buildObjectMapper returns
+        // ObjectMapper.shared() so the converter behaves identically to
+        // pre-property no-arg constructor (default ISO emit, time component
+        // preserved on a LocalDateTime).
+        servletRunner.run(ctx -> {
+            Fastjson3HttpMessageConverter c =
+                    ctx.getBean(Fastjson3HttpMessageConverter.class);
+            org.springframework.mock.http.MockHttpOutputMessage out =
+                    new org.springframework.mock.http.MockHttpOutputMessage();
+            LocalDateTimeBean b = new LocalDateTimeBean();
+            b.ts = java.time.LocalDateTime.of(2024, 4, 30, 12, 34, 56);
+            c.write(b, org.springframework.http.MediaType.APPLICATION_JSON, out);
+            String body = out.getBodyAsString();
+            assertThat(body).contains("12:34:56");  // ISO with time preserved
+        });
+    }
+
+    public static class LocalDateTimeBean {
+        public java.time.LocalDateTime ts;
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class UserConverterConfig {
         static final Fastjson3HttpMessageConverter SHARED =

@@ -59,6 +59,20 @@ Auto-config triggers:
 
 User-supplied beans of the same types short-circuit auto-registration via `@ConditionalOnMissingBean` — pass a configured `ObjectMapper` by declaring your own `Fastjson3HttpMessageConverter` bean.
 
+#### Configuration properties
+
+| Property | Default | Description |
+|---|---|---|
+| `spring.fastjson3.date-format` | _(unset → `ObjectMapper.shared()`)_ | Default date/time format applied at write time to typed POJO Date / Temporal fields without an explicit `@JSONField(format=...)` override. Mirrors `spring.jackson.date-format`. Recognized values: `millis` / `unixtime` / `iso8601`, the five fast-path patterns (`yyyy-MM-dd`, `yyyyMMdd`, `yyyy-MM-dd HH:mm`, `yyyy-MM-dd HH:mm:ss`, `yyyyMMddHHmmss`), or any `DateTimeFormatter` pattern. |
+
+```yaml
+spring:
+  fastjson3:
+    date-format: yyyy-MM-dd HH:mm:ss
+```
+
+The property pipes through both `Fastjson3HttpMessageConverter` (servlet) and `Fastjson3JsonEncoder` / `Fastjson3JsonDecoder` (reactive), so a single setting covers both stacks.
+
 If you want only the auto-config classes without the starter alias (e.g. you maintain your own dependency aggregation), depend on `fastjson3-spring-boot-autoconfigure` directly — same content, no aggregator layer.
 
 ### Spring Boot 3 — register as a `@Bean` (manual)
