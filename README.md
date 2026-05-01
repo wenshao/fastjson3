@@ -77,7 +77,7 @@ For multi-module projects, import the BOM and omit `<version>` on individual fas
 |----------|---------|
 | `fastjson3-kotlin` | Kotlin reified inline extensions (`parseAs<T>()`, `parseList<T>()`, `parseMap<T>()`, `toJSON()`) |
 | `fastjson3-spring` | Spring 6.x HttpMessageConverter (servlet) + WebFlux codecs + Spring MVC `AbstractView` + Redis serializer |
-| `fastjson3-spring-boot-autoconfigure` | Spring Boot 3.x auto-configuration (servlet + reactive) |
+| `fastjson3-spring-boot-autoconfigure` | Spring Boot 3.2+ auto-configuration (servlet + reactive — Boot 3.0/3.1 fail at runtime because Spring 6.0 ASM can't read JDK 21 bytecode) |
 | `fastjson3-spring-boot-starter` | Spring Boot starter (pom-only aggregator) |
 | `fastjson3-jaxrs-jakarta` | JAX-RS `@Provider` for `jakarta.ws.rs` (Jakarta EE 9+ — Jersey 3.x, RESTEasy 6.x, CXF 4.x) |
 | `fastjson3-jaxrs-javax` | JAX-RS `@Provider` for `javax.ws.rs` (legacy Jakarta EE 8 — Jersey 2.x, RESTEasy 4.x/5.x) |
@@ -391,7 +391,7 @@ fastjson3/
 ├── core3-bom/                      # Bill of Materials (BOM) — pin all module versions
 ├── core3-kotlin/                   # Kotlin extensions
 ├── core3-spring/                   # Spring 6.x HttpMessageConverter / WebFlux / MVC View / Redis
-├── core3-spring-boot-autoconfigure/  # Spring Boot 3 auto-configuration
+├── core3-spring-boot-autoconfigure/  # Spring Boot 3.2+ auto-configuration
 ├── core3-spring-boot-starter/      # Spring Boot starter (pom-only)
 ├── core3-jaxrs/                    # JAX-RS aggregator (pom-only)
 │   ├── core3-jaxrs-jakarta/        # jakarta.ws.rs namespace
