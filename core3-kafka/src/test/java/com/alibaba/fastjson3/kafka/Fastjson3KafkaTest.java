@@ -1,0 +1,221 @@
+package com.alibaba.fastjson3.kafka;
+
+import com.alibaba.fastjson3.ObjectMapper;
+import com.alibaba.fastjson3.TypeReference;
+import org.apache.kafka.common.errors.SerializationException;
+import org.junit.jupiter.api.Test;
+
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class Fastjson3KafkaTest {
+    public static class Event {
+        public String id;
+        public int value;
+
+        public Event() {
+        }
+
+        public Event(String id, int value) {
+            this.id = id;
+            this.value = value;
+        }
+    }
+
+    @Test
+    void serializerProducesUtf8Json() {
+        Fastjson3KafkaSerializer<Event> ser = new Fastjson3KafkaSerializer<>();
+        byte[] bytes = ser.serialize("topic-x", new Event("e1", 42));
+        String json = new String(bytes);
+        assertTrue(json.contains("\"id\":\"e1\""));
+        assertTrue(json.contains("\"value\":42"));
+    }
+
+    @Test
+    void serializerNullPassThrough() {
+        Fastjson3KafkaSerializer<Event> ser = new Fastjson3KafkaSerializer<>();
+        assertNull(ser.serialize("topic-x", null));
+    }
+
+    @Test
+    void serializerNullMapperRejected() {
+        assertThrows(IllegalArgumentException.class, () -> new Fastjson3KafkaSerializer<>(null));
+    }
+
+    @Test
+    void deserializerWithConstructorType() {
+        Fastjson3KafkaSerializer<Event> ser = new Fastjson3KafkaSerializer<>();
+        Fastjson3KafkaDeserializer<Event> de = new Fastjson3KafkaDeserializer<>(Event.class);
+        Event src = new Event("e2", 7);
+        Event dst = de.deserialize("topic-x", ser.serialize("topic-x", src));
+        assertEquals("e2", dst.id);
+        assertEquals(7, dst.value);
+    }
+
+    @Test
+    void deserializerWithTypeReference() {
+        // Generic / batch payload — list of events
+        Fastjson3KafkaSerializer<List<Event>> ser = new Fastjson3KafkaSerializer<>();
+        Fastjson3KafkaDeserializer<List<Event>> de = new Fastjson3KafkaDeserializer<>(
+                new TypeReference<List<Event>>() {
+                });
+        List<Event> src = Arrays.asList(new Event("e1", 1), new Event("e2", 2));
+        byte[] bytes = ser.serialize("topic-x", src);
+        List<Event> dst = de.deserialize("topic-x", bytes);
+        assertEquals(2, dst.size());
+        assertEquals("e1", dst.get(0).id);
+        assertEquals(2, dst.get(1).value);
+    }
+
+    @Test
+    void deserializerNullTypeReferenceRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3KafkaDeserializer<Event>((TypeReference<Event>) null));
+    }
+
+    @Test
+    void deserializerWithConfigureValueType() {
+        Fastjson3KafkaDeserializer<Event> de = new Fastjson3KafkaDeserializer<>();
+        Map<String, Object> cfg = new HashMap<>();
+        cfg.put(Fastjson3KafkaDeserializer.VALUE_DEFAULT_TYPE, Event.class.getName());
+        de.configure(cfg, false);
+
+        Fastjson3KafkaSerializer<Event> ser = new Fastjson3KafkaSerializer<>();
+        Event dst = de.deserialize("topic-x", ser.serialize("topic-x", new Event("e3", 9)));
+        assertEquals("e3", dst.id);
+    }
+
+    @Test
+    void deserializerWithConfigureKeyType() {
+        Fastjson3KafkaDeserializer<String> de = new Fastjson3KafkaDeserializer<>();
+        Map<String, Object> cfg = new HashMap<>();
+        cfg.put(Fastjson3KafkaDeserializer.KEY_DEFAULT_TYPE, String.class.getName());
+        de.configure(cfg, true);
+        // serialize "abc" -> "\"abc\""
+        byte[] bytes = "\"abc\"".getBytes();
+        assertEquals("abc", de.deserialize("topic-x", bytes));
+    }
+
+    @Test
+    void deserializerAcceptsClassValueInConfig() {
+        Fastjson3KafkaDeserializer<Event> de = new Fastjson3KafkaDeserializer<>();
+        Map<String, Object> cfg = new HashMap<>();
+        cfg.put(Fastjson3KafkaDeserializer.VALUE_DEFAULT_TYPE, Event.class);
+        de.configure(cfg, false);
+
+        Fastjson3KafkaSerializer<Event> ser = new Fastjson3KafkaSerializer<>();
+        Event dst = de.deserialize("t", ser.serialize("t", new Event("c", 1)));
+        assertEquals("c", dst.id);
+    }
+
+    @Test
+    void deserializerNullPassThrough() {
+        Fastjson3KafkaDeserializer<Event> de = new Fastjson3KafkaDeserializer<>(Event.class);
+        assertNull(de.deserialize("topic-x", null));
+    }
+
+    @Test
+    void deserializerMissingTypeThrows() {
+        Fastjson3KafkaDeserializer<Event> de = new Fastjson3KafkaDeserializer<>();
+        de.configure(new HashMap<>(), false);
+        assertThrows(SerializationException.class,
+                () -> de.deserialize("topic-x", "{}".getBytes()));
+    }
+
+    @Test
+    void deserializerUnknownClassThrows() {
+        Fastjson3KafkaDeserializer<Event> de = new Fastjson3KafkaDeserializer<>();
+        Map<String, Object> cfg = new HashMap<>();
+        cfg.put(Fastjson3KafkaDeserializer.VALUE_DEFAULT_TYPE, "no.such.Class");
+        assertThrows(SerializationException.class, () -> de.configure(cfg, false));
+    }
+
+    @Test
+    void deserializerMalformedJsonWrapped() {
+        Fastjson3KafkaDeserializer<Event> de = new Fastjson3KafkaDeserializer<>(Event.class);
+        assertThrows(SerializationException.class,
+                () -> de.deserialize("topic-x", "not json".getBytes()));
+    }
+
+    @Test
+    void configureLeavesConstructorTypeAlone() {
+        Fastjson3KafkaDeserializer<Event> de = new Fastjson3KafkaDeserializer<>(Event.class);
+        Map<String, Object> cfg = new HashMap<>();
+        cfg.put(Fastjson3KafkaDeserializer.VALUE_DEFAULT_TYPE, "no.such.Class");
+        de.configure(cfg, false);
+        Fastjson3KafkaSerializer<Event> ser = new Fastjson3KafkaSerializer<>();
+        Event dst = de.deserialize("t", ser.serialize("t", new Event("ok", 1)));
+        assertEquals("ok", dst.id);
+    }
+
+    @Test
+    void customMapperUsed() {
+        ObjectMapper custom = ObjectMapper.builder().build();
+        Fastjson3KafkaSerializer<Event> ser = new Fastjson3KafkaSerializer<>(custom);
+        byte[] bytes = ser.serialize("t", new Event("x", 2));
+        assertTrue(bytes.length > 0);
+    }
+
+    @Test
+    void deserializerNullMapperRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3KafkaDeserializer<Event>(Event.class, null));
+    }
+
+    @Test
+    void concurrentDeserializeAfterConfigure() throws InterruptedException {
+        // Shared-instance topology (Spring Kafka, Kafka Streams):
+        // configure() runs once on the wiring thread, deserialize() then runs
+        // concurrently across consumer threads. The volatile targetType field
+        // must provide the happens-before edge.
+        Fastjson3KafkaDeserializer<Event> de = new Fastjson3KafkaDeserializer<>();
+        Map<String, Object> cfg = new HashMap<>();
+        cfg.put(Fastjson3KafkaDeserializer.VALUE_DEFAULT_TYPE, Event.class.getName());
+        de.configure(cfg, false);
+
+        byte[] bytes = new Fastjson3KafkaSerializer<Event>()
+                .serialize("t", new Event("e", 1));
+
+        int threads = 8;
+        int iterations = 1000;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger failures = new AtomicInteger();
+        for (int t = 0; t < threads; t++) {
+            pool.submit(() -> {
+                try {
+                    start.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                for (int i = 0; i < iterations; i++) {
+                    try {
+                        Event ev = de.deserialize("t", bytes);
+                        if (!"e".equals(ev.id) || ev.value != 1) {
+                            failures.incrementAndGet();
+                        }
+                    } catch (RuntimeException ex) {
+                        failures.incrementAndGet();
+                    }
+                }
+            });
+        }
+        start.countDown();
+        pool.shutdown();
+        assertTrue(pool.awaitTermination(30, TimeUnit.SECONDS));
+        assertEquals(0, failures.get());
+    }
+}
