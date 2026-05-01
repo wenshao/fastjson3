@@ -43,7 +43,7 @@ Quick links:
 
 ## Install
 
-Core library:
+### Core library
 
 ```xml
 <dependency>
@@ -366,7 +366,7 @@ See [`docs/advanced/graalvm.md`](docs/advanced/graalvm.md) for configuration det
 
 ## Project Structure
 
-Published modules (consumable Maven artifacts):
+Repository layout:
 
 ```
 fastjson3/
@@ -401,10 +401,11 @@ fastjson3/
 │   └── core3-jpa-javax/            # javax.persistence namespace
 ├── core3-kafka/                    # Kafka Serializer / Deserializer
 ├── core3-mybatis/                  # MyBatis TypeHandler for JSON columns
-└── benchmark3/                     # JMH benchmarks vs fastjson2 and wast
+├── core3-android/                  # Android-specific JDKUtils (built via -Pandroid profile)
+└── benchmark3/                     # JMH benchmarks vs fastjson2 and wast (internal, not published)
 ```
 
-Reactor test harnesses (not published): `core3-android-test/`, `core3-spring-test/`.
+Reactor test harnesses (not published as Maven artifacts): `core3-android-test/`, `core3-spring-test/`.
 
 ## Build
 
