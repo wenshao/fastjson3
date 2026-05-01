@@ -23,7 +23,37 @@
             </dependency>
             <dependency>
                 <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-jaxrs-jakarta</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-jaxrs-javax</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-jpa-jakarta</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-jpa-javax</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-kafka</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
                 <artifactId>fastjson3-kotlin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-mybatis</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
