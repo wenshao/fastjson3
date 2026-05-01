@@ -1,6 +1,7 @@
 package com.alibaba.fastjson3.mybatis;
 
 import com.alibaba.fastjson3.ObjectMapper;
+import com.alibaba.fastjson3.TypeReference;
 import org.apache.ibatis.type.BaseTypeHandler;
 import org.apache.ibatis.type.JdbcType;
 
@@ -13,10 +14,12 @@ import java.sql.SQLException;
 /**
  * MyBatis {@link BaseTypeHandler} that round-trips column values through
  * fastjson3 JSON. The column should be declared as {@code VARCHAR}, {@code TEXT},
- * or a database-native JSON type (handled by the driver as a string).
+ * or a database-native JSON type that the driver handles as a string.
  *
- * <p>Subclass with the concrete attribute type — MyBatis cannot read the type
- * argument directly because of erasure:
+ * <p>Subclass with the concrete attribute type — fastjson3 cannot infer
+ * {@code T} at runtime from the parent class's type parameter (erasure on
+ * this generic abstract base), so subclasses must pass a {@code Class<T>}
+ * or {@code TypeReference<T>} to the constructor:
  * <pre>{@code
  *   @MappedTypes(Profile.class)
  *   public class ProfileJsonTypeHandler extends Fastjson3JsonTypeHandler<Profile> {
@@ -28,13 +31,29 @@ import java.sql.SQLException;
  * <pre>{@code
  *   public class TagsJsonTypeHandler extends Fastjson3JsonTypeHandler<List<String>> {
  *       public TagsJsonTypeHandler() {
- *           super(new TypeReference<List<String>>() {}.getType());
+ *           super(new TypeReference<List<String>>() {});
  *       }
  *   }
  * }</pre>
  *
- * <p>Defaults to {@link ObjectMapper#shared()}; pass a configured mapper through
- * the protected constructor to customize features.
+ * <p>Constructor variants:
+ * <ul>
+ *   <li>{@link #Fastjson3JsonTypeHandler(Class)} — non-generic types</li>
+ *   <li>{@link #Fastjson3JsonTypeHandler(TypeReference)} — generic types</li>
+ *   <li>{@link #Fastjson3JsonTypeHandler(Class, ObjectMapper)} — custom mapper</li>
+ *   <li>{@link #Fastjson3JsonTypeHandler(TypeReference, ObjectMapper)} — custom mapper, generic type</li>
+ * </ul>
+ *
+ * <p><b>Empty-string handling</b>: an empty column string returns {@code null},
+ * accommodating databases that canonicalize empty TEXT to {@code ""} rather
+ * than {@code NULL}.
+ *
+ * <p><b>PostgreSQL JSON columns</b>: PostgreSQL's {@code json}/{@code jsonb}
+ * columns require {@code setObject(i, json, java.sql.Types.OTHER)} to bind
+ * without an explicit cast in SQL. This handler uses {@code setString} which
+ * works for {@code VARCHAR}/{@code TEXT}. For native JSON columns either
+ * cast in the SQL ({@code ?::jsonb}) or override
+ * {@link #setNonNullParameter(PreparedStatement, int, Object, JdbcType)}.
  *
  * @param <T> the entity attribute type
  */
@@ -43,19 +62,37 @@ public abstract class Fastjson3JsonTypeHandler<T> extends BaseTypeHandler<T> {
     private final Type targetType;
 
     protected Fastjson3JsonTypeHandler(Class<T> targetType) {
-        this(ObjectMapper.shared(), targetType);
+        this(targetType, ObjectMapper.shared());
     }
 
-    protected Fastjson3JsonTypeHandler(Type targetType) {
-        this(ObjectMapper.shared(), targetType);
+    protected Fastjson3JsonTypeHandler(TypeReference<T> targetType) {
+        this(unwrap(targetType), ObjectMapper.shared());
     }
 
-    protected Fastjson3JsonTypeHandler(ObjectMapper mapper, Type targetType) {
+    protected Fastjson3JsonTypeHandler(Class<T> targetType, ObjectMapper mapper) {
+        this((Type) targetType, mapper);
+    }
+
+    protected Fastjson3JsonTypeHandler(TypeReference<T> targetType, ObjectMapper mapper) {
+        this(unwrap(targetType), mapper);
+    }
+
+    private Fastjson3JsonTypeHandler(Type targetType, ObjectMapper mapper) {
         if (targetType == null) {
             throw new IllegalArgumentException("targetType must not be null");
         }
-        this.mapper = mapper == null ? ObjectMapper.shared() : mapper;
+        if (mapper == null) {
+            throw new IllegalArgumentException("mapper must not be null");
+        }
+        this.mapper = mapper;
         this.targetType = targetType;
+    }
+
+    private static Type unwrap(TypeReference<?> ref) {
+        if (ref == null) {
+            throw new IllegalArgumentException("targetType must not be null");
+        }
+        return ref.getType();
     }
 
     @Override

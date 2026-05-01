@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -42,7 +43,7 @@ class Fastjson3JsonTypeHandlerTest {
     public static class TagsJsonTypeHandler extends Fastjson3JsonTypeHandler<List<String>> {
         public TagsJsonTypeHandler() {
             super(new TypeReference<List<String>>() {
-            }.getType());
+            });
         }
     }
 
@@ -103,6 +104,45 @@ class Fastjson3JsonTypeHandlerTest {
     }
 
     @Test
+    void callableStatementOverload() throws SQLException {
+        // Stored-proc OUT parameter columns route through
+        // getNullableResult(CallableStatement, int) — the third overload
+        // BaseTypeHandler declares. H2's stored-proc OUT-param dance is
+        // heavy, so use a Proxy-based CallableStatement that returns a
+        // fixed JSON string for cs.getString(int) and drives the parse
+        // path the production code takes.
+        ProfileJsonTypeHandler handler = new ProfileJsonTypeHandler();
+        String fixedJson = "{\"name\":\"c\",\"age\":1}";
+        CallableStatement cs = (CallableStatement) java.lang.reflect.Proxy.newProxyInstance(
+                CallableStatement.class.getClassLoader(),
+                new Class<?>[]{CallableStatement.class},
+                (p, m, a) -> {
+                    if ("getString".equals(m.getName()) && a.length == 1
+                            && a[0] instanceof Integer && (Integer) a[0] == 1) {
+                        return fixedJson;
+                    }
+                    if ("wasNull".equals(m.getName())) {
+                        return false;
+                    }
+                    return null;
+                });
+        Profile back = handler.getNullableResult(cs, 1);
+        assertEquals("c", back.name);
+        assertEquals(1, back.age);
+    }
+
+    @Test
+    void callableStatementOverloadNullColumn() throws SQLException {
+        ProfileJsonTypeHandler handler = new ProfileJsonTypeHandler();
+        CallableStatement cs = (CallableStatement) java.lang.reflect.Proxy.newProxyInstance(
+                CallableStatement.class.getClassLoader(),
+                new Class<?>[]{CallableStatement.class},
+                (p, m, a) -> null);
+        // cs.getString(...) returns null on a SQL NULL — handler returns null
+        assertNull(handler.getNullableResult(cs, 1));
+    }
+
+    @Test
     void nullColumnProducesNull() throws SQLException {
         ProfileJsonTypeHandler handler = new ProfileJsonTypeHandler();
         try (PreparedStatement ins = conn.prepareStatement(
@@ -137,8 +177,9 @@ class Fastjson3JsonTypeHandlerTest {
     @Test
     void customMapper() throws SQLException {
         ObjectMapper m = ObjectMapper.builder().build();
-        Fastjson3JsonTypeHandler<Profile> handler = new Fastjson3JsonTypeHandler<Profile>(m, Profile.class) {
-        };
+        Fastjson3JsonTypeHandler<Profile> handler =
+                new Fastjson3JsonTypeHandler<Profile>(Profile.class, m) {
+                };
         try (PreparedStatement ins = conn.prepareStatement(
                 "MERGE INTO docs (id, payload) VALUES (5, ?)")) {
             handler.setNonNullParameter(ins, 1, new Profile("zoe", 88), null);
@@ -155,9 +196,23 @@ class Fastjson3JsonTypeHandlerTest {
     }
 
     @Test
-    void nullTargetTypeRejected() {
+    void nullClassTargetTypeRejected() {
         assertThrows(IllegalArgumentException.class,
                 () -> new Fastjson3JsonTypeHandler<Profile>((Class<Profile>) null) {
+                });
+    }
+
+    @Test
+    void nullTypeReferenceRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3JsonTypeHandler<Profile>((TypeReference<Profile>) null) {
+                });
+    }
+
+    @Test
+    void nullMapperRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3JsonTypeHandler<Profile>(Profile.class, null) {
                 });
     }
 }
