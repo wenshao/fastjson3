@@ -57,10 +57,10 @@ import java.sql.SQLException;
  *
  * <p><b>Custom mapper note</b>: MyBatis instantiates the subclass via no-arg
  * constructor (typically through {@code TypeHandlerRegistry} scanning), so
- * the mapper is whatever the subclass passes to {@code super(...)}. To use a
- * configured mapper, hardcode it in the subclass — Spring Boot's
- * {@code spring.fastjson3.*} properties do not propagate to MyBatis-managed
- * type handlers.
+ * the mapper is whatever the subclass passes to {@code super(...)}. The
+ * Spring-managed {@code fastjson3ObjectMapper} bean does not propagate to
+ * MyBatis-managed type handlers — hardcode the mapper in the subclass to
+ * use a configured one.
  *
  * @param <T> the entity attribute type
  */
