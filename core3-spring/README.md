@@ -59,6 +59,32 @@ Auto-config triggers:
 
 User-supplied beans of the same types short-circuit auto-registration via `@ConditionalOnMissingBean` — pass a configured `ObjectMapper` by declaring your own `Fastjson3HttpMessageConverter` bean.
 
+#### Configuration properties
+
+| Property | Default | Description |
+|---|---|---|
+| `spring.fastjson3.date-format` | _(unset → `ObjectMapper.shared()`)_ | Default date/time format applied at write time to typed POJO Date / Temporal fields without an explicit `@JSONField(format=...)` override. Mirrors `spring.jackson.date-format`. Recognized values: `millis` / `unixtime` / `iso8601`, the five fast-path patterns (`yyyy-MM-dd`, `yyyyMMdd`, `yyyy-MM-dd HH:mm`, `yyyy-MM-dd HH:mm:ss`, `yyyyMMddHHmmss`), or any `DateTimeFormatter` pattern. Invalid patterns fail fast at context startup. |
+
+```yaml
+spring:
+  fastjson3:
+    date-format: yyyy-MM-dd HH:mm:ss
+```
+
+The property feeds a single shared `ObjectMapper` bean (`fastjson3ObjectMapper`) consumed by `Fastjson3HttpMessageConverter` (servlet), `Fastjson3JsonEncoder`, and `Fastjson3JsonDecoder` (reactive). One setting, one mapper instance, both stacks.
+
+To override the entire mapper (e.g. add filters, modules, or a custom Jackson-style configuration) declare your own `ObjectMapper` bean — Boot's `@ConditionalOnMissingBean` discovery hands the converter / encoder / decoder your bean instead. `spring.fastjson3.date-format` is ignored when a user mapper is supplied; the user mapper carries its own configuration.
+
+```java
+@Bean
+ObjectMapper fastjson3ObjectMapper() {
+    return ObjectMapper.builder()
+            .dateFormat("yyyy-MM-dd")
+            .addWriterModule(myDomainModule)
+            .build();
+}
+```
+
 If you want only the auto-config classes without the starter alias (e.g. you maintain your own dependency aggregation), depend on `fastjson3-spring-boot-autoconfigure` directly — same content, no aggregator layer.
 
 ### Spring Boot 3 — register as a `@Bean` (manual)

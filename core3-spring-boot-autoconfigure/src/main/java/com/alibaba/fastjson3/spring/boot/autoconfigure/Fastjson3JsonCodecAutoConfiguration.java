@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.spring.boot.autoconfigure;
 
+import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.spring.codec.Fastjson3JsonDecoder;
 import com.alibaba.fastjson3.spring.codec.Fastjson3JsonEncoder;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -47,20 +48,23 @@ import org.springframework.web.reactive.config.WebFluxConfigurer;
  * {@link ConditionalOnMissingBean}, and the user-supplied codecs are picked
  * up by the registered customizer.</p>
  */
-@AutoConfiguration(after = {JacksonAutoConfiguration.class, CodecsAutoConfiguration.class})
+@AutoConfiguration(after = {JacksonAutoConfiguration.class, CodecsAutoConfiguration.class,
+        Fastjson3ObjectMapperAutoConfiguration.class})
 @ConditionalOnClass({Fastjson3JsonDecoder.class, WebFluxConfigurer.class})
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.REACTIVE)
 public class Fastjson3JsonCodecAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
-    public Fastjson3JsonDecoder fastjson3JsonDecoder() {
-        return new Fastjson3JsonDecoder();
+    public Fastjson3JsonDecoder fastjson3JsonDecoder(ObjectMapper fastjson3ObjectMapper) {
+        // Single shared mapper across decoder + encoder — see
+        // Fastjson3ObjectMapperAutoConfiguration.
+        return new Fastjson3JsonDecoder(fastjson3ObjectMapper);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public Fastjson3JsonEncoder fastjson3JsonEncoder() {
-        return new Fastjson3JsonEncoder();
+    public Fastjson3JsonEncoder fastjson3JsonEncoder(ObjectMapper fastjson3ObjectMapper) {
+        return new Fastjson3JsonEncoder(fastjson3ObjectMapper);
     }
 
     @Bean

@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.spring.boot.autoconfigure;
 
+import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.spring.Fastjson3HttpMessageConverter;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -32,13 +33,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * declare their own {@code Fastjson3HttpMessageConverter} bean — this
  * auto-configuration steps aside via {@link ConditionalOnMissingBean}.</p>
  */
-@AutoConfiguration(after = JacksonAutoConfiguration.class)
+@AutoConfiguration(after = {JacksonAutoConfiguration.class, Fastjson3ObjectMapperAutoConfiguration.class})
 @ConditionalOnClass({Fastjson3HttpMessageConverter.class, WebMvcConfigurer.class})
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class Fastjson3HttpMessageConverterAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
-    public Fastjson3HttpMessageConverter fastjson3HttpMessageConverter() {
-        return new Fastjson3HttpMessageConverter();
+    public Fastjson3HttpMessageConverter fastjson3HttpMessageConverter(ObjectMapper fastjson3ObjectMapper) {
+        // Single shared ObjectMapper bean — see Fastjson3ObjectMapperAutoConfiguration.
+        return new Fastjson3HttpMessageConverter(fastjson3ObjectMapper);
     }
 }
