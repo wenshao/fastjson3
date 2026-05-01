@@ -40,8 +40,9 @@ import java.lang.reflect.Type;
  *
  * <p><b>Custom mapper note</b>: when JAX-RS auto-discovery instantiates
  * this provider via {@code @Provider} classpath scan, the no-arg
- * constructor runs and the shared mapper is used. To inject a configured
- * mapper, register an instance manually:
+ * constructor runs and {@link ObjectMapper#shared()} is used. The
+ * Spring-managed {@code fastjson3ObjectMapper} bean does not propagate
+ * here. To inject a configured mapper, register an instance manually:
  * <pre>{@code
  *   resourceConfig.register(new Fastjson3Provider(myCustomMapper));
  * }</pre>
