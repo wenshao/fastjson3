@@ -41,6 +41,12 @@ import java.lang.reflect.Type;
  * {@code null}, accommodating databases that canonicalize empty TEXT to {@code ""}
  * rather than {@code NULL}.
  *
+ * <p><b>Custom mapper note</b>: Hibernate instantiates the subclass via no-arg
+ * constructor, so the mapper is whatever the subclass passes to
+ * {@code super(...)}. To use a configured mapper, hardcode it in the subclass
+ * — Spring Boot's {@code spring.fastjson3.*} properties do not propagate to
+ * JPA-managed converters.
+ *
  * @param <T> the entity attribute type
  */
 public abstract class Fastjson3JsonAttributeConverter<T> implements AttributeConverter<T, String> {

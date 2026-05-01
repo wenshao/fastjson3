@@ -43,6 +43,20 @@ import java.lang.reflect.Type;
  * rather than {@code NULL}. If your schema distinguishes the two, override
  * {@link #convertToEntityAttribute(String)}.
  *
+ * <p><b>Custom mapper note</b>: Hibernate / EclipseLink instantiate the
+ * subclass via no-arg constructor, so the mapper is whatever the subclass
+ * passes to {@code super(...)}. The {@code spring.fastjson3.*} properties
+ * wired by Boot's HttpMessageConverter auto-config customize the Spring MVC
+ * converter only — they do not propagate here. To use a configured mapper
+ * with a JPA-managed converter, hardcode the mapper in the subclass:
+ * <pre>{@code
+ *   public class TagsConverter extends Fastjson3JsonAttributeConverter<List<String>> {
+ *       public TagsConverter() {
+ *           super(new TypeReference<List<String>>() {}, MyApp.fastjson3Mapper());
+ *       }
+ *   }
+ * }</pre>
+ *
  * @param <T> the entity attribute type
  */
 public abstract class Fastjson3JsonAttributeConverter<T> implements AttributeConverter<T, String> {
