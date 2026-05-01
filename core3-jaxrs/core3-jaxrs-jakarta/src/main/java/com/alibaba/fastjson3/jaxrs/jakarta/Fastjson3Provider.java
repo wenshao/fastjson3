@@ -1,6 +1,5 @@
 package com.alibaba.fastjson3.jaxrs.jakarta;
 
-import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.ObjectMapper;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.Produces;
@@ -13,7 +12,6 @@ import jakarta.ws.rs.ext.MessageBodyReader;
 import jakarta.ws.rs.ext.MessageBodyWriter;
 import jakarta.ws.rs.ext.Provider;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -36,16 +34,30 @@ import java.lang.reflect.Type;
  * <p>Backed by a single {@link ObjectMapper}; defaults to {@link ObjectMapper#shared()}.
  * Pass a configured mapper through {@link #Fastjson3Provider(ObjectMapper)} to
  * customize features.
+ *
+ * <p><b>String / byte[] passthrough</b>: this provider does not hijack
+ * {@code String}, {@code byte[]}, {@code char[]}, primitive wrappers, or
+ * JAX-RS native streaming types. Resources returning a pre-encoded JSON
+ * {@code String} are routed through the standard text/byte body writers
+ * unchanged (mirrors Spring's {@code Fastjson3HttpMessageConverter}). To
+ * route those types through fastjson3, declare them on an explicit
+ * {@code allowList}.
  */
 @Provider
-@Consumes(MediaType.WILDCARD)
-@Produces(MediaType.WILDCARD)
+@Consumes({MediaType.APPLICATION_JSON, "application/*+json"})
+@Produces({MediaType.APPLICATION_JSON, "application/*+json"})
 public class Fastjson3Provider
         implements MessageBodyReader<Object>, MessageBodyWriter<Object> {
-    private static final Class<?>[] DEFAULT_UNREADABLES = {InputStream.class, Reader.class};
+    private static final Class<?>[] DEFAULT_UNREADABLES = {
+            InputStream.class, Reader.class,
+            String.class, byte[].class, char[].class,
+            Number.class, Boolean.class, Character.class
+    };
     private static final Class<?>[] DEFAULT_UNWRITABLES = {
             InputStream.class, OutputStream.class, Writer.class,
-            StreamingOutput.class, Response.class
+            StreamingOutput.class, Response.class,
+            String.class, byte[].class, char[].class,
+            Number.class, Boolean.class, Character.class
     };
 
     private final ObjectMapper mapper;
@@ -60,8 +72,11 @@ public class Fastjson3Provider
     }
 
     public Fastjson3Provider(ObjectMapper mapper, Class<?>[] allowList) {
-        this.mapper = mapper == null ? ObjectMapper.shared() : mapper;
-        this.allowList = allowList;
+        if (mapper == null) {
+            throw new IllegalArgumentException("mapper must not be null");
+        }
+        this.mapper = mapper;
+        this.allowList = allowList == null ? null : allowList.clone();
     }
 
     @Override
@@ -81,9 +96,10 @@ public class Fastjson3Provider
             InputStream entityStream
     ) throws IOException, WebApplicationException {
         try {
-            return mapper.readValue(readAll(entityStream), genericType != null ? genericType : type);
-        } catch (JSONException ex) {
-            throw new WebApplicationException(ex);
+            return mapper.readValue(entityStream, genericType != null ? genericType : type);
+        } catch (RuntimeException ex) {
+            // JSONException + any unexpected NPE/AIOOBE/IAE from adversarial input
+            throw new WebApplicationException(ex.getMessage(), Response.Status.BAD_REQUEST);
         }
     }
 
@@ -104,11 +120,7 @@ public class Fastjson3Provider
             MultivaluedMap<String, Object> httpHeaders,
             OutputStream entityStream
     ) throws IOException, WebApplicationException {
-        try {
-            entityStream.write(mapper.writeValueAsBytes(object));
-        } catch (JSONException ex) {
-            throw new WebApplicationException(ex);
-        }
+        entityStream.write(mapper.writeValueAsBytes(object));
     }
 
     private static boolean matchesMediaType(MediaType mediaType) {
@@ -117,13 +129,9 @@ public class Fastjson3Provider
         }
         String subtype = mediaType.getSubtype();
         if (subtype == null) {
-            return true;
+            return false;
         }
-        return "json".equalsIgnoreCase(subtype)
-                || subtype.endsWith("+json")
-                || "javascript".equals(subtype)
-                || "x-javascript".equals(subtype)
-                || "x-json".equals(subtype);
+        return "json".equalsIgnoreCase(subtype) || subtype.endsWith("+json");
     }
 
     private static boolean isAssignableFromAny(Class<?> type, Class<?>[] classes) {
@@ -148,15 +156,5 @@ public class Fastjson3Provider
             }
         }
         return false;
-    }
-
-    private static byte[] readAll(InputStream in) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] buf = new byte[8192];
-        int n;
-        while ((n = in.read(buf)) != -1) {
-            out.write(buf, 0, n);
-        }
-        return out.toByteArray();
     }
 }
