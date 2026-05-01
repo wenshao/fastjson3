@@ -55,6 +55,13 @@ import java.sql.SQLException;
  * cast in the SQL ({@code ?::jsonb}) or override
  * {@link #setNonNullParameter(PreparedStatement, int, Object, JdbcType)}.
  *
+ * <p><b>Custom mapper note</b>: MyBatis instantiates the subclass via no-arg
+ * constructor (typically through {@code TypeHandlerRegistry} scanning), so
+ * the mapper is whatever the subclass passes to {@code super(...)}. To use a
+ * configured mapper, hardcode it in the subclass — Spring Boot's
+ * {@code spring.fastjson3.*} properties do not propagate to MyBatis-managed
+ * type handlers.
+ *
  * @param <T> the entity attribute type
  */
 public abstract class Fastjson3JsonTypeHandler<T> extends BaseTypeHandler<T> {
