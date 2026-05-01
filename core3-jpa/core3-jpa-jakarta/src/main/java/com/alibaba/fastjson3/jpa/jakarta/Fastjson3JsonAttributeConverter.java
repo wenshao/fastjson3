@@ -45,10 +45,9 @@ import java.lang.reflect.Type;
  *
  * <p><b>Custom mapper note</b>: Hibernate / EclipseLink instantiate the
  * subclass via no-arg constructor, so the mapper is whatever the subclass
- * passes to {@code super(...)}. The {@code spring.fastjson3.*} properties
- * wired by Boot's HttpMessageConverter auto-config customize the Spring MVC
- * converter only — they do not propagate here. To use a configured mapper
- * with a JPA-managed converter, hardcode the mapper in the subclass:
+ * passes to {@code super(...)}. The Spring-managed
+ * {@code fastjson3ObjectMapper} bean does not propagate to JPA-managed
+ * converters. To use a configured mapper, hardcode it in the subclass:
  * <pre>{@code
  *   public class TagsConverter extends Fastjson3JsonAttributeConverter<List<String>> {
  *       public TagsConverter() {

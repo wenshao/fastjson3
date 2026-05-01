@@ -43,9 +43,9 @@ import java.lang.reflect.Type;
  *
  * <p><b>Custom mapper note</b>: Hibernate instantiates the subclass via no-arg
  * constructor, so the mapper is whatever the subclass passes to
- * {@code super(...)}. To use a configured mapper, hardcode it in the subclass
- * — Spring Boot's {@code spring.fastjson3.*} properties do not propagate to
- * JPA-managed converters.
+ * {@code super(...)}. The Spring-managed {@code fastjson3ObjectMapper} bean
+ * does not propagate to JPA-managed converters — hardcode the mapper in the
+ * subclass to use a configured one.
  *
  * @param <T> the entity attribute type
  */
