@@ -77,7 +77,12 @@ public abstract class Fastjson3JsonTypeHandler<T> extends BaseTypeHandler<T> {
         this(unwrap(targetType), mapper);
     }
 
-    private Fastjson3JsonTypeHandler(Type targetType, ObjectMapper mapper) {
+    /**
+     * Advanced escape hatch: pass a {@link Type} computed at runtime.
+     * For simple cases prefer {@link #Fastjson3JsonTypeHandler(Class)}
+     * or {@link #Fastjson3JsonTypeHandler(TypeReference)}.
+     */
+    protected Fastjson3JsonTypeHandler(Type targetType, ObjectMapper mapper) {
         if (targetType == null) {
             throw new IllegalArgumentException("targetType must not be null");
         }
