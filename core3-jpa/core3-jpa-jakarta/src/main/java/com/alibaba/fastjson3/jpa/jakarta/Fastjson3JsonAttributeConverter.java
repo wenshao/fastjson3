@@ -111,10 +111,18 @@ public abstract class Fastjson3JsonAttributeConverter<T> implements AttributeCon
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public T convertToEntityAttribute(String dbData) {
         if (dbData == null || dbData.isEmpty()) {
             return null;
         }
-        return mapper.readValue(dbData, targetType);
+        // Prefer the Class<T> overload when targetType is a non-generic class
+        // — fj3's readValue(String, Class<T>) reaches the UTF-8 fast path
+        // (readObjectUTF8) that the Type overload skips.
+        Type t = targetType;
+        if (t instanceof Class<?>) {
+            return (T) mapper.readValue(dbData, (Class<?>) t);
+        }
+        return mapper.readValue(dbData, t);
     }
 }
