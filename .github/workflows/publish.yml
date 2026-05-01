@@ -31,9 +31,17 @@ jobs:
         # aggregator + jakarta/javax submodules, core3-kafka, core3-mybatis.
         # Test-harness modules (core3-android-test, core3-spring-test) opt
         # out via the `maven.deploy.skip` property in their poms.
-        # `-fae` (--fail-at-end): a single transient upload failure won't
-        # abort the rest of the reactor — independent modules continue,
-        # and the workflow still exits non-zero if any failed.
-        run: mvn -B -fae deploy -DskipTests -DaltDeploymentRepository=github::https://maven.pkg.github.com/wenshao/fastjson3
+        #
+        # `-Dmaven.test.skip=true` (vs -DskipTests): skips both test-compile
+        # AND test-execution. Required because core3-android-test depends on
+        # `fastjson3:android` (the Android classifier jar built only under
+        # `-Pandroid`), which isn't available in a fresh CI environment.
+        # `-DskipTests` alone would fail at test-compile.
+        #
+        # `-DdeployAtEnd=true`: postpones all maven-deploy-plugin uploads
+        # until the entire reactor build finishes successfully. If any
+        # module's build fails, no module deploys — atomic SNAPSHOT publish
+        # rather than partial reactor state on GitHub Packages.
+        run: mvn -B deploy -Dmaven.test.skip=true -DdeployAtEnd=true -DaltDeploymentRepository=github::https://maven.pkg.github.com/wenshao/fastjson3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
