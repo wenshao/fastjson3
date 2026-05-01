@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.alibaba.fastjson3</groupId>
+        <artifactId>fastjson3-jaxrs</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>fastjson3-jaxrs-javax</artifactId>
+    <name>fastjson3-jaxrs-javax</name>
+    <description>JAX-RS provider for fastjson3 (javax.ws.rs namespace, legacy Jakarta EE 8 / Jersey 2.x)</description>
+    <packaging>jar</packaging>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.alibaba.fastjson3</groupId>
+            <artifactId>fastjson3</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>javax.ws.rs</groupId>
+            <artifactId>javax.ws.rs-api</artifactId>
+            <version>2.1.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jersey.core</groupId>
+            <artifactId>jersey-common</artifactId>
+            <version>2.41</version>
+            <scope>test</scope>
+            <!-- jersey-common 2.41 transitively pulls
+                 jakarta.ws.rs:jakarta.ws.rs-api 2.1.6 (the EE9 rebagged
+                 jar that still carries classes under the legacy
+                 javax.ws.rs.* package). Both this and the provided
+                 javax.ws.rs:javax.ws.rs-api 2.1.1 jar would land on the
+                 test classpath defining the same packages — split-package
+                 territory. Exclude the rebadge so only the provided jar
+                 wins. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>jakarta.ws.rs</groupId>
+                    <artifactId>jakarta.ws.rs-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
