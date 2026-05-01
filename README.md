@@ -43,6 +43,8 @@ Quick links:
 
 ## Install
 
+### Core library
+
 ```xml
 <dependency>
     <groupId>com.alibaba.fastjson3</groupId>
@@ -50,6 +52,39 @@ Quick links:
     <version>3.0.0</version>
 </dependency>
 ```
+
+### Bill of Materials (BOM)
+
+For multi-module projects, import the BOM and omit `<version>` on individual fastjson3 dependencies:
+
+```xml
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>com.alibaba.fastjson3</groupId>
+            <artifactId>fastjson3-bom</artifactId>
+            <version>3.0.0</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+```
+
+### Ecosystem modules
+
+| Artifact | Purpose |
+|----------|---------|
+| `fastjson3-kotlin` | Kotlin reified inline extensions (`parseAs<T>()`, `parseList<T>()`, `parseMap<T>()`, `toJSON()`) |
+| `fastjson3-spring` | Spring 6.x HttpMessageConverter (servlet) + WebFlux codecs + Spring MVC `AbstractView` + Redis serializer |
+| `fastjson3-spring-boot-autoconfigure` | Spring Boot 3.2+ auto-configuration (servlet + reactive — Boot 3.0/3.1 fail at runtime because Spring 6.0 ASM can't read JDK 21 bytecode) |
+| `fastjson3-spring-boot-starter` | Spring Boot starter (pom-only aggregator) |
+| `fastjson3-jaxrs-jakarta` | JAX-RS `@Provider` for `jakarta.ws.rs` (Jakarta EE 9+ — Jersey 3.x, RESTEasy 6.x, CXF 4.x) |
+| `fastjson3-jaxrs-javax` | JAX-RS `@Provider` for `javax.ws.rs` (legacy Jakarta EE 8 — Jersey 2.x, RESTEasy 4.x/5.x) |
+| `fastjson3-kafka` | Kafka `Serializer<T>` / `Deserializer<T>` (Kafka 3.x — SPI stable across the line) |
+| `fastjson3-jpa-jakarta` | JPA `AttributeConverter<T, String>` for `jakarta.persistence` (Jakarta Persistence 3.x — Hibernate 6.x, EclipseLink 4.x) |
+| `fastjson3-jpa-javax` | JPA `AttributeConverter<T, String>` for `javax.persistence` (legacy JPA 2.x) |
+| `fastjson3-mybatis` | MyBatis `BaseTypeHandler<T>` for JSON columns (MyBatis 3.5+) |
 
 ## Migration from fastjson2
 
@@ -331,9 +366,11 @@ See [`docs/advanced/graalvm.md`](docs/advanced/graalvm.md) for configuration det
 
 ## Project Structure
 
+Repository layout:
+
 ```
 fastjson3/
-├── core3/                          # Core library
+├── core3/                          # Core library (com.alibaba.fastjson3)
 │   └── src/main/java/com/alibaba/fastjson3/
 │       ├── JSON.java               # Static convenience API
 │       ├── ObjectMapper.java        # Thread-safe mapper (builder pattern)
@@ -351,8 +388,24 @@ fastjson3/
 │       ├── jsonpath/                # JSONPath compiler and segments
 │       ├── filter/                  # NameFilter, ValueFilter, PropertyFilter
 │       └── util/                    # DateUtils, JDKUtils, VectorizedScanner
-└── benchmark3/                     # JMH benchmarks vs fastjson2 and wast
+├── core3-bom/                      # Bill of Materials (BOM) — pin all module versions
+├── core3-kotlin/                   # Kotlin extensions
+├── core3-spring/                   # Spring 6.x HttpMessageConverter / WebFlux / MVC View / Redis
+├── core3-spring-boot-autoconfigure/  # Spring Boot 3.2+ auto-configuration
+├── core3-spring-boot-starter/      # Spring Boot starter (pom-only)
+├── core3-jaxrs/                    # JAX-RS aggregator (pom-only)
+│   ├── core3-jaxrs-jakarta/        # jakarta.ws.rs namespace
+│   └── core3-jaxrs-javax/          # javax.ws.rs namespace
+├── core3-jpa/                      # JPA aggregator (pom-only)
+│   ├── core3-jpa-jakarta/          # jakarta.persistence namespace
+│   └── core3-jpa-javax/            # javax.persistence namespace
+├── core3-kafka/                    # Kafka Serializer / Deserializer
+├── core3-mybatis/                  # MyBatis TypeHandler for JSON columns
+├── core3-android/                  # Android-specific JDKUtils (built via -Pandroid profile)
+└── benchmark3/                     # JMH benchmarks vs fastjson2 and wast (internal, not published)
 ```
+
+Reactor test harnesses (not published as Maven artifacts): `core3-android-test/`, `core3-spring-test/`.
 
 ## Build
 
