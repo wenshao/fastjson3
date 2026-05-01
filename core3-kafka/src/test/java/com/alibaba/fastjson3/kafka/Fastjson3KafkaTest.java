@@ -1,10 +1,13 @@
 package com.alibaba.fastjson3.kafka;
 
 import com.alibaba.fastjson3.ObjectMapper;
+import com.alibaba.fastjson3.TypeReference;
 import org.apache.kafka.common.errors.SerializationException;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -59,6 +62,27 @@ class Fastjson3KafkaTest {
         Event dst = de.deserialize("topic-x", ser.serialize("topic-x", src));
         assertEquals("e2", dst.id);
         assertEquals(7, dst.value);
+    }
+
+    @Test
+    void deserializerWithTypeReference() {
+        // Generic / batch payload — list of events
+        Fastjson3KafkaSerializer<List<Event>> ser = new Fastjson3KafkaSerializer<>();
+        Fastjson3KafkaDeserializer<List<Event>> de = new Fastjson3KafkaDeserializer<>(
+                new TypeReference<List<Event>>() {
+                });
+        List<Event> src = Arrays.asList(new Event("e1", 1), new Event("e2", 2));
+        byte[] bytes = ser.serialize("topic-x", src);
+        List<Event> dst = de.deserialize("topic-x", bytes);
+        assertEquals(2, dst.size());
+        assertEquals("e1", dst.get(0).id);
+        assertEquals(2, dst.get(1).value);
+    }
+
+    @Test
+    void deserializerNullTypeReferenceRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3KafkaDeserializer<Event>((TypeReference<Event>) null));
     }
 
     @Test

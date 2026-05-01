@@ -1,24 +1,32 @@
 package com.alibaba.fastjson3.kafka;
 
 import com.alibaba.fastjson3.ObjectMapper;
+import com.alibaba.fastjson3.TypeReference;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Deserializer;
 
+import java.lang.reflect.Type;
 import java.util.Map;
 
 /**
  * Kafka {@link Deserializer} that decodes record values from JSON via fastjson3.
  *
- * <p>The target type can be supplied two ways:
+ * <p>The target type can be supplied three ways:
  * <ol>
- *   <li>Constructor injection — preferred when the consumer is wired
- *       programmatically:
+ *   <li>Constructor with {@code Class<T>} — non-generic types:
  *       <pre>{@code
  *         new Fastjson3KafkaDeserializer<>(MyEvent.class)
  *       }</pre>
  *   </li>
+ *   <li>Constructor with {@code TypeReference<T>} — generic / parameterized
+ *       types (batch payloads, generic envelopes):
+ *       <pre>{@code
+ *         new Fastjson3KafkaDeserializer<>(new TypeReference<List<MyEvent>>() {})
+ *       }</pre>
+ *   </li>
  *   <li>{@code configure()}-based — use the no-arg constructor and supply the
- *       fully-qualified class name via Kafka consumer properties:
+ *       fully-qualified class name via Kafka consumer properties (Class only;
+ *       parameterized types not expressible as a string config value):
  *       <pre>{@code
  *         props.put(Fastjson3KafkaDeserializer.VALUE_DEFAULT_TYPE,
  *                   "com.example.MyEvent");
@@ -52,17 +60,29 @@ public class Fastjson3KafkaDeserializer<T> implements Deserializer<T> {
     public static final String KEY_DEFAULT_TYPE = "fastjson3.kafka.key.default.type";
 
     private final ObjectMapper mapper;
-    private volatile Class<T> targetType;
+    private volatile Type targetType;
 
     public Fastjson3KafkaDeserializer() {
-        this(null, ObjectMapper.shared());
+        this((Type) null, ObjectMapper.shared());
     }
 
     public Fastjson3KafkaDeserializer(Class<T> targetType) {
-        this(targetType, ObjectMapper.shared());
+        this((Type) targetType, ObjectMapper.shared());
+    }
+
+    public Fastjson3KafkaDeserializer(TypeReference<T> targetType) {
+        this(unwrap(targetType), ObjectMapper.shared());
     }
 
     public Fastjson3KafkaDeserializer(Class<T> targetType, ObjectMapper mapper) {
+        this((Type) targetType, mapper);
+    }
+
+    public Fastjson3KafkaDeserializer(TypeReference<T> targetType, ObjectMapper mapper) {
+        this(unwrap(targetType), mapper);
+    }
+
+    private Fastjson3KafkaDeserializer(Type targetType, ObjectMapper mapper) {
         if (mapper == null) {
             throw new IllegalArgumentException("mapper must not be null");
         }
@@ -70,8 +90,14 @@ public class Fastjson3KafkaDeserializer<T> implements Deserializer<T> {
         this.targetType = targetType;
     }
 
+    private static Type unwrap(TypeReference<?> ref) {
+        if (ref == null) {
+            throw new IllegalArgumentException("targetType must not be null");
+        }
+        return ref.getType();
+    }
+
     @Override
-    @SuppressWarnings("unchecked")
     public void configure(Map<String, ?> configs, boolean isKey) {
         if (targetType != null) {
             return;
@@ -84,7 +110,7 @@ public class Fastjson3KafkaDeserializer<T> implements Deserializer<T> {
         try {
             // initialize=false: defer static-initializer side effects; the class
             // is used only as a type token for fastjson3 deserialization.
-            targetType = (Class<T>) Class.forName(
+            targetType = Class.forName(
                     className, false, Thread.currentThread().getContextClassLoader());
         } catch (ClassNotFoundException e) {
             throw new SerializationException(
@@ -97,11 +123,11 @@ public class Fastjson3KafkaDeserializer<T> implements Deserializer<T> {
         if (data == null) {
             return null;
         }
-        Class<T> t = targetType;
+        Type t = targetType;
         if (t == null) {
             throw new SerializationException(
                     "Target type not configured for Fastjson3KafkaDeserializer; "
-                            + "pass Class<T> to the constructor or set "
+                            + "pass Class<T>/TypeReference<T> to the constructor or set "
                             + VALUE_DEFAULT_TYPE + " / " + KEY_DEFAULT_TYPE);
         }
         try {
