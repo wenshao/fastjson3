@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -37,6 +38,13 @@ class Fastjson3JsonAttributeConverterTest {
     public static class TagsConverter extends Fastjson3JsonAttributeConverter<List<String>> {
         public TagsConverter() {
             super(new TypeReference<List<String>>() {
+            });
+        }
+    }
+
+    public static class MetaConverter extends Fastjson3JsonAttributeConverter<Map<String, Integer>> {
+        public MetaConverter() {
+            super(new TypeReference<Map<String, Integer>>() {
             });
         }
     }
@@ -92,6 +100,29 @@ class Fastjson3JsonAttributeConverterTest {
                 };
         Profile back = c.convertToEntityAttribute(c.convertToDatabaseColumn(new Profile("z", 5)));
         assertEquals("z", back.name);
+    }
+
+    @Test
+    void mapTypeRoundTrip() {
+        MetaConverter c = new MetaConverter();
+        Map<String, Integer> meta = Map.of("a", 1, "b", 2);
+        String json = c.convertToDatabaseColumn(meta);
+        Map<String, Integer> back = c.convertToEntityAttribute(json);
+        assertEquals(meta, back);
+    }
+
+    @Test
+    void nullClassTargetTypeRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3JsonAttributeConverter<Profile>((Class<Profile>) null) {
+                });
+    }
+
+    @Test
+    void nullTypeReferenceRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3JsonAttributeConverter<Profile>((TypeReference<Profile>) null) {
+                });
     }
 
     @Test

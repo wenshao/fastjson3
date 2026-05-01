@@ -63,7 +63,10 @@ public abstract class Fastjson3JsonAttributeConverter<T> implements AttributeCon
         this(unwrap(targetType), mapper);
     }
 
-    private Fastjson3JsonAttributeConverter(Type targetType, ObjectMapper mapper) {
+    /**
+     * Advanced escape hatch: pass a {@link Type} computed at runtime.
+     */
+    protected Fastjson3JsonAttributeConverter(Type targetType, ObjectMapper mapper) {
         if (targetType == null) {
             throw new IllegalArgumentException("targetType must not be null");
         }
