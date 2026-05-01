@@ -1,0 +1,115 @@
+package com.alibaba.fastjson3.jpa.jakarta;
+
+import com.alibaba.fastjson3.ObjectMapper;
+import com.alibaba.fastjson3.TypeReference;
+import org.junit.jupiter.api.Test;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+class Fastjson3JsonAttributeConverterTest {
+    public static class Profile {
+        public String name;
+        public int age;
+
+        public Profile() {
+        }
+
+        public Profile(String name, int age) {
+            this.name = name;
+            this.age = age;
+        }
+    }
+
+    public static class ProfileConverter extends Fastjson3JsonAttributeConverter<Profile> {
+        public ProfileConverter() {
+            super(Profile.class);
+        }
+    }
+
+    public static class TagsConverter extends Fastjson3JsonAttributeConverter<List<String>> {
+        public TagsConverter() {
+            super(new TypeReference<List<String>>() {
+            }.getType());
+        }
+    }
+
+    public static class MetaConverter extends Fastjson3JsonAttributeConverter<Map<String, Integer>> {
+        public MetaConverter() {
+            super(new TypeReference<Map<String, Integer>>() {
+            }.getType());
+        }
+    }
+
+    public static class CustomMapperConverter extends Fastjson3JsonAttributeConverter<Profile> {
+        public CustomMapperConverter(ObjectMapper mapper) {
+            super(mapper, Profile.class);
+        }
+    }
+
+    @Test
+    void simpleTypeRoundTrip() {
+        ProfileConverter c = new ProfileConverter();
+        String json = c.convertToDatabaseColumn(new Profile("alice", 30));
+        Profile back = c.convertToEntityAttribute(json);
+        assertEquals("alice", back.name);
+        assertEquals(30, back.age);
+    }
+
+    @Test
+    void parameterizedTypeRoundTrip() {
+        TagsConverter c = new TagsConverter();
+        List<String> tags = Arrays.asList("java", "json");
+        String json = c.convertToDatabaseColumn(tags);
+        List<String> back = c.convertToEntityAttribute(json);
+        assertEquals(tags, back);
+    }
+
+    @Test
+    void mapTypeRoundTrip() {
+        MetaConverter c = new MetaConverter();
+        Map<String, Integer> meta = Map.of("a", 1, "b", 2);
+        String json = c.convertToDatabaseColumn(meta);
+        Map<String, Integer> back = c.convertToEntityAttribute(json);
+        assertEquals(meta, back);
+    }
+
+    @Test
+    void nullAttributeProducesNullColumn() {
+        ProfileConverter c = new ProfileConverter();
+        assertNull(c.convertToDatabaseColumn(null));
+    }
+
+    @Test
+    void nullColumnProducesNullAttribute() {
+        ProfileConverter c = new ProfileConverter();
+        assertNull(c.convertToEntityAttribute(null));
+    }
+
+    @Test
+    void emptyColumnProducesNullAttribute() {
+        // SQL ""  vs NULL — many DBs canonicalize empty TEXT to "" rather than NULL
+        ProfileConverter c = new ProfileConverter();
+        assertNull(c.convertToEntityAttribute(""));
+    }
+
+    @Test
+    void customMapperConstructor() {
+        ObjectMapper m = ObjectMapper.builder().build();
+        CustomMapperConverter c = new CustomMapperConverter(m);
+        Profile p = new Profile("bob", 40);
+        Profile back = c.convertToEntityAttribute(c.convertToDatabaseColumn(p));
+        assertEquals("bob", back.name);
+    }
+
+    @Test
+    void nullTargetTypeRejected() {
+        assertThrows(IllegalArgumentException.class, () -> new Fastjson3JsonAttributeConverter<Profile>((Class<Profile>) null) {
+        });
+    }
+}
