@@ -35,6 +35,16 @@ import java.lang.reflect.Type;
  * Pass a configured mapper through {@link #Fastjson3Provider(ObjectMapper)} to
  * customize features.
  *
+ * <p><b>Custom mapper note</b>: when JAX-RS auto-discovery instantiates this
+ * provider via the {@code @Provider} classpath scan, the no-arg constructor
+ * runs and the shared mapper is used. The {@code spring.fastjson3.*}
+ * properties wired by {@code Fastjson3HttpMessageConverterAutoConfiguration}
+ * customize the Spring MVC converter only — they do not propagate here.
+ * To inject a configured mapper, register an instance manually:
+ * <pre>{@code
+ *   resourceConfig.register(new Fastjson3Provider(myCustomMapper));
+ * }</pre>
+ *
  * <p><b>String / byte[] passthrough</b>: this provider does not hijack
  * {@code String} or {@code byte[]} — these route through JAX-RS's
  * built-in body readers/writers unchanged so resources returning a
