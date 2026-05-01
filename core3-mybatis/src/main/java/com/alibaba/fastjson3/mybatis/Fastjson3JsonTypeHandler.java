@@ -127,10 +127,18 @@ public abstract class Fastjson3JsonTypeHandler<T> extends BaseTypeHandler<T> {
         return parse(cs.getString(columnIndex));
     }
 
+    @SuppressWarnings("unchecked")
     private T parse(String json) {
         if (json == null || json.isEmpty()) {
             return null;
         }
-        return mapper.readValue(json, targetType);
+        // Prefer the Class<T> overload when targetType is a non-generic class
+        // — fj3's readValue(String, Class<T>) reaches the UTF-8 fast path
+        // (readObjectUTF8) that the Type overload skips.
+        Type t = targetType;
+        if (t instanceof Class<?>) {
+            return (T) mapper.readValue(json, (Class<?>) t);
+        }
+        return mapper.readValue(json, t);
     }
 }
