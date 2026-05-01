@@ -1,6 +1,5 @@
 package com.alibaba.fastjson3.kafka;
 
-import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.ObjectMapper;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Deserializer;
@@ -26,12 +25,23 @@ import java.util.Map;
  *         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
  *                   Fastjson3KafkaDeserializer.class.getName());
  *       }</pre>
- *       Or {@link #KEY_DEFAULT_TYPE} for keys.
+ *       Or {@link #KEY_DEFAULT_TYPE} for keys. <b>The class-name config must
+ *       come from trusted application code, not network input</b> — it is
+ *       resolved via {@code Class.forName}, so untrusted values can target
+ *       any class on the classpath. Constructor injection is preferred.
  *   </li>
  * </ol>
  *
+ * <p>Constructor-supplied target type wins over {@code configure()}-supplied
+ * value when both are set.
+ *
  * <p>Malformed JSON or class-loading failures are wrapped in
  * {@link SerializationException} per Kafka conventions.
+ *
+ * <p><b>Thread safety</b>: {@code configure()} must be called once before any
+ * {@code deserialize()} call. The {@code targetType} field is {@code volatile}
+ * to provide the happens-before edge for shared-instance topologies (Spring
+ * Kafka, Kafka Streams).
  *
  * @param <T> the value type to deserialize
  */
@@ -42,18 +52,21 @@ public class Fastjson3KafkaDeserializer<T> implements Deserializer<T> {
     public static final String KEY_DEFAULT_TYPE = "fastjson3.kafka.key.default.type";
 
     private final ObjectMapper mapper;
-    private Class<T> targetType;
+    private volatile Class<T> targetType;
 
     public Fastjson3KafkaDeserializer() {
-        this(ObjectMapper.shared(), null);
+        this(null, ObjectMapper.shared());
     }
 
     public Fastjson3KafkaDeserializer(Class<T> targetType) {
-        this(ObjectMapper.shared(), targetType);
+        this(targetType, ObjectMapper.shared());
     }
 
-    public Fastjson3KafkaDeserializer(ObjectMapper mapper, Class<T> targetType) {
-        this.mapper = mapper == null ? ObjectMapper.shared() : mapper;
+    public Fastjson3KafkaDeserializer(Class<T> targetType, ObjectMapper mapper) {
+        if (mapper == null) {
+            throw new IllegalArgumentException("mapper must not be null");
+        }
+        this.mapper = mapper;
         this.targetType = targetType;
     }
 
@@ -69,7 +82,10 @@ public class Fastjson3KafkaDeserializer<T> implements Deserializer<T> {
         }
         String className = cfg instanceof Class ? ((Class<?>) cfg).getName() : cfg.toString();
         try {
-            targetType = (Class<T>) Class.forName(className, true, Thread.currentThread().getContextClassLoader());
+            // initialize=false: defer static-initializer side effects; the class
+            // is used only as a type token for fastjson3 deserialization.
+            targetType = (Class<T>) Class.forName(
+                    className, false, Thread.currentThread().getContextClassLoader());
         } catch (ClassNotFoundException e) {
             throw new SerializationException(
                     "Cannot resolve target type for fastjson3 deserializer: " + className, e);
@@ -81,15 +97,16 @@ public class Fastjson3KafkaDeserializer<T> implements Deserializer<T> {
         if (data == null) {
             return null;
         }
-        if (targetType == null) {
+        Class<T> t = targetType;
+        if (t == null) {
             throw new SerializationException(
                     "Target type not configured for Fastjson3KafkaDeserializer; "
                             + "pass Class<T> to the constructor or set "
                             + VALUE_DEFAULT_TYPE + " / " + KEY_DEFAULT_TYPE);
         }
         try {
-            return mapper.readValue(data, targetType);
-        } catch (JSONException e) {
+            return mapper.readValue(data, t);
+        } catch (RuntimeException e) {
             throw new SerializationException("Failed to deserialize JSON for topic " + topic, e);
         }
     }

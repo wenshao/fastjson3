@@ -28,7 +28,10 @@ public class Fastjson3KafkaSerializer<T> implements Serializer<T> {
     }
 
     public Fastjson3KafkaSerializer(ObjectMapper mapper) {
-        this.mapper = mapper == null ? ObjectMapper.shared() : mapper;
+        if (mapper == null) {
+            throw new IllegalArgumentException("mapper must not be null");
+        }
+        this.mapper = mapper;
     }
 
     @Override
