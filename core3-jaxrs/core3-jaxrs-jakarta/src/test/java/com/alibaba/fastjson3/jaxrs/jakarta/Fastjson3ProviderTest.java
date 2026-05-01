@@ -98,10 +98,10 @@ class Fastjson3ProviderTest {
     }
 
     @Test
-    void rejectsStreamAndPrimitiveTypes() {
+    void rejectsStreamsAndStringByteArray() {
         Fastjson3Provider provider = new Fastjson3Provider();
-        // Read side excludes raw streams + primitive-shaped types
-        // (those are owned by JAX-RS native body readers)
+        // Excluded: raw streams + String/byte[] (owned by JAX-RS native
+        // body readers/writers — pre-encoded JSON should pass through).
         assertFalse(provider.isReadable(InputStream.class, InputStream.class, null,
                 MediaType.APPLICATION_JSON_TYPE));
         assertFalse(provider.isReadable(Reader.class, Reader.class, null,
@@ -110,10 +110,6 @@ class Fastjson3ProviderTest {
                 MediaType.APPLICATION_JSON_TYPE));
         assertFalse(provider.isReadable(byte[].class, byte[].class, null,
                 MediaType.APPLICATION_JSON_TYPE));
-        assertFalse(provider.isReadable(Integer.class, Integer.class, null,
-                MediaType.APPLICATION_JSON_TYPE));
-        // Write side excludes raw streams + JAX-RS Response/StreamingOutput +
-        // primitive-shaped types (avoids re-quoting pre-encoded JSON strings)
         assertFalse(provider.isWriteable(StreamingOutput.class, StreamingOutput.class, null,
                 MediaType.APPLICATION_JSON_TYPE));
         assertFalse(provider.isWriteable(Response.class, Response.class, null,
@@ -121,6 +117,15 @@ class Fastjson3ProviderTest {
         assertFalse(provider.isWriteable(String.class, String.class, null,
                 MediaType.APPLICATION_JSON_TYPE));
         assertFalse(provider.isWriteable(byte[].class, byte[].class, null,
+                MediaType.APPLICATION_JSON_TYPE));
+        // Primitive wrappers ARE serialized as JSON. Common pattern:
+        //   @Produces(application/json) public Long getCount()
+        //   @Produces(application/json) public Boolean isHealthy()
+        assertTrue(provider.isWriteable(Long.class, Long.class, null,
+                MediaType.APPLICATION_JSON_TYPE));
+        assertTrue(provider.isWriteable(Boolean.class, Boolean.class, null,
+                MediaType.APPLICATION_JSON_TYPE));
+        assertTrue(provider.isReadable(Integer.class, Integer.class, null,
                 MediaType.APPLICATION_JSON_TYPE));
     }
 

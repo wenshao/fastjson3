@@ -36,12 +36,14 @@ import java.lang.reflect.Type;
  * customize features.
  *
  * <p><b>String / byte[] passthrough</b>: this provider does not hijack
- * {@code String}, {@code byte[]}, {@code char[]}, primitive wrappers, or
- * JAX-RS native streaming types. Resources returning a pre-encoded JSON
- * {@code String} are routed through the standard text/byte body writers
- * unchanged (mirrors Spring's {@code Fastjson3HttpMessageConverter}). To
- * route those types through fastjson3, declare them on an explicit
- * {@code allowList}.
+ * {@code String} or {@code byte[]} — these route through JAX-RS's
+ * built-in body readers/writers unchanged so resources returning a
+ * pre-encoded JSON {@code String} or raw bytes pass through verbatim
+ * (mirrors Spring's {@code Fastjson3HttpMessageConverter}). To route
+ * those types through fastjson3, declare them on an explicit
+ * {@code allowList}. Primitive wrappers ({@code Long}, {@code Boolean},
+ * etc.) ARE serialized as JSON: {@code @Produces(application/json)
+ * public Long getCount()} returns a numeric body.
  */
 @Provider
 @Consumes({MediaType.APPLICATION_JSON, "application/*+json"})
@@ -50,14 +52,12 @@ public class Fastjson3Provider
         implements MessageBodyReader<Object>, MessageBodyWriter<Object> {
     private static final Class<?>[] DEFAULT_UNREADABLES = {
             InputStream.class, Reader.class,
-            String.class, byte[].class, char[].class,
-            Number.class, Boolean.class, Character.class
+            String.class, byte[].class
     };
     private static final Class<?>[] DEFAULT_UNWRITABLES = {
             InputStream.class, OutputStream.class, Writer.class,
             StreamingOutput.class, Response.class,
-            String.class, byte[].class, char[].class,
-            Number.class, Boolean.class, Character.class
+            String.class, byte[].class
     };
 
     private final ObjectMapper mapper;

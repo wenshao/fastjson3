@@ -88,7 +88,7 @@ class Fastjson3ProviderTest {
     }
 
     @Test
-    void rejectsStreamAndPrimitiveTypes() {
+    void rejectsStreamsAndStringByteArray() {
         Fastjson3Provider provider = new Fastjson3Provider();
         assertFalse(provider.isReadable(InputStream.class, InputStream.class, null,
                 MediaType.APPLICATION_JSON_TYPE));
@@ -103,6 +103,9 @@ class Fastjson3ProviderTest {
         assertFalse(provider.isWriteable(Response.class, Response.class, null,
                 MediaType.APPLICATION_JSON_TYPE));
         assertFalse(provider.isWriteable(String.class, String.class, null,
+                MediaType.APPLICATION_JSON_TYPE));
+        // Primitive wrappers ARE writable as JSON values
+        assertTrue(provider.isWriteable(Long.class, Long.class, null,
                 MediaType.APPLICATION_JSON_TYPE));
     }
 
