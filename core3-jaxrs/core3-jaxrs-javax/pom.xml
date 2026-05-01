@@ -31,6 +31,20 @@
             <artifactId>jersey-common</artifactId>
             <version>2.41</version>
             <scope>test</scope>
+            <!-- jersey-common 2.41 transitively pulls
+                 jakarta.ws.rs:jakarta.ws.rs-api 2.1.6 (the EE9 rebagged
+                 jar that still carries classes under the legacy
+                 javax.ws.rs.* package). Both this and the provided
+                 javax.ws.rs:javax.ws.rs-api 2.1.1 jar would land on the
+                 test classpath defining the same packages — split-package
+                 territory. Exclude the rebadge so only the provided jar
+                 wins. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>jakarta.ws.rs</groupId>
+                    <artifactId>jakarta.ws.rs-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
