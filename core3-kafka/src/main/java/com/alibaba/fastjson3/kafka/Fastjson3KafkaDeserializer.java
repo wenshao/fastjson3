@@ -130,6 +130,7 @@ public class Fastjson3KafkaDeserializer<T> implements Deserializer<T> {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public T deserialize(String topic, byte[] data) {
         if (data == null) {
             return null;
@@ -142,6 +143,12 @@ public class Fastjson3KafkaDeserializer<T> implements Deserializer<T> {
                             + VALUE_DEFAULT_TYPE + " / " + KEY_DEFAULT_TYPE);
         }
         try {
+            // Prefer the Class<T> overload when targetType is a non-generic
+            // class — fj3's readValue(byte[], Class<T>) reaches the UTF-8
+            // fast path (readObjectUTF8) that the Type overload skips.
+            if (t instanceof Class<?>) {
+                return (T) mapper.readValue(data, (Class<?>) t);
+            }
             return mapper.readValue(data, t);
         } catch (RuntimeException e) {
             throw new SerializationException("Failed to deserialize JSON for topic " + topic, e);
