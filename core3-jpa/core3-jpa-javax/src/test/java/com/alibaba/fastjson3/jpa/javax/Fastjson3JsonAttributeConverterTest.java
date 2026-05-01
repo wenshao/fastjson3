@@ -5,10 +5,14 @@ import com.alibaba.fastjson3.TypeReference;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class Fastjson3JsonAttributeConverterTest {
     public static class Profile {
@@ -33,7 +37,7 @@ class Fastjson3JsonAttributeConverterTest {
     public static class TagsConverter extends Fastjson3JsonAttributeConverter<List<String>> {
         public TagsConverter() {
             super(new TypeReference<List<String>>() {
-            }.getType());
+            });
         }
     }
 
@@ -56,6 +60,16 @@ class Fastjson3JsonAttributeConverterTest {
     }
 
     @Test
+    void emptyCollectionRoundTrip() {
+        TagsConverter c = new TagsConverter();
+        String json = c.convertToDatabaseColumn(Collections.emptyList());
+        assertEquals("[]", json);
+        List<String> back = c.convertToEntityAttribute(json);
+        assertNotNull(back);
+        assertTrue(back.isEmpty());
+    }
+
+    @Test
     void nullAttributeProducesNullColumn() {
         assertNull(new ProfileConverter().convertToDatabaseColumn(null));
     }
@@ -73,9 +87,17 @@ class Fastjson3JsonAttributeConverterTest {
     @Test
     void customMapperRoundTrip() {
         ObjectMapper m = ObjectMapper.builder().build();
-        Fastjson3JsonAttributeConverter<Profile> c = new Fastjson3JsonAttributeConverter<Profile>(m, Profile.class) {
-        };
+        Fastjson3JsonAttributeConverter<Profile> c =
+                new Fastjson3JsonAttributeConverter<Profile>(Profile.class, m) {
+                };
         Profile back = c.convertToEntityAttribute(c.convertToDatabaseColumn(new Profile("z", 5)));
         assertEquals("z", back.name);
+    }
+
+    @Test
+    void nullMapperRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3JsonAttributeConverter<Profile>(Profile.class, null) {
+                });
     }
 }

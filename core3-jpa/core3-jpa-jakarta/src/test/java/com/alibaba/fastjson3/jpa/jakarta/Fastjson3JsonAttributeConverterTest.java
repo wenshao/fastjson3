@@ -5,12 +5,15 @@ import com.alibaba.fastjson3.TypeReference;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class Fastjson3JsonAttributeConverterTest {
     public static class Profile {
@@ -35,20 +38,27 @@ class Fastjson3JsonAttributeConverterTest {
     public static class TagsConverter extends Fastjson3JsonAttributeConverter<List<String>> {
         public TagsConverter() {
             super(new TypeReference<List<String>>() {
-            }.getType());
+            });
         }
     }
 
     public static class MetaConverter extends Fastjson3JsonAttributeConverter<Map<String, Integer>> {
         public MetaConverter() {
             super(new TypeReference<Map<String, Integer>>() {
-            }.getType());
+            });
         }
     }
 
     public static class CustomMapperConverter extends Fastjson3JsonAttributeConverter<Profile> {
         public CustomMapperConverter(ObjectMapper mapper) {
-            super(mapper, Profile.class);
+            super(Profile.class, mapper);
+        }
+    }
+
+    public static class CustomMapperGenericConverter extends Fastjson3JsonAttributeConverter<List<String>> {
+        public CustomMapperGenericConverter(ObjectMapper mapper) {
+            super(new TypeReference<List<String>>() {
+            }, mapper);
         }
     }
 
@@ -80,6 +90,17 @@ class Fastjson3JsonAttributeConverterTest {
     }
 
     @Test
+    void emptyCollectionRoundTrip() {
+        // "[]" must round-trip to an empty (non-null) list
+        TagsConverter c = new TagsConverter();
+        String json = c.convertToDatabaseColumn(Collections.emptyList());
+        assertEquals("[]", json);
+        List<String> back = c.convertToEntityAttribute(json);
+        assertNotNull(back);
+        assertTrue(back.isEmpty());
+    }
+
+    @Test
     void nullAttributeProducesNullColumn() {
         ProfileConverter c = new ProfileConverter();
         assertNull(c.convertToDatabaseColumn(null));
@@ -93,7 +114,7 @@ class Fastjson3JsonAttributeConverterTest {
 
     @Test
     void emptyColumnProducesNullAttribute() {
-        // SQL ""  vs NULL — many DBs canonicalize empty TEXT to "" rather than NULL
+        // Many DBs canonicalize empty TEXT to "" rather than NULL.
         ProfileConverter c = new ProfileConverter();
         assertNull(c.convertToEntityAttribute(""));
     }
@@ -108,8 +129,31 @@ class Fastjson3JsonAttributeConverterTest {
     }
 
     @Test
-    void nullTargetTypeRejected() {
-        assertThrows(IllegalArgumentException.class, () -> new Fastjson3JsonAttributeConverter<Profile>((Class<Profile>) null) {
-        });
+    void customMapperGenericConstructor() {
+        ObjectMapper m = ObjectMapper.builder().build();
+        CustomMapperGenericConverter c = new CustomMapperGenericConverter(m);
+        List<String> back = c.convertToEntityAttribute(c.convertToDatabaseColumn(Arrays.asList("a", "b")));
+        assertEquals(Arrays.asList("a", "b"), back);
+    }
+
+    @Test
+    void nullClassTargetTypeRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3JsonAttributeConverter<Profile>((Class<Profile>) null) {
+                });
+    }
+
+    @Test
+    void nullTypeReferenceRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3JsonAttributeConverter<Profile>((TypeReference<Profile>) null) {
+                });
+    }
+
+    @Test
+    void nullMapperRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Fastjson3JsonAttributeConverter<Profile>(Profile.class, null) {
+                });
     }
 }

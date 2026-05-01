@@ -1,6 +1,7 @@
 package com.alibaba.fastjson3.jpa.javax;
 
 import com.alibaba.fastjson3.ObjectMapper;
+import com.alibaba.fastjson3.TypeReference;
 
 import javax.persistence.AttributeConverter;
 
@@ -15,22 +16,30 @@ import java.lang.reflect.Type;
  * (JPA 2.x). For Jakarta Persistence 3.0+ ({@code jakarta.persistence}) use
  * {@code fastjson3-jpa-jakarta} instead.
  *
- * <p>Subclass with the concrete attribute type — JPA cannot read the type
- * argument directly because of erasure:
+ * <p>Subclass with the concrete attribute type — fastjson3 cannot infer
+ * {@code T} at runtime from the parent class's type parameter (erasure on
+ * this generic abstract base), so subclasses must pass a {@code Class<T>}
+ * or {@code TypeReference<T>} to the constructor:
  * <pre>{@code
  *   @Converter(autoApply = false)
  *   public class TagsConverter extends Fastjson3JsonAttributeConverter<List<String>> {
  *       public TagsConverter() {
- *           super(new TypeReference<List<String>>() {}.getType());
+ *           super(new TypeReference<List<String>>() {});
  *       }
  *   }
  * }</pre>
  *
- * <p>For non-generic types use the {@link #Fastjson3JsonAttributeConverter(Class)}
- * constructor.
+ * <p>Constructor variants:
+ * <ul>
+ *   <li>{@link #Fastjson3JsonAttributeConverter(Class)} — non-generic types</li>
+ *   <li>{@link #Fastjson3JsonAttributeConverter(TypeReference)} — generic types</li>
+ *   <li>{@link #Fastjson3JsonAttributeConverter(Class, ObjectMapper)} — custom mapper</li>
+ *   <li>{@link #Fastjson3JsonAttributeConverter(TypeReference, ObjectMapper)} — custom mapper, generic type</li>
+ * </ul>
  *
- * <p>Defaults to {@link ObjectMapper#shared()}; pass a configured mapper through
- * the protected constructor to customize features.
+ * <p><b>Empty-string handling</b>: {@code convertToEntityAttribute("")} returns
+ * {@code null}, accommodating databases that canonicalize empty TEXT to {@code ""}
+ * rather than {@code NULL}.
  *
  * @param <T> the entity attribute type
  */
@@ -39,19 +48,37 @@ public abstract class Fastjson3JsonAttributeConverter<T> implements AttributeCon
     private final Type targetType;
 
     protected Fastjson3JsonAttributeConverter(Class<T> targetType) {
-        this(ObjectMapper.shared(), targetType);
+        this(targetType, ObjectMapper.shared());
     }
 
-    protected Fastjson3JsonAttributeConverter(Type targetType) {
-        this(ObjectMapper.shared(), targetType);
+    protected Fastjson3JsonAttributeConverter(TypeReference<T> targetType) {
+        this(unwrap(targetType), ObjectMapper.shared());
     }
 
-    protected Fastjson3JsonAttributeConverter(ObjectMapper mapper, Type targetType) {
+    protected Fastjson3JsonAttributeConverter(Class<T> targetType, ObjectMapper mapper) {
+        this((Type) targetType, mapper);
+    }
+
+    protected Fastjson3JsonAttributeConverter(TypeReference<T> targetType, ObjectMapper mapper) {
+        this(unwrap(targetType), mapper);
+    }
+
+    private Fastjson3JsonAttributeConverter(Type targetType, ObjectMapper mapper) {
         if (targetType == null) {
             throw new IllegalArgumentException("targetType must not be null");
         }
-        this.mapper = mapper == null ? ObjectMapper.shared() : mapper;
+        if (mapper == null) {
+            throw new IllegalArgumentException("mapper must not be null");
+        }
+        this.mapper = mapper;
         this.targetType = targetType;
+    }
+
+    private static Type unwrap(TypeReference<?> ref) {
+        if (ref == null) {
+            throw new IllegalArgumentException("targetType must not be null");
+        }
+        return ref.getType();
     }
 
     @Override
