@@ -43,6 +43,18 @@ import java.util.Map;
  * <p>Constructor-supplied target type wins over {@code configure()}-supplied
  * value when both are set.
  *
+ * <p><b>Custom mapper note</b>: when Kafka instantiates the deserializer via
+ * the {@code VALUE_DESERIALIZER_CLASS_CONFIG} property, Kafka uses the no-arg
+ * constructor and the shared mapper is used. The {@code spring.fastjson3.*}
+ * properties wired by Boot's HttpMessageConverter auto-config customize the
+ * Spring MVC converter only — they do not propagate here. To inject a
+ * configured mapper, instantiate the deserializer manually and pass it to
+ * the consumer factory:
+ * <pre>{@code
+ *   var de = new Fastjson3KafkaDeserializer<>(MyEvent.class, myCustomMapper);
+ *   new DefaultKafkaConsumerFactory<>(props, keyDeserializer, de);
+ * }</pre>
+ *
  * <p>Malformed JSON or class-loading failures are wrapped in
  * {@link SerializationException} per Kafka conventions.
  *
