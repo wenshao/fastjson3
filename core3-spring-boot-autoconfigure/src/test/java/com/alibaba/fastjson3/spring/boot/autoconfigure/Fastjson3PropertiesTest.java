@@ -47,6 +47,29 @@ class Fastjson3PropertiesTest {
     }
 
     @Test
+    void buildObjectMapper_null_serializesEquivalentlyToShared() {
+        // With no dateFormat set, the fresh mapper must behave identically
+        // to ObjectMapper.shared() for default serialization. Pins the
+        // "always fresh, but otherwise default-equivalent" contract — a
+        // future change that flips a builder default would break this and
+        // alert the user before silently shifting starter behavior.
+        Fastjson3Properties p = new Fastjson3Properties();
+        ObjectMapper fresh = p.buildObjectMapper();
+        ObjectMapper shared = ObjectMapper.shared();
+        // Date → millis (default) — most likely to drift if a future
+        // builder default flips.
+        java.util.Date date = new java.util.Date(0L);
+        assertEquals(shared.writeValueAsString(date), fresh.writeValueAsString(date));
+        // Object with mixed primitives — broader equivalence smoke test.
+        java.util.Map<String, Object> bag = new java.util.LinkedHashMap<>();
+        bag.put("s", "hello");
+        bag.put("i", 42);
+        bag.put("d", 3.14);
+        bag.put("b", true);
+        assertEquals(shared.writeValueAsString(bag), fresh.writeValueAsString(bag));
+    }
+
+    @Test
     void buildObjectMapper_dateFormat_returnsConfiguredMapper() {
         Fastjson3Properties p = new Fastjson3Properties();
         p.setDateFormat("yyyy-MM-dd");

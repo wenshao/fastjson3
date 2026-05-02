@@ -6,6 +6,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -61,11 +63,49 @@ class Fastjson3GeoJsonAutoConfigurationTest {
                     .as("holder must hold the geojson-registered fresh instance")
                     .isSameAs(bean)
                     .isNotSameAs(ObjectMapper.shared());
+            // Strong assertion: doesNotContain("\"x\":") proves the geojson
+            // writer fired (default bean serializer would emit x/y).
             String json = Fastjson3MapperHolder.get()
                     .writeValueAsString(new GeoJsonPoint(3.0, 4.0));
-            assertThat(json).contains("\"type\":\"Point\"")
-                    .contains("\"coordinates\":[3.0,4.0]");
+            assertThat(json)
+                    .contains("\"type\":\"Point\"")
+                    .contains("\"coordinates\":[3.0,4.0]")
+                    .doesNotContain("\"x\":")
+                    .doesNotContain("\"y\":");
         });
+    }
+
+    @Test
+    void userSuppliedMapper_isNotMutated() {
+        // When the user provides their own ObjectMapper bean (any name),
+        // @ConditionalOnMissingBean removes our auto-config bean. The
+        // geojson registrar BPP filters by bean name "fastjson3ObjectMapper"
+        // and silently skips the user's bean — preserving any custom
+        // ObjectWriter registrations the user already made and respecting
+        // the implicit "I'm taking control" signal of supplying their own
+        // mapper.
+        runner.withUserConfiguration(UserMapperConfig.class).run(ctx -> {
+            ObjectMapper bean = ctx.getBean(ObjectMapper.class);
+            assertThat(bean).isSameAs(UserMapperConfig.USER);
+            // Default bean serializer output — proves no geojson writer
+            // was registered on the user mapper.
+            String json = bean.writeValueAsString(new GeoJsonPoint(11.0, 12.0));
+            assertThat(json)
+                    .as("user-supplied mapper must keep default bean serialization "
+                            + "— geojson registrar must skip non-auto-config beans")
+                    .contains("\"x\":11.0")
+                    .contains("\"y\":12.0");
+        });
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserMapperConfig {
+        static final ObjectMapper USER = ObjectMapper.builder().build();
+
+        @Bean
+        ObjectMapper userMapper() {
+            return USER;
+        }
     }
 
     @Test
