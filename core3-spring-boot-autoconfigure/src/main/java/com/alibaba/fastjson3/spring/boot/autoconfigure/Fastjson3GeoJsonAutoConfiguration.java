@@ -20,13 +20,15 @@ import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
  * {@code spring-boot-starter-data-mongodb}).</p>
  *
  * <p>Registration runs during bean factory initialization (eagerly inside
- * the registrar's {@code @Bean} factory method), so the readers/writers
- * land on the mapper before
- * {@link Fastjson3ObjectMapperAutoConfiguration}'s
- * {@link org.springframework.beans.factory.SmartInitializingSingleton}
- * publishes the mapper into {@link com.alibaba.fastjson3.Fastjson3MapperHolder}.
- * Holder consumers (Hibernate, MyBatis, Kafka, Jersey, Vert.x, Retrofit,
- * gRPC) therefore see GeoJSON support automatically.</p>
+ * the registrar's {@code @Bean} factory method) and mutates the resolved
+ * {@code ObjectMapper} bean directly. The bean is always a fresh per-app
+ * instance ({@link Fastjson3Properties#buildObjectMapper()} no longer
+ * returns {@link ObjectMapper#shared()}), so this mutation stays local to
+ * the Spring context and never poisons the JVM-global shared mapper.
+ * After registration, holder consumers (Hibernate, MyBatis, Kafka, Jersey,
+ * Vert.x, Retrofit, gRPC) reading
+ * {@link com.alibaba.fastjson3.Fastjson3MapperHolder#get()} see GeoJSON
+ * support automatically.</p>
  *
  * <p>Users wanting a different module-registration policy can either:</p>
  * <ul>
@@ -44,9 +46,11 @@ import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 public class Fastjson3GeoJsonAutoConfiguration {
     /**
      * Eagerly registers the GeoJSON readers/writers on the resolved
-     * {@link ObjectMapper} bean. The marker return value pins the
-     * registration into the bean lifecycle so Spring won't garbage-collect
-     * the registrar before {@code SmartInitializingSingleton} runs.
+     * {@link ObjectMapper} bean during {@code @Bean} factory invocation.
+     * The marker return type pins the registrar into the bean lifecycle
+     * so the registration side-effect happens during bean factory
+     * pre-instantiation, before downstream beans (e.g. JPA
+     * {@code EntityManagerFactory}) finish initializing.
      */
     @Bean
     Fastjson3GeoJsonRegistrar fastjson3GeoJsonRegistrar(ObjectMapper fastjson3ObjectMapper) {
