@@ -93,7 +93,10 @@ public class Fastjson3StringSerializer implements EntityStringSerializer {
 
     @Override
     public Object deserialize(String data, Type type) throws IOException {
-        if (data == null || data.isEmpty()) {
+        // isBlank covers null + empty + whitespace-only bodies (e.g. Solon
+        // routing a request with `\n` body should not surface as a parse
+        // error — return null and let the caller decide).
+        if (data == null || data.isBlank()) {
             return null;
         }
         try {
