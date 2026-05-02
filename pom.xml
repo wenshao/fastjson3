@@ -50,6 +50,7 @@
         <module>core3-spring-boot-autoconfigure</module>
         <module>core3-spring-boot-starter</module>
         <module>core3-spring-test</module>
+        <module>core3-vertx</module>
     </modules>
 
     <distributionManagement>
