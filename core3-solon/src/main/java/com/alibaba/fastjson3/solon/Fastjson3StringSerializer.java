@@ -9,8 +9,8 @@ import org.noear.solon.serialization.SerializerNames;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Solon {@link EntityStringSerializer} backed by fastjson3.
@@ -30,7 +30,10 @@ public class Fastjson3StringSerializer implements EntityStringSerializer {
     private static final String MIME_TYPE = "application/json";
 
     private final ObjectMapper mapper;
-    private final Map<Class<?>, Converter<?, Object>> encoders = new HashMap<>();
+    // ConcurrentHashMap because addEncoder is a public API; it could be
+    // called after request threads start serving, even if the canonical
+    // pattern is to register during plugin start.
+    private final Map<Class<?>, Converter<?, Object>> encoders = new ConcurrentHashMap<>();
 
     public Fastjson3StringSerializer() {
         this(ObjectMapper.shared());
@@ -67,9 +70,14 @@ public class Fastjson3StringSerializer implements EntityStringSerializer {
         if (mime == null) {
             return false;
         }
-        // Match application/json + */vnd.*+json + Solon's AT_JSON marker
+        // Match application/json (with optional ; charset=...), the +json
+        // suffix anchored at end-of-subtype (or before parameters), and
+        // Solon's @json marker constant. Avoid bare `contains("+json")`
+        // which would match `text/x-anything+json-ish` — anchor the match.
         return mime.contains(MIME_TYPE)
-                || mime.contains("+json")
+                || mime.endsWith("+json")
+                || mime.contains("+json;")
+                || mime.contains("+json ")
                 || SerializerNames.AT_JSON.equalsIgnoreCase(mime);
     }
 
