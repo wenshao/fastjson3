@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
 import org.redisson.client.codec.BaseCodec;
+import org.redisson.client.codec.StringCodec;
 import org.redisson.client.handler.State;
 import org.redisson.client.protocol.Decoder;
 import org.redisson.client.protocol.Encoder;
@@ -91,11 +92,19 @@ public class Fastjson3RedissonCodec<T> extends BaseCodec {
         ByteBuf out = ByteBufAllocator.DEFAULT.buffer();
         try {
             try (ByteBufOutputStream os = new ByteBufOutputStream(out)) {
-                os.write(mapper.writeValueAsBytes(in));
+                // Stream directly to the ByteBuf — saves an intermediate
+                // byte[] allocation vs writeValueAsBytes + os.write(bytes).
+                mapper.writeValue(os, in);
             }
             return out;
-        } catch (RuntimeException ex) {
+        } catch (Throwable ex) {
+            // Release on any failure (RuntimeException from fj3, IOException
+            // from ByteBufOutputStream.close, OOM via netty allocator, etc.)
+            // before propagating — otherwise the buf leaks.
             out.release();
+            if (ex instanceof IOException) {
+                throw (IOException) ex;
+            }
             throw new IOException("JSON write error: " + ex.getMessage(), ex);
         }
     }
@@ -122,5 +131,22 @@ public class Fastjson3RedissonCodec<T> extends BaseCodec {
     @Override
     public Encoder getValueEncoder() {
         return encoder;
+    }
+
+    /**
+     * Map keys go through Redisson's {@link StringCodec} so {@code RMap<String, T>}
+     * keys round-trip raw (not JSON-quoted). This matches the convention used by
+     * Redisson's bundled {@code JsonJacksonCodec} and prevents key mismatches
+     * with code paths that use other codecs (e.g. {@code StringCodec.INSTANCE}
+     * directly, or RMap operations from a different client).
+     */
+    @Override
+    public Decoder<Object> getMapKeyDecoder() {
+        return StringCodec.INSTANCE.getMapKeyDecoder();
+    }
+
+    @Override
+    public Encoder getMapKeyEncoder() {
+        return StringCodec.INSTANCE.getMapKeyEncoder();
     }
 }
