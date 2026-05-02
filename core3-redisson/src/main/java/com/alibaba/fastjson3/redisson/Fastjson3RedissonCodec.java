@@ -92,8 +92,11 @@ public class Fastjson3RedissonCodec<T> extends BaseCodec {
         ByteBuf out = ByteBufAllocator.DEFAULT.buffer();
         try {
             try (ByteBufOutputStream os = new ByteBufOutputStream(out)) {
-                // Stream directly to the ByteBuf — saves an intermediate
-                // byte[] allocation vs writeValueAsBytes + os.write(bytes).
+                // mapper.writeValue(os, ...) currently materializes a byte[]
+                // internally then writes — same shape as writeValueAsBytes +
+                // os.write(bytes). Use the OutputStream form anyway so this
+                // becomes zero-copy automatically when fj3 grows a streaming
+                // JSONGenerator-to-OutputStream path.
                 mapper.writeValue(os, in);
             }
             return out;
