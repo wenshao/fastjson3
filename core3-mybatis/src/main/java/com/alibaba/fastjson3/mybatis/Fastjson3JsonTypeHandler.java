@@ -56,12 +56,18 @@ import java.sql.SQLException;
  * cast in the SQL ({@code ?::jsonb}) or override
  * {@link #setNonNullParameter(PreparedStatement, int, Object, JdbcType)}.
  *
- * <p><b>Custom mapper note</b>: MyBatis instantiates the subclass via no-arg
- * constructor (typically through {@code TypeHandlerRegistry} scanning), so
- * the mapper is whatever the subclass passes to {@code super(...)}. The
- * Spring-managed {@code fastjson3ObjectMapper} bean does not propagate to
- * MyBatis-managed type handlers — hardcode the mapper in the subclass to
- * use a configured one.
+ * <p><b>Mapper resolution</b>: MyBatis instantiates the subclass via the
+ * no-arg constructor (typically through {@code TypeHandlerRegistry}
+ * scanning), so the mapper is whatever the subclass passes to
+ * {@code super(targetType)} — which defaults to
+ * {@link Fastjson3MapperHolder#get()}. In a Spring Boot app the holder is
+ * populated by {@code Fastjson3ObjectMapperAutoConfiguration} with the
+ * resolved {@code fastjson3ObjectMapper} bean, so {@code spring.fastjson3.*}
+ * settings propagate to MyBatis-managed type handlers. Outside Spring, the
+ * holder defaults to {@link ObjectMapper#shared()} unless the application
+ * explicitly calls {@link Fastjson3MapperHolder#set(ObjectMapper)} at
+ * startup. To override per-handler, hardcode the mapper in the subclass via
+ * the {@code (targetType, mapper)} ctor.
  *
  * @param <T> the entity attribute type
  */

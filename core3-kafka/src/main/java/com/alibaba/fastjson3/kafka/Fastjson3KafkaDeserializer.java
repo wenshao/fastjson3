@@ -44,12 +44,18 @@ import java.util.Map;
  * <p>Constructor-supplied target type wins over {@code configure()}-supplied
  * value when both are set.
  *
- * <p><b>Custom mapper note</b>: when Kafka instantiates the deserializer via
+ * <p><b>Mapper resolution</b>: when Kafka instantiates the deserializer via
  * the {@code VALUE_DESERIALIZER_CLASS_CONFIG} property, Kafka uses the no-arg
- * constructor and {@link ObjectMapper#shared()} is used. The Spring-managed
- * {@code fastjson3ObjectMapper} bean does not propagate to deserializers
- * instantiated outside the Spring container. To inject a configured mapper,
- * instantiate the deserializer manually and pass it to the consumer factory:
+ * constructor which reads {@link Fastjson3MapperHolder#get()}. In a Spring
+ * Boot app the holder is populated by
+ * {@code Fastjson3ObjectMapperAutoConfiguration} with the resolved
+ * {@code fastjson3ObjectMapper} bean (your auto-config default or a
+ * user-supplied {@link ObjectMapper}), so {@code spring.fastjson3.*} settings
+ * propagate. Outside Spring, the holder defaults to
+ * {@link ObjectMapper#shared()} unless the application explicitly calls
+ * {@link Fastjson3MapperHolder#set(ObjectMapper)} at startup. To pass a
+ * pre-built mapper directly, instantiate the deserializer manually and hand
+ * it to the consumer factory:
  * <pre>{@code
  *   var de = new Fastjson3KafkaDeserializer<>(MyEvent.class, myCustomMapper);
  *   new DefaultKafkaConsumerFactory<>(props, keyDeserializer, de);

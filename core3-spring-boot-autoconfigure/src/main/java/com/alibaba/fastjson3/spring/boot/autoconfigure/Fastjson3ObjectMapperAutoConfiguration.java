@@ -2,7 +2,7 @@ package com.alibaba.fastjson3.spring.boot.autoconfigure;
 
 import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
-import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -64,14 +64,37 @@ public class Fastjson3ObjectMapperAutoConfiguration {
      * into {@link Fastjson3MapperHolder} as the JVM-wide default for
      * framework-instantiated converters that bypass Spring DI.
      *
-     * <p>Uses {@link SmartInitializingSingleton} so installation runs after
-     * all singleton beans are constructed but before
-     * {@code ContextRefreshedEvent} fires — early enough for
-     * {@code @PostConstruct} hooks (e.g. JPA {@code EntityManagerFactory}
-     * bootstrap) to see the configured mapper.</p>
+     * <p>Implemented as a {@link BeanPostProcessor} so the holder is set the
+     * moment the {@link ObjectMapper} bean finishes initialization — earlier
+     * than {@code SmartInitializingSingleton} (which fires only after every
+     * singleton's {@code @PostConstruct} / {@code afterPropertiesSet} has
+     * run, which would be too late for the JPA {@code EntityManagerFactory}
+     * bootstrap that instantiates {@code @Convert}-annotated converters
+     * during its own {@code afterPropertiesSet}).</p>
+     *
+     * <p><b>Cross-bean ordering caveat</b>: a bean that does not depend on
+     * the fastjson3 {@link ObjectMapper} but does read the holder during
+     * its own initialization can still see the default {@code shared()}
+     * mapper if Spring constructs it before our mapper bean. JPA
+     * {@code LocalContainerEntityManagerFactoryBean} is the prototypical
+     * example. To guarantee ordering in those cases, declare
+     * {@code @DependsOn("fastjson3ObjectMapper")} on the bean that triggers
+     * the framework converter instantiation.</p>
+     *
+     * <p>Declared {@code static} per Spring's
+     * {@link BeanPostProcessor} contract — it must be instantiable without
+     * the rest of the configuration class fully initialized.</p>
      */
     @Bean
-    SmartInitializingSingleton fastjson3MapperHolderInstaller(ObjectMapper fastjson3ObjectMapper) {
-        return () -> Fastjson3MapperHolder.set(fastjson3ObjectMapper);
+    static BeanPostProcessor fastjson3MapperHolderInstaller() {
+        return new BeanPostProcessor() {
+            @Override
+            public Object postProcessAfterInitialization(Object bean, String beanName) {
+                if (bean instanceof ObjectMapper) {
+                    Fastjson3MapperHolder.set((ObjectMapper) bean);
+                }
+                return bean;
+            }
+        };
     }
 }

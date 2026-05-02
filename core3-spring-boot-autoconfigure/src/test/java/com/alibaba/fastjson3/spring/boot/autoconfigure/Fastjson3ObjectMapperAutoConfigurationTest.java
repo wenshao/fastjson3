@@ -31,12 +31,19 @@ class Fastjson3ObjectMapperAutoConfigurationTest {
 
     @Test
     void installsAutoConfigMapper_intoHolder() {
-        runner.run(ctx -> {
-            ObjectMapper bean = ctx.getBean(ObjectMapper.class);
-            assertThat(Fastjson3MapperHolder.get())
-                    .as("holder must hold the same instance Spring resolved")
-                    .isSameAs(bean);
-        });
+        // Force a non-shared mapper via date-format. Without it, the bean
+        // would be ObjectMapper.shared() and the holder default would be
+        // ObjectMapper.shared() — assertion would pass even if the
+        // installer never fired. Setting the property forces a distinct
+        // instance, so the assertion proves the installer ran.
+        runner.withPropertyValues("spring.fastjson3.date-format=yyyy-MM-dd")
+                .run(ctx -> {
+                    ObjectMapper bean = ctx.getBean(ObjectMapper.class);
+                    assertThat(bean).isNotSameAs(ObjectMapper.shared());
+                    assertThat(Fastjson3MapperHolder.get())
+                            .as("holder must hold the same instance Spring resolved")
+                            .isSameAs(bean);
+                });
     }
 
     @Test
@@ -53,9 +60,27 @@ class Fastjson3ObjectMapperAutoConfigurationTest {
     void appliesDateFormatProperty_toHolderMapper() {
         runner.withPropertyValues("spring.fastjson3.date-format=yyyy-MM-dd")
                 .run(ctx -> {
+                    // Verify holder is the SAME instance as the bean (not a
+                    // separately-built mapper that happens to share the same
+                    // dateFormat) — pins the cross-bean propagation contract.
+                    ObjectMapper bean = ctx.getBean(ObjectMapper.class);
                     ObjectMapper holder = Fastjson3MapperHolder.get();
+                    assertThat(holder).isSameAs(bean);
                     assertThat(holder.getDateFormat()).isEqualTo("yyyy-MM-dd");
                 });
+    }
+
+    @Test
+    void resolvesUserMapperByType_notByName() {
+        // Spring resolves the BeanPostProcessor's installer dependency by
+        // type, not by parameter name. A user-supplied bean named anything
+        // (here: 'myCustomMapper') still gets installed.
+        runner.withUserConfiguration(NamedUserMapperConfig.class).run(ctx -> {
+            assertThat(ctx.getBeanNamesForType(ObjectMapper.class))
+                    .as("only the user mapper bean is resolved, not the auto-config default")
+                    .containsExactly("myCustomMapper");
+            assertThat(Fastjson3MapperHolder.get()).isSameAs(NamedUserMapperConfig.NAMED);
+        });
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -65,6 +90,16 @@ class Fastjson3ObjectMapperAutoConfigurationTest {
         @Bean
         ObjectMapper userMapper() {
             return USER;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NamedUserMapperConfig {
+        static final ObjectMapper NAMED = ObjectMapper.builder().build();
+
+        @Bean(name = "myCustomMapper")
+        ObjectMapper myCustomMapper() {
+            return NAMED;
         }
     }
 }

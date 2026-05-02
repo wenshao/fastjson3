@@ -37,13 +37,19 @@ import java.lang.reflect.Type;
  * and earlier). For Jakarta EE 9+ ({@code jakarta.ws.rs}) use
  * {@code fastjson3-jaxrs-jakarta} instead.
  *
- * <p>Backed by a single {@link ObjectMapper}; defaults to {@link ObjectMapper#shared()}.
+ * <p>Backed by a single {@link ObjectMapper}; the no-arg constructor reads
+ * {@link Fastjson3MapperHolder#get()}.
  *
- * <p><b>Custom mapper note</b>: when JAX-RS auto-discovery instantiates
- * this provider via {@code @Provider} classpath scan, the no-arg
- * constructor runs and {@link ObjectMapper#shared()} is used. The
- * Spring-managed {@code fastjson3ObjectMapper} bean does not propagate
- * here. To inject a configured mapper, register an instance manually:
+ * <p><b>Mapper resolution</b>: when JAX-RS auto-discovery instantiates this
+ * provider via {@code @Provider} classpath scan, the no-arg constructor
+ * runs and reads from {@link Fastjson3MapperHolder}. In a Spring Boot app
+ * the holder is populated by {@code Fastjson3ObjectMapperAutoConfiguration}
+ * with the resolved {@code fastjson3ObjectMapper} bean, so
+ * {@code spring.fastjson3.*} settings propagate to provider instances Spring
+ * never sees. Outside Spring, the holder defaults to
+ * {@link ObjectMapper#shared()} unless the application explicitly calls
+ * {@link Fastjson3MapperHolder#set(ObjectMapper)} at startup. To register a
+ * specific mapper instance instead, do so manually:
  * <pre>{@code
  *   resourceConfig.register(new Fastjson3Provider(myCustomMapper));
  * }</pre>
