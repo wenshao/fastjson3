@@ -23,6 +23,16 @@
             </dependency>
             <dependency>
                 <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-geojson</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-grpc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
                 <artifactId>fastjson3-jaxrs-jakarta</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -58,6 +68,21 @@
             </dependency>
             <dependency>
                 <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-redisson</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-retrofit</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-solon</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
                 <artifactId>fastjson3-spring</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -69,6 +94,11 @@
             <dependency>
                 <groupId>com.alibaba.fastjson3</groupId>
                 <artifactId>fastjson3-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson3</groupId>
+                <artifactId>fastjson3-vertx</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>
