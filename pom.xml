@@ -46,6 +46,7 @@
         <module>core3-mybatis</module>
         <module>core3-redisson</module>
         <module>core3-retrofit</module>
+        <module>core3-solon</module>
         <module>core3-spring</module>
         <module>core3-spring-boot-autoconfigure</module>
         <module>core3-spring-boot-starter</module>
