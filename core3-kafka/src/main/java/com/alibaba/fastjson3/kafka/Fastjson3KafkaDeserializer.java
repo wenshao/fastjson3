@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.kafka;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.TypeReference;
 import org.apache.kafka.common.errors.SerializationException;
@@ -74,15 +75,15 @@ public class Fastjson3KafkaDeserializer<T> implements Deserializer<T> {
     private volatile Type targetType;
 
     public Fastjson3KafkaDeserializer() {
-        this((Type) null, ObjectMapper.shared());
+        this((Type) null, Fastjson3MapperHolder.get());
     }
 
     public Fastjson3KafkaDeserializer(Class<T> targetType) {
-        this((Type) targetType, ObjectMapper.shared());
+        this((Type) targetType, Fastjson3MapperHolder.get());
     }
 
     public Fastjson3KafkaDeserializer(TypeReference<T> targetType) {
-        this(unwrap(targetType), ObjectMapper.shared());
+        this(unwrap(targetType), Fastjson3MapperHolder.get());
     }
 
     public Fastjson3KafkaDeserializer(Class<T> targetType, ObjectMapper mapper) {

@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.grpc;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.TypeReference;
 import io.grpc.MethodDescriptor;
@@ -43,11 +44,11 @@ public class Fastjson3JsonMarshaller<T> implements MethodDescriptor.Marshaller<T
     private final Type targetType;
 
     public Fastjson3JsonMarshaller(Class<T> targetType) {
-        this(targetType, ObjectMapper.shared());
+        this(targetType, Fastjson3MapperHolder.get());
     }
 
     public Fastjson3JsonMarshaller(TypeReference<T> targetType) {
-        this(unwrap(targetType), ObjectMapper.shared());
+        this(unwrap(targetType), Fastjson3MapperHolder.get());
     }
 
     public Fastjson3JsonMarshaller(Class<T> targetType, ObjectMapper mapper) {

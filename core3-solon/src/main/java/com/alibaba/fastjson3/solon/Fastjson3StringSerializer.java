@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.solon;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.ObjectMapper;
 import org.noear.solon.core.convert.Converter;
@@ -36,7 +37,7 @@ public class Fastjson3StringSerializer implements EntityStringSerializer {
     private final Map<Class<?>, Converter<?, Object>> encoders = new ConcurrentHashMap<>();
 
     public Fastjson3StringSerializer() {
-        this(ObjectMapper.shared());
+        this(Fastjson3MapperHolder.get());
     }
 
     public Fastjson3StringSerializer(ObjectMapper mapper) {

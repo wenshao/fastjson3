@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.jaxrs.jakarta;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.Produces;
@@ -75,7 +76,7 @@ public class Fastjson3Provider
     private final Class<?>[] allowList;
 
     public Fastjson3Provider() {
-        this(ObjectMapper.shared(), null);
+        this(Fastjson3MapperHolder.get(), null);
     }
 
     public Fastjson3Provider(ObjectMapper mapper) {

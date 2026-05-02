@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.mybatis;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.TypeReference;
 import org.apache.ibatis.type.BaseTypeHandler;
@@ -69,11 +70,11 @@ public abstract class Fastjson3JsonTypeHandler<T> extends BaseTypeHandler<T> {
     private final Type targetType;
 
     protected Fastjson3JsonTypeHandler(Class<T> targetType) {
-        this(targetType, ObjectMapper.shared());
+        this(targetType, Fastjson3MapperHolder.get());
     }
 
     protected Fastjson3JsonTypeHandler(TypeReference<T> targetType) {
-        this(unwrap(targetType), ObjectMapper.shared());
+        this(unwrap(targetType), Fastjson3MapperHolder.get());
     }
 
     protected Fastjson3JsonTypeHandler(Class<T> targetType, ObjectMapper mapper) {

@@ -1,6 +1,8 @@
 package com.alibaba.fastjson3.spring.boot.autoconfigure;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -22,6 +24,18 @@ import org.springframework.context.annotation.Bean;
  * three identical mapper instances — non-trivial heap footprint per app.
  * Extracting the mapper as a bean collapses to one instance and gives
  * users the canonical override pattern.</p>
+ *
+ * <p><b>Why install into {@link Fastjson3MapperHolder}</b>: Spring DI
+ * cannot reach the ecosystem converters that frameworks instantiate
+ * themselves — Hibernate {@code @Convert(converter=Class)}, MyBatis
+ * {@code TypeHandlerRegistry}, Kafka {@code VALUE_DESERIALIZER_CLASS_CONFIG}
+ * (FQCN string), Jersey {@code @Provider} classpath scan, Vert.x
+ * {@code JsonFactory} ServiceLoader, Retrofit programmatic factory,
+ * gRPC per-method marshaller. Each of those calls {@code Fastjson3MapperHolder.get()}
+ * in its no-arg ctor, so installing the Spring-resolved mapper into the
+ * holder is what propagates a Spring user's {@code spring.fastjson3.*}
+ * configuration (or their own {@code ObjectMapper} bean) to converters
+ * Spring never sees.</p>
  */
 @AutoConfiguration
 @ConditionalOnClass(ObjectMapper.class)
@@ -43,5 +57,21 @@ public class Fastjson3ObjectMapperAutoConfiguration {
     @ConditionalOnMissingBean
     public ObjectMapper fastjson3ObjectMapper(Fastjson3Properties properties) {
         return properties.buildObjectMapper();
+    }
+
+    /**
+     * Publishes the resolved {@link ObjectMapper} — ours or a user override —
+     * into {@link Fastjson3MapperHolder} as the JVM-wide default for
+     * framework-instantiated converters that bypass Spring DI.
+     *
+     * <p>Uses {@link SmartInitializingSingleton} so installation runs after
+     * all singleton beans are constructed but before
+     * {@code ContextRefreshedEvent} fires — early enough for
+     * {@code @PostConstruct} hooks (e.g. JPA {@code EntityManagerFactory}
+     * bootstrap) to see the configured mapper.</p>
+     */
+    @Bean
+    SmartInitializingSingleton fastjson3MapperHolderInstaller(ObjectMapper fastjson3ObjectMapper) {
+        return () -> Fastjson3MapperHolder.set(fastjson3ObjectMapper);
     }
 }

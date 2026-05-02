@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.jpa.jakarta;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.TypeReference;
 import jakarta.persistence.AttributeConverter;
@@ -63,11 +64,11 @@ public abstract class Fastjson3JsonAttributeConverter<T> implements AttributeCon
     private final Type targetType;
 
     protected Fastjson3JsonAttributeConverter(Class<T> targetType) {
-        this(targetType, ObjectMapper.shared());
+        this(targetType, Fastjson3MapperHolder.get());
     }
 
     protected Fastjson3JsonAttributeConverter(TypeReference<T> targetType) {
-        this(unwrap(targetType), ObjectMapper.shared());
+        this(unwrap(targetType), Fastjson3MapperHolder.get());
     }
 
     protected Fastjson3JsonAttributeConverter(Class<T> targetType, ObjectMapper mapper) {
