@@ -103,4 +103,38 @@ class Fastjson3RedissonCodecTest {
         ByteBuf bad = Unpooled.wrappedBuffer("not json".getBytes());
         assertThrows(IOException.class, () -> codec.getValueDecoder().decode(bad, new State()));
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void mapKeyEncoderDelegatesToStringCodec() throws IOException {
+        // Locks in the RMap<String, T> key compatibility fix: map keys must
+        // wire raw (not JSON-quoted), matching Redisson's StringCodec
+        // convention so keys are interoperable across codecs.
+        Fastjson3RedissonCodec<Event> codec = new Fastjson3RedissonCodec<>(Event.class);
+        ByteBuf encoded = codec.getMapKeyEncoder().encode("foo");
+        try {
+            // StringCodec writes raw UTF-8 with no JSON quotes
+            String wire = encoded.toString(io.netty.util.CharsetUtil.UTF_8);
+            assertEquals("foo", wire);
+        } finally {
+            encoded.release();
+        }
+
+        ByteBuf forDecode = Unpooled.wrappedBuffer("foo".getBytes());
+        Object decoded = codec.getMapKeyDecoder().decode(forDecode, new State());
+        assertEquals("foo", decoded);
+    }
+
+    @Test
+    void mapKeyEncoderIsStringCodecInstance() {
+        // Confirm we delegate to Redisson's StringCodec rather than rolling
+        // our own — guards against silent regression if the override is
+        // accidentally removed.
+        Fastjson3RedissonCodec<Event> codec = new Fastjson3RedissonCodec<>(Event.class);
+        org.redisson.client.codec.StringCodec stringCodec = org.redisson.client.codec.StringCodec.INSTANCE;
+        org.junit.jupiter.api.Assertions.assertSame(
+                stringCodec.getMapKeyEncoder(), codec.getMapKeyEncoder());
+        org.junit.jupiter.api.Assertions.assertSame(
+                stringCodec.getMapKeyDecoder(), codec.getMapKeyDecoder());
+    }
 }
