@@ -143,11 +143,17 @@ class Fastjson3StringSerializerTest {
 
     @Test
     void noArgCtorReadsFromHolder() {
-        // Pin the load-bearing PR #171 contract: ecosystem modules' no-arg
-        // ctor reads `Fastjson3MapperHolder.get()` instead of
-        // `ObjectMapper.shared()`. Verifying this on `Fastjson3StringSerializer`
-        // covers the same code path the other 11 ecosystem modules took
-        // (none of which expose a public mapper accessor for direct testing).
+        // Pin the load-bearing PR #171 contract for this module
+        // specifically: `Fastjson3StringSerializer`'s no-arg ctor reads
+        // `Fastjson3MapperHolder.get()` instead of `ObjectMapper.shared()`.
+        //
+        // The other 11 ecosystem modules (jaxrs jakarta+javax, jpa
+        // jakarta+javax, kafka serializer + deserializer, mybatis, vertx,
+        // retrofit, grpc, redisson) each have their own independent no-arg
+        // ctor calling the holder. None exposes a public mapper accessor,
+        // so this test does NOT prove their behavior — it only structurally
+        // backstops the pattern, paired with grep-level confirmation in
+        // PR #171's cross-module audit.
         ObjectMapper custom = ObjectMapper.builder().build();
         Fastjson3MapperHolder.set(custom);
         Fastjson3StringSerializer s = new Fastjson3StringSerializer();

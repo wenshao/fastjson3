@@ -49,17 +49,21 @@ import java.lang.reflect.Type;
  * subclass passes to {@code super(...)} — which defaults to
  * {@link Fastjson3MapperHolder#get()}. In a Spring Boot app the holder is
  * populated by {@code Fastjson3ObjectMapperAutoConfiguration} with the
- * resolved {@code fastjson3ObjectMapper} bean, so {@code spring.fastjson3.*}
+ * resolved {@link ObjectMapper} bean, so {@code spring.fastjson3.*}
  * settings propagate to JPA-managed converters. Outside Spring the holder
  * defaults to {@link ObjectMapper#shared()} unless the application
  * explicitly calls {@link Fastjson3MapperHolder#set(ObjectMapper)} at
  * startup. <b>Ordering caveat</b>: the holder is published when the Spring
  * {@code ObjectMapper} bean finishes initializing; if your
- * {@code EntityManagerFactory} bean does not depend on
- * {@code fastjson3ObjectMapper}, declare
- * {@code @DependsOn("fastjson3ObjectMapper")} on it so JPA bootstrap reads
- * the configured mapper rather than the default. To pin a specific mapper
- * regardless of context, hardcode it in the subclass:
+ * {@code EntityManagerFactory} bean does not transitively depend on the
+ * {@link ObjectMapper} bean, declare {@code @DependsOn} pointing at the
+ * actual mapper bean name on it ({@code "fastjson3ObjectMapper"} for the
+ * auto-config default, or your own bean's name when you supply a custom
+ * mapper that suppresses the auto-config via
+ * {@link org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean})
+ * so JPA bootstrap reads the configured mapper rather than the default.
+ * To pin a specific mapper regardless of context, hardcode it in the
+ * subclass:
  * <pre>{@code
  *   public class TagsConverter extends Fastjson3JsonAttributeConverter<List<String>> {
  *       public TagsConverter() {

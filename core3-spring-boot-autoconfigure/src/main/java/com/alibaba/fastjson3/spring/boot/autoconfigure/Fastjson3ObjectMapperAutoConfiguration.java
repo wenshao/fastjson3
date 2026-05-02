@@ -77,9 +77,21 @@ public class Fastjson3ObjectMapperAutoConfiguration {
      * its own initialization can still see the default {@code shared()}
      * mapper if Spring constructs it before our mapper bean. JPA
      * {@code LocalContainerEntityManagerFactoryBean} is the prototypical
-     * example. To guarantee ordering in those cases, declare
-     * {@code @DependsOn("fastjson3ObjectMapper")} on the bean that triggers
-     * the framework converter instantiation.</p>
+     * example. To guarantee ordering, declare {@code @DependsOn} on the
+     * bean that triggers the framework converter instantiation, pointing at
+     * the actual {@link ObjectMapper} bean name —
+     * {@code "fastjson3ObjectMapper"} for the auto-config default, or the
+     * user's bean name when {@link ConditionalOnMissingBean} suppresses the
+     * auto-config in favor of a user-supplied mapper.</p>
+     *
+     * <p><b>Multi-mapper caveat</b>: if the application defines multiple
+     * fastjson3 {@link ObjectMapper} beans (rare; e.g. {@code @Primary} +
+     * a secondary), this {@link BeanPostProcessor} fires for each one and
+     * the holder ends up pointing at whichever Spring instantiated last.
+     * Spring's bean instantiation order is not contractually specified —
+     * for deterministic behavior, define a single {@link ObjectMapper}
+     * bean, or call {@link Fastjson3MapperHolder#set(ObjectMapper)}
+     * explicitly after context refresh to pin the desired one.</p>
      *
      * <p>Declared {@code static} per Spring's
      * {@link BeanPostProcessor} contract — it must be instantiable without
