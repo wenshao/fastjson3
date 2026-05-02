@@ -1,3 +1,4 @@
 com.alibaba.fastjson3.spring.boot.autoconfigure.Fastjson3ObjectMapperAutoConfiguration
 com.alibaba.fastjson3.spring.boot.autoconfigure.Fastjson3HttpMessageConverterAutoConfiguration
 com.alibaba.fastjson3.spring.boot.autoconfigure.Fastjson3JsonCodecAutoConfiguration
+com.alibaba.fastjson3.spring.boot.autoconfigure.Fastjson3GeoJsonAutoConfiguration

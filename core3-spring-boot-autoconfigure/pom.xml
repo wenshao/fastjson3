@@ -39,6 +39,12 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.alibaba.fastjson3</groupId>
+            <artifactId>fastjson3-geojson</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-web</artifactId>
             <version>6.1.14</version>
@@ -60,6 +66,22 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
             <version>${spring.boot.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-mongodb</artifactId>
+            <!-- 4.2.x targets Spring Framework 6.1.x — matches the rest of
+                 this module's spring-* baseline. The geojson module pins
+                 4.0.0 for downstream consumer compatibility (4.0/4.1
+                 deployments stay supported), but here at provided scope
+                 we only need it for @ConditionalOnClass at compile time
+                 and to drive the auto-config integration test. Using
+                 4.0.0 here downgrades spring-tx to 6.0.0 transitively,
+                 which removes ConfigurableTransactionManager and breaks
+                 Boot 3.3's TransactionManagerCustomizationAutoConfiguration
+                 in the StarterServletTest. -->
+            <version>4.2.0</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
