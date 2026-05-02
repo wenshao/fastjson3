@@ -59,16 +59,13 @@ public class Fastjson3JsonCodec implements JsonCodec {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public <T> T fromValue(Object json, Class<T> toValueType) {
         if (json == null) {
             return null;
         }
-        if (toValueType.isInstance(json)) {
-            return (T) json;
-        }
-        // Fall back to round-trip through string for shape conversions
-        // (e.g. Map -> POJO, List -> POJO collection).
+        // Always round-trip through JSON — matches Jackson's
+        // ObjectMapper.convertValue contract (defensive copy, no identity
+        // passthrough). Mutating the result will not affect the source.
         try {
             return mapper.readValue(mapper.writeValueAsString(json), toValueType);
         } catch (JSONException ex) {

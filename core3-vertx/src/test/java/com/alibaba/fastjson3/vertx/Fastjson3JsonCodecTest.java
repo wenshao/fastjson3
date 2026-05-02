@@ -62,11 +62,17 @@ class Fastjson3JsonCodecTest {
     }
 
     @Test
-    void fromValueShortCircuitWhenAlreadyTargetType() {
+    void fromValueRoundTripsEvenWhenAlreadyTargetType() {
+        // Matches Jackson's ObjectMapper.convertValue contract: always
+        // round-trip through JSON, never identity-passthrough. Mutating the
+        // result must not affect the source.
         Fastjson3JsonCodec codec = new Fastjson3JsonCodec();
         Event src = new Event("s", 9);
         Event back = codec.fromValue(src, Event.class);
-        assertEquals(src, back); // identity
+        // Same shape, different instance
+        assertEquals("s", back.id);
+        assertEquals(9, back.value);
+        org.junit.jupiter.api.Assertions.assertNotSame(src, back);
     }
 
     @Test
@@ -109,15 +115,26 @@ class Fastjson3JsonCodecTest {
     }
 
     @Test
-    void unencodableObjectThrowsEncodeException() {
-        Fastjson3JsonCodec codec = new Fastjson3JsonCodec();
-        // Self-referencing without ReferenceDetection enabled → StackOverflowError
-        // wrapped as EncodeException. Use a simpler unencodable: a class with
-        // no public fields/getters returns "{}" — not exception. Skip this
-        // edge case; stub instead.
-        // Smoke: factory provides a codec via SPI
-        assertNotNull(new Fastjson3JsonFactory().codec());
-        assertEquals(100, new Fastjson3JsonFactory().order());
+    void factoryMetadata() {
+        // SPI contract: order() = 100 (wins over Jackson default 0),
+        // codec() returns a non-null Fastjson3JsonCodec.
+        Fastjson3JsonFactory factory = new Fastjson3JsonFactory();
+        assertNotNull(factory.codec());
+        assertEquals(100, factory.order());
+        org.junit.jupiter.api.Assertions.assertInstanceOf(Fastjson3JsonCodec.class, factory.codec());
+    }
+
+    @Test
+    void serviceLoaderRegistration() throws Exception {
+        // Verify META-INF/services/io.vertx.core.spi.JsonFactory references
+        // our factory class — drift between rename + service file is silent.
+        java.io.InputStream resource = Fastjson3JsonCodecTest.class
+                .getResourceAsStream("/META-INF/services/io.vertx.core.spi.JsonFactory");
+        assertNotNull(resource, "ServiceLoader registration file missing");
+        try (resource) {
+            String content = new String(resource.readAllBytes()).trim();
+            assertEquals("com.alibaba.fastjson3.vertx.Fastjson3JsonFactory", content);
+        }
     }
 
     @Test

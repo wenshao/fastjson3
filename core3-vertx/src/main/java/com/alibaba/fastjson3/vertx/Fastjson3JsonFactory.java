@@ -11,9 +11,10 @@ import io.vertx.core.spi.json.JsonCodec;
  *
  * <p>Vert.x picks the {@link JsonFactory} with the highest {@link #order()}.
  * The default Jackson factory shipped with vertx-core uses {@code 0}; this
- * factory uses {@code 100} so fastjson3 wins by default. If users explicitly
- * want Jackson back, they can set the {@code vertx.json.codec} system property
- * to a factory class name.
+ * factory uses {@code 100} so fastjson3 wins by default. To opt back to
+ * Jackson, exclude this artifact from the classpath, or register a
+ * higher-priority {@link JsonFactory} via your own
+ * {@code META-INF/services/io.vertx.core.spi.JsonFactory}.
  */
 public class Fastjson3JsonFactory implements JsonFactory {
     @Override
