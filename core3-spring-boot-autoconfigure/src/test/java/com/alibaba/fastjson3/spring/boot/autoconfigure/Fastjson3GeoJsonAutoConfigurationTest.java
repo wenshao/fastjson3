@@ -31,24 +31,36 @@ class Fastjson3GeoJsonAutoConfigurationTest {
     void registersGeoJsonModule_onAutoConfigMapper() {
         runner.run(ctx -> {
             ObjectMapper mapper = ctx.getBean(ObjectMapper.class);
-            // Pre-registration the auto-config mapper would emit GeoJsonPoint
-            // via the default Spring-data Point writer (which fastjson3 has
-            // none for, so it would fall back to bean serialization with x/y).
-            // Post-registration we expect the canonical GeoJSON shape.
+            assertThat(mapper)
+                    .as("auto-config mapper must be a fresh instance, not shared() — "
+                            + "registration on shared would mutate the JVM-global mapper")
+                    .isNotSameAs(ObjectMapper.shared());
+            // Post-registration we expect the canonical GeoJSON shape:
+            // ONLY {type, coordinates} — the default bean serializer
+            // would also emit x/y fields, so their absence proves the
+            // custom writer is firing.
             String json = mapper.writeValueAsString(new GeoJsonPoint(1.0, 2.0));
             assertThat(json)
                     .as("GeoJsonPoint must serialize to canonical {type, coordinates}")
                     .contains("\"type\":\"Point\"")
-                    .contains("\"coordinates\":[1.0,2.0]");
+                    .contains("\"coordinates\":[1.0,2.0]")
+                    .doesNotContain("\"x\":")
+                    .doesNotContain("\"y\":");
         });
     }
 
     @Test
     void registrationVisibleViaHolder() {
         runner.run(ctx -> {
-            // The holder mapper is the same instance Spring resolved, so the
-            // GeoJSON writer registration is observable through the path
-            // framework-instantiated converters use.
+            ObjectMapper bean = ctx.getBean(ObjectMapper.class);
+            // Holder must publish the fresh, geojson-mutated bean — not
+            // the default ObjectMapper.shared(). If the BeanPostProcessor
+            // installer (PR #171) failed to fire, holder would still be
+            // shared() and this assertion would fail.
+            assertThat(Fastjson3MapperHolder.get())
+                    .as("holder must hold the geojson-registered fresh instance")
+                    .isSameAs(bean)
+                    .isNotSameAs(ObjectMapper.shared());
             String json = Fastjson3MapperHolder.get()
                     .writeValueAsString(new GeoJsonPoint(3.0, 4.0));
             assertThat(json).contains("\"type\":\"Point\"")
@@ -60,7 +72,8 @@ class Fastjson3GeoJsonAutoConfigurationTest {
     void customMapperGetsRegistration() {
         // With spring.fastjson3.date-format set, the auto-config builds
         // a distinct (non-shared) mapper. Verify geojson registration
-        // still lands on the resolved mapper bean — not just on shared.
+        // still lands on the resolved mapper bean and the date-format
+        // setting is preserved (registration is purely additive).
         runner.withPropertyValues("spring.fastjson3.date-format=yyyy-MM-dd")
                 .run(ctx -> {
                     ObjectMapper bean = ctx.getBean(ObjectMapper.class);
@@ -69,5 +82,32 @@ class Fastjson3GeoJsonAutoConfigurationTest {
                             .contains("\"type\":\"Point\"")
                             .contains("\"coordinates\":[7.0,8.0]");
                 });
+    }
+
+    @Test
+    void sharedMapperUnaffected() {
+        // The buildObjectMapper "always fresh" contract guarantees the
+        // JVM-global ObjectMapper.shared() never sees geojson registration,
+        // even after the auto-config has run. Pin the boundary — if a
+        // future change re-introduces the shared-singleton optimization,
+        // this test fails.
+        //
+        // Note: GeoJsonPoint inherently has 'type', 'coordinates', 'x', 'y'
+        // bean properties, so the default fastjson3 bean serializer emits
+        // all four. The custom geojson writer collapses to {type,
+        // coordinates} ONLY. Assert on the presence of bean-only fields
+        // (x, y) — they're absent from the canonical writer's output but
+        // present in the default bean serializer's output.
+        runner.run(ctx -> {
+            ctx.getBean(ObjectMapper.class);
+            String sharedJson = ObjectMapper.shared()
+                    .writeValueAsString(new GeoJsonPoint(9.0, 10.0));
+            assertThat(sharedJson)
+                    .as("ObjectMapper.shared() must keep default bean serialization "
+                            + "(x/y fields present) — geojson writer registration "
+                            + "would suppress those")
+                    .contains("\"x\":9.0")
+                    .contains("\"y\":10.0");
+        });
     }
 }

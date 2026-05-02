@@ -49,9 +49,11 @@ public class Fastjson3ObjectMapperAutoConfiguration {
      * has no effect — the user is responsible for any desired format
      * configuration on their mapper.
      *
-     * <p>When no property is set and no user mapper exists, returns
-     * {@link ObjectMapper#shared()} — alloc-equivalent to the
-     * pre-property no-arg constructor path; no per-app mapper allocation.</p>
+     * <p>Always a fresh per-app instance, never {@link ObjectMapper#shared()}
+     * — see {@link Fastjson3Properties#buildObjectMapper()}. Module
+     * auto-configurations (e.g. {@code Fastjson3GeoJsonAutoConfiguration})
+     * may mutate the bean by registering readers/writers; isolation from
+     * the JVM-global shared mapper depends on this contract.</p>
      */
     @Bean
     @ConditionalOnMissingBean

@@ -7,9 +7,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * External configuration for the fastjson3 Spring Boot starter,
  * mirroring the pattern of {@code spring.jackson.*}.
  *
- * <p>All properties are optional; when unset, the starter uses
- * {@link ObjectMapper#shared()} for the registered converter / codec
- * beans (the pre-property behavior).</p>
+ * <p>All properties are optional; with none set, the starter still
+ * builds a fresh per-app {@link ObjectMapper} that behaves identically
+ * to {@link ObjectMapper#shared()} for serialization but is a distinct
+ * instance — so add-on auto-configurations (e.g.
+ * {@code Fastjson3GeoJsonAutoConfiguration}) can register
+ * readers/writers locally on it without mutating the JVM-global
+ * {@link ObjectMapper#shared()} instance.</p>
  *
  * <p><b>Properties</b>:</p>
  * <ul>
@@ -44,16 +48,17 @@ public class Fastjson3Properties {
 
     /**
      * Build an {@link ObjectMapper} reflecting the configured properties.
-     * Returns {@link ObjectMapper#shared()} when no property is set, so
-     * users with no {@code spring.fastjson3.*} config keep the default
-     * shared mapper (no per-app allocation overhead).
+     * Always returns a fresh instance (never {@link ObjectMapper#shared()}),
+     * so module auto-configurations that register readers/writers on the
+     * resolved bean — {@code Fastjson3GeoJsonAutoConfiguration} being the
+     * first such case — cannot accidentally mutate the JVM-global shared
+     * mapper. The per-app allocation cost is one mapper instance.
      */
     ObjectMapper buildObjectMapper() {
-        if (dateFormat == null || dateFormat.isEmpty()) {
-            return ObjectMapper.shared();
+        ObjectMapper.Builder builder = ObjectMapper.builder();
+        if (dateFormat != null && !dateFormat.isEmpty()) {
+            builder.dateFormat(dateFormat);
         }
-        return ObjectMapper.builder()
-                .dateFormat(dateFormat)
-                .build();
+        return builder.build();
     }
 }
