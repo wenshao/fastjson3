@@ -5,7 +5,12 @@ import com.alibaba.fastjson3.ObjectMapper;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.EncodeException;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.spi.json.JsonCodec;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * Vert.x {@link JsonCodec} backed by fastjson3. Wired in via
@@ -40,7 +45,8 @@ public class Fastjson3JsonCodec implements JsonCodec {
             return null;
         }
         try {
-            return mapper.readValue(json, clazz);
+            Object result = mapper.readValue(json, clazz);
+            return clazz.cast(clazz == Object.class ? adapt(result) : result);
         } catch (JSONException ex) {
             throw new DecodeException("Failed to decode JSON: " + ex.getMessage(), ex);
         }
@@ -52,7 +58,8 @@ public class Fastjson3JsonCodec implements JsonCodec {
             return null;
         }
         try {
-            return mapper.readValue(json.getBytes(), clazz);
+            Object result = mapper.readValue(json.getBytes(), clazz);
+            return clazz.cast(clazz == Object.class ? adapt(result) : result);
         } catch (JSONException ex) {
             throw new DecodeException("Failed to decode JSON: " + ex.getMessage(), ex);
         }
@@ -75,13 +82,14 @@ public class Fastjson3JsonCodec implements JsonCodec {
 
     @Override
     public String toString(Object object, boolean pretty) throws EncodeException {
+        Object value = unwrap(object);
         try {
             if (pretty) {
                 return mapper.writer()
                         .with(com.alibaba.fastjson3.WriteFeature.PrettyFormat)
-                        .writeValueAsString(object);
+                        .writeValueAsString(value);
             }
-            return mapper.writeValueAsString(object);
+            return mapper.writeValueAsString(value);
         } catch (JSONException ex) {
             throw new EncodeException("Failed to encode JSON: " + ex.getMessage(), ex);
         }
@@ -89,18 +97,40 @@ public class Fastjson3JsonCodec implements JsonCodec {
 
     @Override
     public Buffer toBuffer(Object object, boolean pretty) throws EncodeException {
+        Object value = unwrap(object);
         try {
             byte[] bytes;
             if (pretty) {
                 bytes = mapper.writer()
                         .with(com.alibaba.fastjson3.WriteFeature.PrettyFormat)
-                        .writeValueAsBytes(object);
+                        .writeValueAsBytes(value);
             } else {
-                bytes = mapper.writeValueAsBytes(object);
+                bytes = mapper.writeValueAsBytes(value);
             }
             return Buffer.buffer(bytes);
         } catch (JSONException ex) {
             throw new EncodeException("Failed to encode JSON: " + ex.getMessage(), ex);
         }
+    }
+
+    private static Object unwrap(Object object) {
+        if (object instanceof JsonObject jo) {
+            return jo.getMap();
+        }
+        if (object instanceof JsonArray ja) {
+            return ja.getList();
+        }
+        return object;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object adapt(Object value) {
+        if (value instanceof Map) {
+            return new JsonObject((Map<String, Object>) value);
+        }
+        if (value instanceof List) {
+            return new JsonArray((List<?>) value);
+        }
+        return value;
     }
 }
