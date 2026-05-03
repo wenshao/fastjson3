@@ -47,7 +47,13 @@ jobs:
           cache: 'maven'
 
       - name: Build & Test
-        run: mvn -B -T 1C clean test --file pom.xml
+        # `-T 1C` was previously used for ~25% wall-clock speedup but
+        # exposed a race in kotlin-maven-plugin 2.1.20's bundled IntelliJ
+        # PathManager initialization that intermittently fails with
+        # "Could not find installation home path" (~60% failure rate
+        # across 2026-05-02 runs). Run serial — small reactor, kotlin
+        # module is the long pole anyway.
+        run: mvn -B clean test --file pom.xml
 
       - name: Verify coverage report
         if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
