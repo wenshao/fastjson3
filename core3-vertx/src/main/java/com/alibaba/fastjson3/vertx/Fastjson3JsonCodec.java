@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.vertx;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.ObjectMapper;
 import io.vertx.core.buffer.Buffer;
@@ -29,7 +30,7 @@ public class Fastjson3JsonCodec implements JsonCodec {
     private final ObjectMapper mapper;
 
     public Fastjson3JsonCodec() {
-        this(ObjectMapper.shared());
+        this(Fastjson3MapperHolder.get());
     }
 
     public Fastjson3JsonCodec(ObjectMapper mapper) {

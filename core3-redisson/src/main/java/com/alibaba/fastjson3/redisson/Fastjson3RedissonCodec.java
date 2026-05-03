@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.redisson;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.TypeReference;
 import io.netty.buffer.ByteBuf;
@@ -53,11 +54,11 @@ public class Fastjson3RedissonCodec<T> extends BaseCodec {
     private final Decoder<Object> decoder;
 
     public Fastjson3RedissonCodec(Class<T> targetType) {
-        this(targetType, ObjectMapper.shared());
+        this(targetType, Fastjson3MapperHolder.get());
     }
 
     public Fastjson3RedissonCodec(TypeReference<T> targetType) {
-        this(unwrap(targetType), ObjectMapper.shared());
+        this(unwrap(targetType), Fastjson3MapperHolder.get());
     }
 
     public Fastjson3RedissonCodec(Class<T> targetType, ObjectMapper mapper) {

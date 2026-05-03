@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.jpa.javax;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.TypeReference;
 
@@ -41,11 +42,24 @@ import java.lang.reflect.Type;
  * {@code null}, accommodating databases that canonicalize empty TEXT to {@code ""}
  * rather than {@code NULL}.
  *
- * <p><b>Custom mapper note</b>: Hibernate instantiates the subclass via no-arg
- * constructor, so the mapper is whatever the subclass passes to
- * {@code super(...)}. The Spring-managed {@code fastjson3ObjectMapper} bean
- * does not propagate to JPA-managed converters — hardcode the mapper in the
- * subclass to use a configured one.
+ * <p><b>Mapper resolution</b>: Hibernate instantiates the subclass via the
+ * no-arg constructor, so the mapper is whatever the subclass passes to
+ * {@code super(...)} — which defaults to {@link Fastjson3MapperHolder#get()}.
+ * In a Spring Boot app the holder is populated by
+ * {@code Fastjson3ObjectMapperAutoConfiguration} with the resolved
+ * {@link ObjectMapper} bean, so {@code spring.fastjson3.*} settings
+ * propagate to JPA-managed converters. Outside Spring the holder defaults
+ * to {@link ObjectMapper#shared()} unless the application explicitly calls
+ * {@link Fastjson3MapperHolder#set(ObjectMapper)} at startup.
+ * <b>Ordering caveat</b>: the holder is published when the Spring
+ * {@link ObjectMapper} bean finishes initializing; if your
+ * {@code EntityManagerFactory} does not transitively depend on the
+ * {@link ObjectMapper} bean, declare {@code @DependsOn} pointing at the
+ * actual mapper bean name on it ({@code "fastjson3ObjectMapper"} for the
+ * auto-config default, or your own bean's name when you supply a custom
+ * mapper) so JPA bootstrap reads the configured mapper rather than the
+ * default. To pin a specific mapper regardless of context, hardcode it in
+ * the subclass.
  *
  * @param <T> the entity attribute type
  */
@@ -54,11 +68,11 @@ public abstract class Fastjson3JsonAttributeConverter<T> implements AttributeCon
     private final Type targetType;
 
     protected Fastjson3JsonAttributeConverter(Class<T> targetType) {
-        this(targetType, ObjectMapper.shared());
+        this(targetType, Fastjson3MapperHolder.get());
     }
 
     protected Fastjson3JsonAttributeConverter(TypeReference<T> targetType) {
-        this(unwrap(targetType), ObjectMapper.shared());
+        this(unwrap(targetType), Fastjson3MapperHolder.get());
     }
 
     protected Fastjson3JsonAttributeConverter(Class<T> targetType, ObjectMapper mapper) {

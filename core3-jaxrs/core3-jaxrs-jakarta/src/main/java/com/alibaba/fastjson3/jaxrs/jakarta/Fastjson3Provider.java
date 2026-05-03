@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.jaxrs.jakarta;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.Produces;
@@ -31,17 +32,20 @@ import java.lang.reflect.Type;
  *   config.register(Fastjson3Provider.class);
  * }</pre>
  *
- * <p>Backed by a single {@link ObjectMapper}; defaults to {@link ObjectMapper#shared()}.
- * Pass a configured mapper through {@link #Fastjson3Provider(ObjectMapper)} to
- * customize features.
+ * <p>Backed by a single {@link ObjectMapper}; the no-arg constructor reads
+ * {@link Fastjson3MapperHolder#get()}. Pass a configured mapper through
+ * {@link #Fastjson3Provider(ObjectMapper)} to customize features per-instance.
  *
- * <p><b>Custom mapper note</b>: when JAX-RS auto-discovery instantiates this
+ * <p><b>Mapper resolution</b>: when JAX-RS auto-discovery instantiates this
  * provider via the {@code @Provider} classpath scan, the no-arg constructor
- * runs and {@link ObjectMapper#shared()} is used. The
- * {@code spring.fastjson3.*} properties wired by Boot's auto-configuration
- * customize the Spring-managed {@code fastjson3ObjectMapper} bean — that
- * bean does not propagate to providers instantiated outside the Spring
- * container. To inject a configured mapper, register an instance manually:
+ * runs and reads from {@link Fastjson3MapperHolder}. In a Spring Boot app
+ * the holder is populated by {@code Fastjson3ObjectMapperAutoConfiguration}
+ * with the resolved {@code fastjson3ObjectMapper} bean, so
+ * {@code spring.fastjson3.*} settings propagate to provider instances Spring
+ * never sees. Outside Spring, the holder defaults to
+ * {@link ObjectMapper#shared()} unless the application explicitly calls
+ * {@link Fastjson3MapperHolder#set(ObjectMapper)} at startup. To register a
+ * specific mapper instance instead, do so manually:
  * <pre>{@code
  *   resourceConfig.register(new Fastjson3Provider(myCustomMapper));
  * }</pre>
@@ -75,7 +79,7 @@ public class Fastjson3Provider
     private final Class<?>[] allowList;
 
     public Fastjson3Provider() {
-        this(ObjectMapper.shared(), null);
+        this(Fastjson3MapperHolder.get(), null);
     }
 
     public Fastjson3Provider(ObjectMapper mapper) {

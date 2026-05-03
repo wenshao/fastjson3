@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.jpa.jakarta;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.TypeReference;
 import jakarta.persistence.AttributeConverter;
@@ -43,11 +44,26 @@ import java.lang.reflect.Type;
  * rather than {@code NULL}. If your schema distinguishes the two, override
  * {@link #convertToEntityAttribute(String)}.
  *
- * <p><b>Custom mapper note</b>: Hibernate / EclipseLink instantiate the
- * subclass via no-arg constructor, so the mapper is whatever the subclass
- * passes to {@code super(...)}. The Spring-managed
- * {@code fastjson3ObjectMapper} bean does not propagate to JPA-managed
- * converters. To use a configured mapper, hardcode it in the subclass:
+ * <p><b>Mapper resolution</b>: Hibernate / EclipseLink instantiate the
+ * subclass via the no-arg constructor, so the mapper is whatever the
+ * subclass passes to {@code super(...)} — which defaults to
+ * {@link Fastjson3MapperHolder#get()}. In a Spring Boot app the holder is
+ * populated by {@code Fastjson3ObjectMapperAutoConfiguration} with the
+ * resolved {@link ObjectMapper} bean, so {@code spring.fastjson3.*}
+ * settings propagate to JPA-managed converters. Outside Spring the holder
+ * defaults to {@link ObjectMapper#shared()} unless the application
+ * explicitly calls {@link Fastjson3MapperHolder#set(ObjectMapper)} at
+ * startup. <b>Ordering caveat</b>: the holder is published when the Spring
+ * {@code ObjectMapper} bean finishes initializing; if your
+ * {@code EntityManagerFactory} bean does not transitively depend on the
+ * {@link ObjectMapper} bean, declare {@code @DependsOn} pointing at the
+ * actual mapper bean name on it ({@code "fastjson3ObjectMapper"} for the
+ * auto-config default, or your own bean's name when you supply a custom
+ * mapper that suppresses the auto-config via
+ * {@link org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean})
+ * so JPA bootstrap reads the configured mapper rather than the default.
+ * To pin a specific mapper regardless of context, hardcode it in the
+ * subclass:
  * <pre>{@code
  *   public class TagsConverter extends Fastjson3JsonAttributeConverter<List<String>> {
  *       public TagsConverter() {
@@ -63,11 +79,11 @@ public abstract class Fastjson3JsonAttributeConverter<T> implements AttributeCon
     private final Type targetType;
 
     protected Fastjson3JsonAttributeConverter(Class<T> targetType) {
-        this(targetType, ObjectMapper.shared());
+        this(targetType, Fastjson3MapperHolder.get());
     }
 
     protected Fastjson3JsonAttributeConverter(TypeReference<T> targetType) {
-        this(unwrap(targetType), ObjectMapper.shared());
+        this(unwrap(targetType), Fastjson3MapperHolder.get());
     }
 
     protected Fastjson3JsonAttributeConverter(Class<T> targetType, ObjectMapper mapper) {

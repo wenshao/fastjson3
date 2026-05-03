@@ -1,6 +1,8 @@
 package com.alibaba.fastjson3.spring.boot.autoconfigure;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -22,6 +24,18 @@ import org.springframework.context.annotation.Bean;
  * three identical mapper instances — non-trivial heap footprint per app.
  * Extracting the mapper as a bean collapses to one instance and gives
  * users the canonical override pattern.</p>
+ *
+ * <p><b>Why install into {@link Fastjson3MapperHolder}</b>: Spring DI
+ * cannot reach the ecosystem converters that frameworks instantiate
+ * themselves — Hibernate {@code @Convert(converter=Class)}, MyBatis
+ * {@code TypeHandlerRegistry}, Kafka {@code VALUE_DESERIALIZER_CLASS_CONFIG}
+ * (FQCN string), Jersey {@code @Provider} classpath scan, Vert.x
+ * {@code JsonFactory} ServiceLoader, Retrofit programmatic factory,
+ * gRPC per-method marshaller. Each of those calls {@code Fastjson3MapperHolder.get()}
+ * in its no-arg ctor, so installing the Spring-resolved mapper into the
+ * holder is what propagates a Spring user's {@code spring.fastjson3.*}
+ * configuration (or their own {@code ObjectMapper} bean) to converters
+ * Spring never sees.</p>
  */
 @AutoConfiguration
 @ConditionalOnClass(ObjectMapper.class)
@@ -43,5 +57,64 @@ public class Fastjson3ObjectMapperAutoConfiguration {
     @ConditionalOnMissingBean
     public ObjectMapper fastjson3ObjectMapper(Fastjson3Properties properties) {
         return properties.buildObjectMapper();
+    }
+
+    /**
+     * Publishes the resolved {@link ObjectMapper} — ours or a user override —
+     * into {@link Fastjson3MapperHolder} as the JVM-wide default for
+     * framework-instantiated converters that bypass Spring DI.
+     *
+     * <p>Implemented as a {@link BeanPostProcessor} so the holder is set the
+     * moment the {@link ObjectMapper} bean finishes initialization — earlier
+     * than {@code SmartInitializingSingleton} (which fires only after every
+     * singleton's {@code @PostConstruct} / {@code afterPropertiesSet} has
+     * run, which would be too late for the JPA {@code EntityManagerFactory}
+     * bootstrap that instantiates {@code @Convert}-annotated converters
+     * during its own {@code afterPropertiesSet}).</p>
+     *
+     * <p><b>Cross-bean ordering caveat</b>: a bean that does not depend on
+     * the fastjson3 {@link ObjectMapper} but does read the holder during
+     * its own initialization can still see the default {@code shared()}
+     * mapper if Spring constructs it before our mapper bean. JPA
+     * {@code LocalContainerEntityManagerFactoryBean} is the prototypical
+     * example. To guarantee ordering, declare {@code @DependsOn} on the
+     * bean that triggers the framework converter instantiation, pointing at
+     * the actual {@link ObjectMapper} bean name —
+     * {@code "fastjson3ObjectMapper"} for the auto-config default, or the
+     * user's bean name when {@link ConditionalOnMissingBean} suppresses the
+     * auto-config in favor of a user-supplied mapper.</p>
+     *
+     * <p><b>Multi-mapper caveat</b>: if the application defines multiple
+     * fastjson3 {@link ObjectMapper} beans (rare; e.g. {@code @Primary} +
+     * a secondary), this {@link BeanPostProcessor} fires for each one and
+     * the holder ends up pointing at whichever Spring instantiated last.
+     * Spring's bean instantiation order is not contractually specified.
+     * <b>Recommended</b>: define a single {@link ObjectMapper} bean.
+     * Post-context-refresh {@link Fastjson3MapperHolder#set(ObjectMapper)}
+     * calls are <em>not</em> a safe workaround — framework converters
+     * cache the mapper reference at their own construction time (JPA
+     * {@code AttributeConverter}s during
+     * {@code LocalContainerEntityManagerFactoryBean.afterPropertiesSet},
+     * which fires before {@code ContextRefreshedEvent}). A post-refresh
+     * pin updates the holder pointer but already-instantiated converters
+     * keep their captured reference. The only deterministic fix for an
+     * existing multi-mapper context is to converge to a single bean
+     * before any framework converter is instantiated.</p>
+     *
+     * <p>Declared {@code static} per Spring's
+     * {@link BeanPostProcessor} contract — it must be instantiable without
+     * the rest of the configuration class fully initialized.</p>
+     */
+    @Bean
+    static BeanPostProcessor fastjson3MapperHolderInstaller() {
+        return new BeanPostProcessor() {
+            @Override
+            public Object postProcessAfterInitialization(Object bean, String beanName) {
+                if (bean instanceof ObjectMapper) {
+                    Fastjson3MapperHolder.set((ObjectMapper) bean);
+                }
+                return bean;
+            }
+        };
     }
 }

@@ -1,7 +1,9 @@
 package com.alibaba.fastjson3.solon;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import com.alibaba.fastjson3.TypeReference;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.noear.solon.serialization.SerializerNames;
 
@@ -12,6 +14,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -130,5 +133,31 @@ class Fastjson3StringSerializerTest {
         String[] mappings = c.mappings();
         assertEquals(1, mappings.length);
         assertEquals(SerializerNames.AT_JSON, mappings[0]);
+    }
+
+    @AfterEach
+    void resetHolder() {
+        // Don't leak custom mappers into sibling tests in this JVM.
+        Fastjson3MapperHolder.reset();
+    }
+
+    @Test
+    void noArgCtorReadsFromHolder() {
+        // Pin the load-bearing PR #171 contract for this module
+        // specifically: `Fastjson3StringSerializer`'s no-arg ctor reads
+        // `Fastjson3MapperHolder.get()` instead of `ObjectMapper.shared()`.
+        //
+        // The other 11 ecosystem modules (jaxrs jakarta+javax, jpa
+        // jakarta+javax, kafka serializer + deserializer, mybatis, vertx,
+        // retrofit, grpc, redisson) each have their own independent no-arg
+        // ctor calling the holder. None exposes a public mapper accessor,
+        // so this test does NOT prove their behavior — it only structurally
+        // backstops the pattern, paired with grep-level confirmation in
+        // PR #171's cross-module audit.
+        ObjectMapper custom = ObjectMapper.builder().build();
+        Fastjson3MapperHolder.set(custom);
+        Fastjson3StringSerializer s = new Fastjson3StringSerializer();
+        assertSame(custom, s.getMapper(),
+                "no-arg ctor must read mapper from Fastjson3MapperHolder, not ObjectMapper.shared()");
     }
 }

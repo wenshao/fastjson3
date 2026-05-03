@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.kafka;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
 import org.apache.kafka.common.serialization.Serializer;
 
@@ -24,7 +25,7 @@ public class Fastjson3KafkaSerializer<T> implements Serializer<T> {
     private final ObjectMapper mapper;
 
     public Fastjson3KafkaSerializer() {
-        this(ObjectMapper.shared());
+        this(Fastjson3MapperHolder.get());
     }
 
     public Fastjson3KafkaSerializer(ObjectMapper mapper) {

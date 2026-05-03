@@ -1,5 +1,6 @@
 package com.alibaba.fastjson3.retrofit;
 
+import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.JSONException;
 import com.alibaba.fastjson3.ObjectMapper;
 import okhttp3.MediaType;
@@ -51,7 +52,7 @@ public class Fastjson3RetrofitConverterFactory extends Converter.Factory {
     }
 
     public static Fastjson3RetrofitConverterFactory create() {
-        return new Fastjson3RetrofitConverterFactory(ObjectMapper.shared());
+        return new Fastjson3RetrofitConverterFactory(Fastjson3MapperHolder.get());
     }
 
     public static Fastjson3RetrofitConverterFactory create(ObjectMapper mapper) {
