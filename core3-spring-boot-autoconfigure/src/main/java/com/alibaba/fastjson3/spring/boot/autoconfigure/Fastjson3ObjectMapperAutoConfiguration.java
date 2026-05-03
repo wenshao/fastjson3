@@ -88,10 +88,18 @@ public class Fastjson3ObjectMapperAutoConfiguration {
      * fastjson3 {@link ObjectMapper} beans (rare; e.g. {@code @Primary} +
      * a secondary), this {@link BeanPostProcessor} fires for each one and
      * the holder ends up pointing at whichever Spring instantiated last.
-     * Spring's bean instantiation order is not contractually specified —
-     * for deterministic behavior, define a single {@link ObjectMapper}
-     * bean, or call {@link Fastjson3MapperHolder#set(ObjectMapper)}
-     * explicitly after context refresh to pin the desired one.</p>
+     * Spring's bean instantiation order is not contractually specified.
+     * <b>Recommended</b>: define a single {@link ObjectMapper} bean.
+     * Post-context-refresh {@link Fastjson3MapperHolder#set(ObjectMapper)}
+     * calls are <em>not</em> a safe workaround — framework converters
+     * cache the mapper reference at their own construction time (JPA
+     * {@code AttributeConverter}s during
+     * {@code LocalContainerEntityManagerFactoryBean.afterPropertiesSet},
+     * which fires before {@code ContextRefreshedEvent}). A post-refresh
+     * pin updates the holder pointer but already-instantiated converters
+     * keep their captured reference. The only deterministic fix for an
+     * existing multi-mapper context is to converge to a single bean
+     * before any framework converter is instantiated.</p>
      *
      * <p>Declared {@code static} per Spring's
      * {@link BeanPostProcessor} contract — it must be instantiable without
