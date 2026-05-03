@@ -2,6 +2,7 @@ package com.alibaba.fastjson3.spring.boot.autoconfigure;
 
 import com.alibaba.fastjson3.Fastjson3MapperHolder;
 import com.alibaba.fastjson3.ObjectMapper;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -51,14 +52,21 @@ public class Fastjson3ObjectMapperAutoConfiguration {
      *
      * <p>Always a fresh per-app instance, never {@link ObjectMapper#shared()}
      * — see {@link Fastjson3Properties#buildObjectMapper()}. Module
-     * auto-configurations (e.g. {@code Fastjson3GeoJsonAutoConfiguration})
-     * may mutate the bean by registering readers/writers; isolation from
-     * the JVM-global shared mapper depends on this contract.</p>
+     * auto-configurations may mutate the bean by registering
+     * readers/writers via {@link Fastjson3MapperCustomizer} beans (see
+     * {@code Fastjson3GeoJsonAutoConfiguration}); customizers fire ONLY
+     * here, so user-supplied mappers (which suppress this {@code @Bean}
+     * via {@code @ConditionalOnMissingBean}) are never modified by us
+     * regardless of the user's bean name.</p>
      */
     @Bean
     @ConditionalOnMissingBean
-    public ObjectMapper fastjson3ObjectMapper(Fastjson3Properties properties) {
-        return properties.buildObjectMapper();
+    public ObjectMapper fastjson3ObjectMapper(
+            Fastjson3Properties properties,
+            ObjectProvider<Fastjson3MapperCustomizer> customizers) {
+        ObjectMapper mapper = properties.buildObjectMapper();
+        customizers.orderedStream().forEach(c -> c.customize(mapper));
+        return mapper;
     }
 
     /**
