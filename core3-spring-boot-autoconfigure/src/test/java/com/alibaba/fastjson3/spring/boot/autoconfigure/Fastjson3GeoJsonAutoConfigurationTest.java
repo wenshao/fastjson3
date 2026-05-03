@@ -77,24 +77,41 @@ class Fastjson3GeoJsonAutoConfigurationTest {
 
     @Test
     void userSuppliedMapper_isNotMutated() {
-        // When the user provides their own ObjectMapper bean (any name),
-        // @ConditionalOnMissingBean removes our auto-config bean. The
-        // geojson registrar BPP filters by bean name "fastjson3ObjectMapper"
-        // and silently skips the user's bean — preserving any custom
-        // ObjectWriter registrations the user already made and respecting
-        // the implicit "I'm taking control" signal of supplying their own
-        // mapper.
+        // When the user provides their own ObjectMapper bean,
+        // @ConditionalOnMissingBean suppresses the auto-config @Bean
+        // factory entirely — customizers run inside that factory, so
+        // the user's bean is untouched.
         runner.withUserConfiguration(UserMapperConfig.class).run(ctx -> {
             ObjectMapper bean = ctx.getBean(ObjectMapper.class);
             assertThat(bean).isSameAs(UserMapperConfig.USER);
-            // Default bean serializer output — proves no geojson writer
-            // was registered on the user mapper.
             String json = bean.writeValueAsString(new GeoJsonPoint(11.0, 12.0));
             assertThat(json)
                     .as("user-supplied mapper must keep default bean serialization "
-                            + "— geojson registrar must skip non-auto-config beans")
+                            + "— customizers must not run on user beans")
                     .contains("\"x\":11.0")
                     .contains("\"y\":12.0");
+        });
+    }
+
+    @Test
+    void userSuppliedMapperWithCanonicalName_isNotMutated() {
+        // R3 audit edge case: user names their bean
+        // "fastjson3ObjectMapper" — the canonical auto-config name.
+        // @ConditionalOnMissingBean still suppresses our @Bean factory
+        // (matches by type), so customizers don't run on the user's
+        // bean even though it shares the canonical name. A bean-name
+        // -keyed BPP fix would have failed here; the customizer pattern
+        // sidesteps the question entirely.
+        runner.withUserConfiguration(CanonicalNameUserMapperConfig.class).run(ctx -> {
+            ObjectMapper bean = ctx.getBean(ObjectMapper.class);
+            assertThat(bean).isSameAs(CanonicalNameUserMapperConfig.CANONICAL);
+            String json = bean.writeValueAsString(new GeoJsonPoint(13.0, 14.0));
+            assertThat(json)
+                    .as("user bean named 'fastjson3ObjectMapper' must still be "
+                            + "untouched — customizers fire inside the auto-config "
+                            + "factory, not against arbitrary beans of the same name")
+                    .contains("\"x\":13.0")
+                    .contains("\"y\":14.0");
         });
     }
 
@@ -105,6 +122,16 @@ class Fastjson3GeoJsonAutoConfigurationTest {
         @Bean
         ObjectMapper userMapper() {
             return USER;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class CanonicalNameUserMapperConfig {
+        static final ObjectMapper CANONICAL = ObjectMapper.builder().build();
+
+        @Bean(name = "fastjson3ObjectMapper")
+        ObjectMapper fastjson3ObjectMapper() {
+            return CANONICAL;
         }
     }
 
