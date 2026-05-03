@@ -128,11 +128,11 @@ class Fastjson3HttpMessageConverterAutoConfigurationTest {
     }
 
     @Test
-    void noDateFormatProperty_keepsSharedMapperBehavior() {
+    void noDateFormatProperty_emitsDefaultIso() {
         // No property set → Fastjson3Properties.buildObjectMapper returns
-        // ObjectMapper.shared() so the converter behaves identically to
-        // pre-property no-arg constructor (default ISO emit, time component
-        // preserved on a LocalDateTime).
+        // a fresh mapper with default settings (since PR #172 removed the
+        // shared-singleton optimization). Default behavior: ISO emit with
+        // the time component preserved on a LocalDateTime.
         servletRunner.run(ctx -> {
             Fastjson3HttpMessageConverter c =
                     ctx.getBean(Fastjson3HttpMessageConverter.class);

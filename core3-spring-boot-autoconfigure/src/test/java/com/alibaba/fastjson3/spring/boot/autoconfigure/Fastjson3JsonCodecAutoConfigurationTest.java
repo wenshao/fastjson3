@@ -259,7 +259,7 @@ class Fastjson3JsonCodecAutoConfigurationTest {
     }
 
     @Test
-    void noDateFormatProperty_encoder_keepsSharedMapperBehavior() {
+    void noDateFormatProperty_encoder_emitsDefaultIso() {
         reactiveRunner.run(ctx -> {
             Fastjson3JsonEncoder e = ctx.getBean(Fastjson3JsonEncoder.class);
             org.springframework.core.io.buffer.DataBufferFactory factory =
